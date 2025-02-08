@@ -2,7 +2,7 @@ How to run:
 -----------
 
 1. Download elm
-1. compile with `elm make src/Main.elm --output=js/elm.js --optimize` in the terminal, in the current directory.
+1. compile with `elm make src/Main.elm --output=www/js/elm.js --optimize` in the terminal, in the current directory.
 ...
 3. Profit
 
