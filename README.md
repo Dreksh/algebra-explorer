@@ -1,4 +1,8 @@
-# math
+# Math
+
+Build status: ![Workflow Status](https://github.com/jxz12/math/actions/workflows/main.yml/badge.svg)
+
+## Thoughts
 
 * when you are solving an equation, e.g. x^2 + 2x + 1 = 0, it is only for a specific CONTEXT
 * Formal Rules of Algebra are substitutions valid for ALL CONTEXTS
