@@ -15,7 +15,7 @@ jobs:
       run: git fetch origin gh-pages
     - name: Compare with gh-pages branch
       run: |
-        [ $(git diff --name-only gh-pages src | wc -l) -ne 0 ]
+        [ $(git diff --name-only origin/gh-pages -- src | wc -l) -ne 0 ]
   compile:
     name: Compile Elm Code
     needs: check
