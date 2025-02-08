@@ -14,12 +14,19 @@ jobs:
     - name: Fetch gh-pages branch
       run: git fetch origin gh-pages
     - name: Compare with gh-pages branch
+      id: check
       run: |
-        [ $(git diff --name-only origin/gh-pages -- src | wc -l) -ne 0 ]
+        if [ $(git diff --name-only origin/gh-pages -- src | wc -l) -ne 0 ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+        else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+        fi
+    outputs:
+      status: ${{ steps.check.outputs.result }}
   compile:
     name: Compile Elm Code
     needs: check
-    if: needs.check.result == 'success'
+    if: needs.check.outputs.status == 'success'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
