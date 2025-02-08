@@ -1,0 +1,22 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    font: sans-serif;
+}
+body {
+    min-height: 100vh;
+    width: 100vw;
+}
+h1 {
+    margin: 0;
+}
+.verticalCenter {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.horizontalCenter {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
