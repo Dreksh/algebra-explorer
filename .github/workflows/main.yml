@@ -1,0 +1,46 @@
+name: Auto-updater
+on:
+  push:
+    branches:
+    - main
+permissions:
+  contents: write
+jobs:
+  check:
+    name: Check Changes in Elm Code
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Compare with gh-pages branch
+      run: |
+        [ $(git diff --name-only gh-pages src | wc -l) -ne 0 ]
+  compile:
+    name: Compile Elm Code
+    needs: check
+    if: needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Merge to gh-pages branch
+      run: |
+        git config --global user.name 'Github Actions'
+        git config --global user.email 'not-a-real-email@fake.com'
+        git merge -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" gh-pages
+    - name: Instal curl
+      run: apt-get update && apt-get install -y curl
+      # Add the elm binary following https://github.com/elm/compiler/blob/master/installers/linux/README.md
+    - name: Install elm
+      run: |
+        mkdir elm-bin && cd elm-bin
+        curl -L -o elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz
+        gunzip elm.gz
+        chmod +x elm
+    - name: Compile
+      run: |
+        ./elm-bin/elm make src/Main.elm --output=www/js/elm.js --optimize &> $GITHUB_STEP_SUMMARY && rm $GITHUB_STEP_SUMMARY
+    - name: Push to branch
+      run: |
+        git add -f www/js/elm.js
+        git commit --amend --no-edit
+        git push origin HEAD:gh-pages
+        
