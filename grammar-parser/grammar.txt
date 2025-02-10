@@ -1,0 +1,18 @@
+Equation    ->  Equation Space "=" Expression
+Equation    ->  Expression Space "=" Expression
+Expression  ->  Expression Space "\+" Multiple
+Expression  ->  Expression Space "-" Multiple
+Expression  ->  Multiple
+Multiple    ->  Multiple Space "\*" Negatable
+Multiple    ->  Multiple Space "/" Negatable
+Multiple    ->  Negatable
+Negatable   ->  Space "-" Negatable
+Negatable   ->  Space Term
+Term        ->  "\o[0-9\o]*" "(" Args ")"
+Term        ->  "\o[0-9\o]*"
+Term        ->  "(" Expression Space ")"
+Space       ->  " +"
+Space       ->
+Args        ->  Args Space "," Expression
+Args        ->  Expression
+Args        ->

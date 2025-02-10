@@ -1,2 +1,4 @@
 elm-stuff/
 www/js/elm.js
+.vscode
+grammar-parser/parser
