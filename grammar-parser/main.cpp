@@ -1,14 +1,15 @@
-#include <algorithm>
-#include <iostream>
-#include <fstream>
-#include <queue>
-#include <set> // tokens require sorting for making the output deterministic
-#include <string>
-#include <sstream>
-#include <unordered_map>
-#include <unordered_set> // For unordered_set
-#include <utility> // For pair
-#include <vector>
+#include <algorithm>        // find elements within containers
+#include <iostream>         // interact with cout & cerr
+#include <fstream>          // read file
+#include <map>              // tokens require sorting for making the output deterministic
+#include <queue>            // algorithm for performing breadth-first traversal
+#include <set>              // tokens require sorting for making the output deterministic
+#include <string>           // yes
+#include <sstream>          // for process multiple bits simultaneously, and then print to file sequentially
+#include <unordered_map>    // faster accesses for mapping input to output
+#include <unordered_set>    // faster accesses for set operations, and usage as map keys
+#include <utility>          // pair
+#include <vector>           // storing elements with order
 
 using namespace std;
 
@@ -53,41 +54,66 @@ struct parser_t {
             struct set_hash {
                 size_t operator() (const unordered_set<const node_t*>& s) const {
                     hash<void*> hasher;
-                    size_t result;
-                    for (auto ptr : s) result ^= hasher((void*)ptr);
+                    size_t result(0);
+                    for (const node_t* ptr : s) result ^= hasher((void*)ptr);
                     return result;
                 }
             };
+            struct pair_hash {
+                size_t operator() (const pair<char,char>& p) const {
+                    hash<char> hasher;
+                    // Shift it so that the ordering makes a difference;
+                    return hasher(p.first) ^ (hasher(p.second) << 1);
+                }
+            };
             node_t *next_node;  // from specifying specific characters
-            vector<pair<char,char>> next; // character set for going to next
+            set<pair<char,char>> next; // character set for going to next
             bool allow_skip;    // from specifying *, this will include next_node->next_state(..) in the calculations
             bool allow_others; // from specifying \o
             bool allow_repeat; // from specifying + or *
             const char_token_t* end;
-            node_t(): next_node(NULL), next(), allow_skip(), allow_others(false), end(NULL) {}
+            node_t(): next_node(NULL), next(), allow_skip(false), allow_others(false), allow_repeat(false), end(NULL) {}
             node_t(node_t& t) =delete;
             node_t(const node_t& t) =delete;
             ~node_t() { if (next_node != NULL) delete next_node; }
-            unordered_set<const node_t*> next_state(pair<char,char> token) const {
-                bool found = false;
-                if (token == pair<char,char>('\0', '\0')) {
-                    found = allow_others;
-                } else {
-                    for (auto [low, high]: next) {
-                        if (low >= token.first && low <= token.second) {
-                            if (high > token.second) throw "token is out of range";
-                            found = true;
-                            break;
-                        } else if (high >= token.first && high <= token.second) {
-                            throw "token is out of range";
-                        }
+            bool token_in_set(pair<char,char> token) const {
+                if (token == pair<char,char>('\0', '\0')) return allow_others;
+                for (auto [low, high]: next) {
+                    if (low >= token.first && low <= token.second) {
+                        if (high > token.second) throw "token is out of range";
+                        return true;
+                    } else if (high >= token.first && high <= token.second) {
+                        throw "token is out of range";
                     }
                 }
-                unordered_set<const node_t*> s;
-                if (found) s.insert(next_node);
-                if (allow_repeat) s.insert(this);
-                if (allow_skip && next_node != NULL) s.merge(next_node->next_state(token));
-                return s;
+                return false;
+            }
+            static const char_token_t* end_token(const unordered_set<const node_t*>& s) {
+                unordered_set<const char_token_t*> t;
+                for (auto ptr: s) {
+                    // Go as far as possible
+                    while (ptr->next_node != NULL && ptr->next_node->allow_skip) ptr = ptr->next_node;
+                    if (ptr->end != NULL) t.insert(ptr->end);
+                }
+                if (t.empty()) return NULL;
+                if (t.size() == 1) return *t.begin();
+                string error_message = "multiple tokens result in the same end state: ";
+                for (auto ptr: t) error_message += ptr->token_raw() + " ";
+                throw error_message;
+            }
+            static unordered_set<const node_t*> step(const unordered_set<const node_t*>& s, pair<char,char> token) {
+                unordered_set<const node_t*> result;
+                for (auto ptr: s) {
+                    if (ptr->allow_repeat && ptr->token_in_set(token)) result.insert(ptr);
+                    if (ptr->next_node == NULL) continue;
+                    // Check for optionals
+                    while (ptr->next_node != NULL) {
+                        ptr = ptr->next_node;
+                        if (ptr->token_in_set(token)) result.insert(ptr);
+                        if (!ptr->allow_skip) break;
+                    }
+                }
+                return result;
             }
         };
 
@@ -104,8 +130,8 @@ struct parser_t {
             if (*begin != '"') throw "Expecting token to begin with '\"' in: " + input;
             ++begin;
             char last_seen('\0');
-            node_t* prev_node = new node_t, *current_node = prev_node;
-            this->roots.insert(prev_node);
+            node_t* initial_node = new node_t(), *prev_node=initial_node, *current_node = prev_node->next_node = new node_t();
+            this->roots.insert(initial_node);
             while (begin != end) {
                 switch (*begin) {
                     case '[': { // start multirange
@@ -114,7 +140,7 @@ struct parser_t {
                         while (begin != end && *begin != ']') {
                             switch (*begin) {
                             case '\\': // start escape
-                                if (prev != '\0') { current_node->next.push_back({prev, prev}); all_tokens.insert({prev,prev}); }
+                                if (prev != '\0') { current_node->next.insert({prev, prev}); all_tokens.insert({prev,prev}); }
                                 ++begin;
                                 if (begin == end) throw "Unexpected end of the token definition in: " + input;
                                 if (*begin == 'o') current_node->allow_others = true;
@@ -126,38 +152,25 @@ struct parser_t {
                                 ++begin;
                                 if (begin == end) throw "Unexpected end of the token definition in: " + input;
                                 switch (*begin) {
-                                    case '\\': // start escape
-                                        ++begin;
-                                        if (begin == end) throw "Unexpected end of the token definition in: " + input;
-                                        if (*begin == 'o') {
-                                            current_node->next.push_back({prev,prev}); all_tokens.insert({prev,prev});
-                                            current_node->next.push_back({'-','-'}); all_tokens.insert({'-','-'});
-                                            current_node->allow_others = true;
-                                        } else {
-                                            current_node->next.push_back({prev,*begin}); all_tokens.insert({prev,*begin});
-                                        }
-                                        prev = '\0';
-                                        ++begin;
-                                        break;
                                     case ']': // end of group
-                                        current_node->next.push_back({prev,prev}); all_tokens.insert({prev,prev});
-                                        current_node->next.push_back({'-','-'}); all_tokens.insert({'-','-'});
+                                        current_node->next.insert({prev,prev}); all_tokens.insert({prev,prev});
+                                        current_node->next.insert({'-','-'}); all_tokens.insert({'-','-'});
                                         break;
                                     default: { // any other char
-                                        current_node->next.push_back({prev,prev}); all_tokens.insert({prev, prev});
+                                        current_node->next.insert({prev,*begin}); all_tokens.insert({prev, *begin});
                                         prev = '\0';
                                         ++begin;
                                     }
                                 }
                                 break;
                             default: // anything else
-                                if (prev != '\0') { current_node->next.push_back({prev,prev}); all_tokens.insert({prev,prev}); }
+                                if (prev != '\0') { current_node->next.insert({prev,prev}); all_tokens.insert({prev,prev}); }
                                 prev = *begin;
                                 ++begin;
                             }
                         }
                         if (begin == end) throw "Unexpected end of token definition in: " + input;
-                        prev_node = current_node; current_node = prev_node->next_node = new node_t;
+                        prev_node = current_node; current_node = prev_node->next_node = new node_t();
                         ++begin;
                         }
                         break;
@@ -165,23 +178,23 @@ struct parser_t {
                         ++begin;
                         if (begin == end) throw "Unexpected end of token definition in: " + input;
                         if (*begin == 'o') current_node->allow_others = true;
-                        else { current_node->next.push_back({*begin,*begin}); all_tokens.insert({*begin,*begin}); }
-                        prev_node = current_node; current_node = prev_node->next_node = new node_t;
+                        else { current_node->next.insert({*begin,*begin}); all_tokens.insert({*begin,*begin}); }
+                        prev_node = current_node; current_node = prev_node->next_node = new node_t();
                         ++begin;
                         break;
                     case '+': // repeat itself as 
-                        if (prev_node == current_node) throw "Unable to use '+' without any prefix in: " + input;
+                        if (prev_node == initial_node) throw "Unable to use '+' without any prefix in: " + input;
                         prev_node->allow_repeat = true;
                         ++begin;
                         break;
                     case '*': // repeat itself as 
-                        if (prev_node == current_node) throw "Unable to use '*' without any prefix in: " + input;
+                        if (prev_node == initial_node) throw "Unable to use '*' without any prefix in: " + input;
+                        prev_node->allow_repeat = true;
                         prev_node->allow_skip = true;
                         ++begin;
                         break;
                     case '?': // repeat itself as 
-                        if (prev_node == current_node) throw "Unable to use '?' without any prefix in: " + input;
-                        prev_node->allow_repeat = true;
+                        if (prev_node == initial_node) throw "Unable to use '?' without any prefix in: " + input;
                         prev_node->allow_skip = true;
                         ++begin;
                         break;
@@ -189,65 +202,75 @@ struct parser_t {
                         if (++begin != end) throw "Expected end after '\"' in: " + input;
                         break;
                     default:
-                        current_node->next.push_back({*begin,*begin}); all_tokens.insert({*begin,*begin});
-                        prev_node = current_node; current_node = prev_node->next_node = new node_t;
+                        current_node->next.insert({*begin,*begin}); all_tokens.insert({*begin,*begin});
+                        prev_node = current_node; current_node = prev_node->next_node = new node_t();
                         ++begin;
                 }
             }
-            current_node->end = id;
+            prev_node->end = id;
+            prev_node->next_node = NULL;
+            delete current_node;
         }
         // Printing related
-        vector<pair<char,char>> unique_char_ranges() const {
-            if (all_tokens.empty()) return vector<pair<char,char>>();
-            vector<pair<char,char>> confirmed;
+        set<pair<char,char>> unique_char_ranges() const {
+            if (all_tokens.empty()) return {};
+            set<pair<char,char>> confirmed;
             char prev_low;
             set<char> upper_bounds;
             // This algorithm expects the iteration of all_tokens to be ordered
             for (auto [low, high] : all_tokens) {
                 // no lingering range from before
-                if (upper_bounds.empty()) { prev_low = low; upper_bounds.insert(high); }
+                if (upper_bounds.empty()) { prev_low = low; upper_bounds.insert(high); continue; }
                 // lingering range from before
+                auto begin = upper_bounds.cbegin(), end = upper_bounds.cend();
+                // Process all ranges that can be cleared
+                while (begin != end && low > *begin) { confirmed.insert({prev_low, *begin}); prev_low = *begin+1; ++begin; }
+                // no more ranges to clear
+                if (begin == end) { prev_low = low; upper_bounds.clear(); upper_bounds.insert(high); }
+                // insert regions into upper_bounds
                 else {
-                    auto begin = upper_bounds.begin(), end = upper_bounds.end();
-                    // Process all ranges that can be cleared
-                    while (begin != end && low > *begin) { confirmed.push_back({prev_low, *begin}); prev_low = *begin+1; ++begin; }
-                    // no more ranges to clear
-                    if (begin == end) { prev_low = low; upper_bounds.insert(high); }
-                    // insert regions into upper_bounds
-                    else {
-                        upper_bounds.erase(upper_bounds.begin(), begin);
-                        upper_bounds.insert(high);
-                        // stop before the lower-bound, since that's the start of the next token
-                        if (prev_low != low) upper_bounds.insert(low-1);
-                    }
+                    upper_bounds.erase(upper_bounds.cbegin(), begin);
+                    upper_bounds.insert(high);
+                    // stop before the lower-bound, since that's the start of the next token
+                    if (prev_low != low) upper_bounds.insert(low-1);
                 }
             }
-            for (char next: upper_bounds) { confirmed.push_back({prev_low, next}); prev_low = next+1; }
+            for (char next: upper_bounds) { confirmed.insert({prev_low, next}); prev_low = next+1; }
             return confirmed;
         }
-        static void print_char_set(ostream& stream, pair<char,char> tok) {
+        static void print_char_set(ostream& stream, const set<pair<char,char>>& all_chars) {
             stream << '"';
-            for (char i = tok.first; i <= tok.second; i++) { if (i == '"') stream << '\\'; stream << i; }
+            for (auto tok: all_chars) for (char i = tok.first; i <= tok.second; i++) { if (i == '"' || i == '\\') stream << '\\'; stream << i; }
             stream << '"';
         }
-        static void print_all_char_set(ostream& stream, const vector<pair<char,char>>& all_chars) {
-            stream << '"';
-            for (auto tok: all_chars) for (char i = tok.first; i <= tok.second; i++) { if (i == '"') stream << '\\'; stream << i; }
-            stream << '"';
+        static void print_state_transition(ostream& stream, int to, const char_token_t* end_token) {
+            if (to != -1) stream << "({state | seen = state.seen ++ char, state = " << to << "}, Nothing)" << endl;
+            else {
+                stream << "let (newState, _) = parserProcessChar {seen = \"\", state=0} char in (newState, ";
+                if (end_token == NULL) stream << "Nothing)" << endl ;
+                else stream << "Just (Parser" << end_token->token_name() << "))" << endl;
+            }
+        }
+        static int state_number(unordered_map<unordered_set<const node_t*>, int, node_t::set_hash>& seen, queue<unordered_set<const node_t*>>& to_process, const unordered_set<const node_t*>& state) {
+            if (state.empty()) return -1;
+            auto loc = seen.find(state);
+            if (loc != seen.cend()) return loc->second;
+            int next_num = seen.size();
+            seen[state] = next_num;
+            to_process.push(state);
+            return next_num;
         }
         void print(ostream& stream) const {
-            vector<pair<char,char>> chars = unique_char_ranges();
-            stream << R"""(
-            -- TokenState
-            type alias ParserState Token =
-                {   seen: String
-                ,   state: Int
-                }
-            )
-            
-            parserProcessChar: ParserStateToken -> String -> (ParserStateToken, Maybe ParserToken)
-            parserProcessChar state char = case state.state of
-            )""" << endl;
+            const auto chars = unique_char_ranges();
+            int count = 0;
+            stream << R"""(-- TokenState
+type alias ParserState Token =
+    {   seen: String
+    ,   state: Int
+    }
+
+parserProcessChar: ParserStateToken -> String -> (ParserStateToken, Maybe ParserToken)
+parserProcessChar state char = case state.state of)""" << endl;
 
             stringstream end_stream;
             int state(0);
@@ -255,68 +278,33 @@ struct parser_t {
             queue<unordered_set<const node_t*>> to_process;
             seen[roots] = 0;
             to_process.push(roots);
-            while (!to_process.empty()) {
-                unordered_set<const node_t*> current = to_process.front();
-                to_process.pop();
-                stream << "    " << state << " -> ";
+            while (!to_process.empty() && state < 20) {
+                auto current = to_process.front(); to_process.pop();
+                stream << "    " << state++ << " -> ";
+                // Check for end token & others
+                auto end_token = node_t::end_token(current);
+                auto other_index = state_number(seen, to_process, node_t::step(current, {'\0','\0'}));
+                map<int,set<pair<char,char>>> transitions;
                 // Add transitions
                 for (pair<char,char> char_set : chars) {
-                    unordered_set<const node_t*> next;
-                    for (const node_t* node : current) next.merge(node->next_state(char_set));
-                    if (next.empty()) continue;
+                    auto next_index = state_number(seen, to_process, node_t::step(current, char_set));
+                    if (next_index != other_index) transitions[next_index].insert(char_set);
+                }
+                for (auto [index, char_set]: transitions) {
                     stream << "if String.contains char ";
                     token_parser_t::print_char_set(stream, char_set);
-                    stream << endl;
-                    int next_num;
-                    unordered_map<unordered_set<const node_t*>, int, node_t::set_hash>::iterator loc = seen.find(next);
-                    if (loc != seen.end()) next_num = loc->second;
-                    else {
-                        next_num = seen.size();
-                        seen[next] = next_num;
-                        to_process.push(next);
-                    }
-                    stream << "        then ({state | seen = state.seen ++ char, state = " << next_num << "}, Nothing)" << endl;
+                    stream << "\n        then ";
+                    token_parser_t::print_state_transition(stream, index, end_token);
                     stream << "        else ";
                 }
-                // Check for others
-                unordered_set<const node_t*> next;
-                for (const node_t* node : current) if (node->allow_others) next.merge(node->next_state({'\0','\0'}));
-                if (!next.empty()) {
-                    int next_num;
-                    unordered_map<unordered_set<const node_t*>, int, node_t::set_hash>::iterator loc = seen.find(next);
-                    if (loc != seen.end()) next_num = loc->second;
-                    else {
-                        next_num = seen.size();
-                        seen[next] = next_num;
-                        to_process.push(next);
-                    }
-                    stream << "if String.contains char "; token_parser_t::print_all_char_set(stream, chars);
-                    stream << " |> not" << endl;
-                    stream << "        then ({state | seen = state.seen ++ char, state = " << next_num << "}, Nothing)" << endl;
-                    stream << "        else ";
-                }
-                // Check it uniquely identifies a token
-                unordered_set<const char_token_t*> end_tokens;
-                for (const node_t* node : current) if (node->end != NULL) end_tokens.insert(node->end);
-                if (end_tokens.size() > 1) {
-                    string list;
-                    for (const char_token_t* node : end_tokens) list += " " + node->token_raw();
-                    throw "token can match multiple tokens in:" + list;
-                }
-                // Add termination case
-                stream << "let (newState, _) = parserProcessChar {seen = \"\", state = 0} char in (newState, ";
-                unordered_set<const char_token_t*>::const_iterator ptr = end_tokens.cbegin();
-                if (ptr != end_tokens.cend()) {
-                    end_stream << "    " << state << " -> Just (Parser" << (*ptr)->token_name() << " state.seen)" << endl;
-                    stream << "Just (Parser" << (*ptr)->token_name() << " state.seen))" << endl;
-                } else stream << "Nothing)" << endl;
+                token_parser_t::print_state_transition(stream, other_index, end_token);
+                // Add terminal case
+                if (end_token != NULL) end_stream << "    " << (state-1) << " -> Just (Parser" << end_token->token_name() << ")" << endl;
             }
-            stream << R"""(
-                _ -> ({seen = \"\", state = 0}, Nothing);
-            
-            parserProcessEnd: ParserStateToken -> Maybe ParserToken
-            parserProcessEnd state = case state.state of
-            )""" << endl;
+            stream << R"""(    _ -> ({seen = "", state = 0}, Nothing);
+
+parserProcessEnd: ParserStateToken -> Maybe ParserToken
+parserProcessEnd state = case state.state of)""" << endl;
             stream << end_stream.str();
             stream << "    _ -> Nothing" << endl << endl;
         }
@@ -326,7 +314,7 @@ struct parser_t {
             struct set_hash {
                 size_t operator() (const unordered_set<const node_t*>& s) const {
                     hash<void*> hasher;
-                    size_t result;
+                    size_t result(0);
                     for (auto ptr : s) result ^= hasher((void*)ptr);
                     return result;
                 }
@@ -409,65 +397,63 @@ struct parser_t {
         }
         void print(ostream& stream, const vector<const token_t*>& token_order) const {
             if (main_token == NULL) throw "No rules are registered";
-            stream << R"""(
-                -- Transitions
-                parserParse: String -> Result String ParserExpression
-                parserParse input = 
-                    input 
-                    |>  String.foldl
-                        (\char result -> case result of
-                            Result.Err _ -> result
-                            Result.Ok (tokenState, parseState) ->
-                                String.fromChar char
-                                |> parserProcessChar tokenState
-                                |> (\(newState, token) -> 
-                                    case token of
-                                        Nothing -> Result.Ok (newState, parseState)
-                                        Just t -> parserProcessToken t parseState
-                                            |> Result.map (\pState -> (newState, pState))
-                                )
-                        )
-                        (Result.Ok ({seen="", state=0}, {stack=[], states=[0]}))
-                    |>  Result.andThen (\(tokenState, parseState) -> 
-                            parserProcessEnd tokenState
-                            |> Maybe.map (\tok -> parserProcessToken tok parseState )
-                            |> Maybe.withDefault (Result.Ok parseState)
-                        )
-                    |>  Result.andThen (\pState ->
-                        pState
-                        |> parserProcessToken ParserTokenEnd 
-                        |> Result.andThen (\state -> case state.stack of
-                            [e] -> parserExpectTokenExpression e |> Result.mapError (\_ -> "Parser result has incorrect type")
-                            [] -> Result.Err "Parser result is missing"
-                            _ -> Result.Err "Parser did not complete"
-                        )
-                    )
+            stream << R"""(-- Transitions
+parserParse: String -> Result String ParserExpression
+parserParse input =
+    input
+    |>  String.foldl
+        (\char result -> case result of
+            Result.Err _ -> result
+            Result.Ok (tokenState, parseState) ->
+                String.fromChar char
+                |> parserProcessChar tokenState
+                |> (\(newState, token) ->
+                    case token of
+                        Nothing -> Result.Ok (newState, parseState)
+                        Just t -> parserProcessToken t parseState
+                            |> Result.map (\pState -> (newState, pState))
+                )
+        )
+        (Result.Ok ({seen="", state=0}, {stack=[], states=[0]}))
+    |>  Result.andThen (\(tokenState, parseState) ->
+            parserProcessEnd tokenState
+            |> Maybe.map (\tok -> parserProcessToken tok parseState )
+            |> Maybe.withDefault (Result.Ok parseState)
+        )
+    |>  Result.andThen (\pState ->
+        pState
+        |> parserProcessToken ParserTokenEnd
+        |> Result.andThen (\state -> case state.stack of
+            [e] -> parserExpectTokenExpression e |> Result.mapError (\_ -> "Parser result has incorrect type")
+            [] -> Result.Err "Parser result is missing"
+            _ -> Result.Err "Parser did not complete"
+        )
+    )
 
-                type alias ParserState =
-                    {   stack: List ParserToken
-                    ,   states: List Int
-                    }
+type alias ParserState =
+    {   stack: List ParserToken
+    ,   states: List Int
+    }
 
-                parserExtractLastN: Int -> (ParserState, List ParserToken) -> Result () (ParserState, List ParserToken)
-                parserExtractLastN remaining (state, stack) = case remaining of
-                    0 -> Result.Ok (state, stack)
-                    r -> case parserExtractLastN (r-1) (state,stack) of
-                        Result.Ok (newState, newStack) -> case newState.stack of
-                            (e::others) -> Result.Ok ({newState | stack = others}, (e::newStack))
-                            [] -> Result.Err ()
-                        Result.Err () -> Result.Err ()
+parserExtractLastN: Int -> (ParserState, List ParserToken) -> Result () (ParserState, List ParserToken)
+parserExtractLastN remaining (state, stack) = case remaining of
+    0 -> Result.Ok (state, stack)
+    r -> case parserExtractLastN (r-1) (state,stack) of
+        Result.Ok (newState, newStack) -> case newState.stack of
+            (e::others) -> Result.Ok ({newState | stack = others}, (e::newStack))
+            [] -> Result.Err ()
+        Result.Err () -> Result.Err ()
 
-                parserExtract: (ParserToken -> Result () token) -> (Int -> ParserToken -> String) -> Int -> Result String (List ParserToken, (token -> func)) -> Result String (List ParserToken, func)
-                parserExtract extract errFunc stepNum state =
-                    Result.andThen
-                    ( \(s, f) -> case s of
-                        (t::others) -> extract t
-                            |> Result.andThen (\tok -> Result.Ok (others, f tok))
-                            |> Result.mapError (\_ -> errFunc stepNum t)
-                        [] -> Result.Err "Temporary stack is missing tokens to process the rule"
-                    )
-                    state
-                )""" << endl;
+parserExtract: (ParserToken -> Result () token) -> (Int -> ParserToken -> String) -> Int -> Result String (List ParserToken, (token -> func)) -> Result String (List ParserToken, func)
+parserExtract extract errFunc stepNum state =
+    Result.andThen
+    ( \(s, f) -> case s of
+        (t::others) -> extract t
+            |> Result.andThen (\tok -> Result.Ok (others, f tok))
+            |> Result.mapError (\_ -> errFunc stepNum t)
+        [] -> Result.Err "Temporary stack is missing tokens to process the rule"
+    )
+    state)""" << endl;
             for (auto [line_no, rule]: rules) {
                 stream << "parserProcessRule" << line_no << ": ParserState -> Result String ParserState" << endl;
                 stream << "parserProcessRule" << line_no << " state = case parserExtractLastN " << rule.second.size() << " (state,[]) of" << endl;
@@ -511,9 +497,7 @@ struct parser_t {
                     }
                     stream << "        Parser" << t->token_name() << " -> Result.Ok {state | states = (" << next_state_num << "::state.states) }" << endl;
                 }
-                for (const token_t* token : token_order) {
-
-                }
+                state.print_case_close(stream);
             }
             stream << "    (_::_) -> Result.Err \"Unknown state reached\"" << endl;
             stream << endl;
@@ -582,7 +566,7 @@ struct parser_t {
         stream << "parserTokenName: ParserToken -> String" << endl;
         stream << "parserTokenName token = case token of" << endl;
         stream << "    ParserTokenEnd -> \"$\"" << endl;
-        for (const token_t* t : token_order) stream << "    Parser" << t->token_name() << " -> \"" << t->token_type() << "\"" << endl;
+        for (const token_t* t : token_order) stream << "    Parser" << t->token_name() << " -> \"" << t->token_raw() << "\"" << endl;
         stream << endl;
         // Add extraction of expected token
         for (const token_t* t : token_order) {
@@ -590,7 +574,7 @@ struct parser_t {
             stream << "parserExpect" << t->token_name() << " token = case token of" << endl;
             stream << "    Parser" << t->token_name() << " e -> Result.Ok e" << endl;
             stream << "    _ -> Result.Err ()";
-            stream << endl;
+            stream << endl << endl;
         }
         token_parser.print(stream);
         grammar_parser.print(stream, token_order);
@@ -609,7 +593,7 @@ vector<string> read_lines(string filename) {
 parser_t extract_from_lines(const vector<string>& lines) {
     // First pass is to collect all 'tokens'
     // Only pick up the left-tokens for the grammar_map and the 'regex' tokens for the char_set
-    vector<vector<string>> tokenified_lines(lines.size());
+    vector<vector<string>> tokenified_lines;
     vector<string> grammar_names;
     vector<string> char_names;
     for (const string& line : lines) {
@@ -622,12 +606,19 @@ parser_t extract_from_lines(const vector<string>& lines) {
             if (begin == end) break;
             // Find the next space
             string::const_iterator start = begin;
-            while (begin != end && *begin != ' ') {
-                if (*begin == '\'') {
-                    ++begin;
-                    if (begin == end) throw "Line ends with the escape character: " + line;
-                }
+            if (*begin == '"') {
                 ++begin;
+                while (begin != end && *begin != '"') {
+                    if (*begin == '\\') if (++begin == end) throw "Line stopped in the middle of a string token: " + line;
+                    ++begin;
+                }
+                if (begin == end) throw "Line stopped in the middle of a string token: " + line;
+                if (++begin != end && *begin != ' ') throw "Space required after a string token: " + line;
+            } else {
+                while (begin != end && *begin != ' ') {
+                    if (*begin == '\\') if (++begin == end) throw "Line ends with the escape character: " + line;
+                    ++begin;
+                }
             }
             // Add the token
             string token(start,begin);
@@ -638,10 +629,11 @@ parser_t extract_from_lines(const vector<string>& lines) {
                 if (prev_token == "") throw "Missing Rule name on the left of -> in: " + line;
                 if (prev_token == "->") throw "Double -> found consecutively in the same line: " + line;
                 if (prev_token.front() == '"') throw "StringToken cannot be the name of a rule in line: "+line;
-                grammar_names.push_back(prev_token);
+                if (find(grammar_names.begin(),grammar_names.end(), prev_token) == grammar_names.end()) grammar_names.push_back(prev_token);
             }
             prev_token = token;
         }
+        tokenified_lines.push_back(list);
     }
     return parser_t(tokenified_lines, grammar_names, char_names);
 }
@@ -670,6 +662,9 @@ int main(int argc, char **argv) {
         parser.print(cout);
     } catch (const string& s) {
         cerr << s << endl;
+        return 1;
+    } catch (char const * c) {
+        cerr << c << endl;
         return 1;
     }
     return 0;
