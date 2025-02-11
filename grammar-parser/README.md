@@ -7,11 +7,12 @@ tables when we change the grammar.
 Running the Program
 -------------------
 
-I've used some c++17 (or newer) stuff in there :P
+I've used some c++20 (or newer) stuff in there :P
+namely: string::starts_with() for argument parsing
 
 Running it via:
 ```
-g++ main.cpp -o parser -std=c++17
+g++ main.cpp -o parser -std=c++20
 ./parser grammar.txt
 ```
 

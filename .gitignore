@@ -3,3 +3,4 @@ www/js/elm.js
 .vscode
 grammar-parser/parser
 **/*.dSYM
+bin

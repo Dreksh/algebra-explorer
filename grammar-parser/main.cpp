@@ -29,13 +29,13 @@ struct parser_t {
             t_name = "Token" + to_string(id);
             t_print = char_token_t::escape_quotes(raw);
         }
-        static string escape_quotes(string raw) {
-            // from https://stackoverflow.com/a/24315631
-            for (size_t start_pos = 0; (start_pos = raw.find("\"", start_pos)) != string::npos ; ) {
-                raw.replace(start_pos, 1, "\\\"");
-                start_pos += 2; // Handles case where 'to' is a substring of 'from'
+        static string escape_quotes(const string& raw) {
+            stringstream ss;
+            for (auto c : raw) {
+                if (c == '"' || c == '\\') ss << '\\';
+                ss << c;
             }
-            return raw; 
+            return ss.str(); 
         }
         virtual string token_raw() const noexcept { return this->t_print; }
         virtual string token_name() const noexcept { return this->t_name; }
@@ -54,7 +54,7 @@ struct parser_t {
             struct set_hash {
                 size_t operator() (const unordered_set<const node_t*>& s) const {
                     hash<void*> hasher;
-                    size_t result(0);
+                    size_t result{0};
                     for (const node_t* ptr : s) result ^= hasher((void*)ptr);
                     return result;
                 }
@@ -248,7 +248,7 @@ struct parser_t {
             else {
                 stream << "let (newState, _) = parserProcessChar {seen = \"\", state=0} char in (newState, ";
                 if (end_token == NULL) stream << "Nothing)" << endl ;
-                else stream << "Just (Parser" << end_token->token_name() << "))" << endl;
+                else stream << "Just (Parser" << end_token->token_name() << " state.seen))" << endl;
             }
         }
         static int state_number(unordered_map<unordered_set<const node_t*>, int, node_t::set_hash>& seen, queue<unordered_set<const node_t*>>& to_process, const unordered_set<const node_t*>& state) {
@@ -264,7 +264,7 @@ struct parser_t {
             const auto chars = unique_char_ranges();
             int count = 0;
             stream << R"""(-- TokenState
-type alias ParserState Token =
+type alias ParserStateToken =
     {   seen: String
     ,   state: Int
     }
@@ -299,9 +299,9 @@ parserProcessChar state char = case state.state of)""" << endl;
                 }
                 token_parser_t::print_state_transition(stream, other_index, end_token);
                 // Add terminal case
-                if (end_token != NULL) end_stream << "    " << (state-1) << " -> Just (Parser" << end_token->token_name() << ")" << endl;
+                if (end_token != NULL) end_stream << "    " << (state-1) << " -> Just (Parser" << end_token->token_name() << " state.seen)" << endl;
             }
-            stream << R"""(    _ -> ({seen = "", state = 0}, Nothing);
+            stream << R"""(    _ -> ({seen = "", state = 0}, Nothing)
 
 parserProcessEnd: ParserStateToken -> Maybe ParserToken
 parserProcessEnd state = case state.state of)""" << endl;
@@ -314,7 +314,7 @@ parserProcessEnd state = case state.state of)""" << endl;
             struct set_hash {
                 size_t operator() (const unordered_set<const node_t*>& s) const {
                     hash<void*> hasher;
-                    size_t result(0);
+                    size_t result{0};
                     for (auto ptr : s) result ^= hasher((void*)ptr);
                     return result;
                 }
@@ -335,7 +335,7 @@ parserProcessEnd state = case state.state of)""" << endl;
             }
             void print_case_close(ostream& stream) {
                 if (end_no == -1) stream << "        other -> Result.Err (parserError" << rule_no << " " << input_no << " other)" << endl;
-                else stream << "        other -> parserProcessRule" << end_no << " state | states=states} |> Result.andThen (\\s -> parserProcessToken other s)" << endl;
+                else stream << "        other -> parserProcessRule" << end_no << " {state | states=states} |> Result.andThen (\\s -> parserProcessToken other s)" << endl;
             }
             transition_state_t step(const unordered_map<const token_t*,pair<unordered_set<const node_t*>,bool>>& dict, const token_t* t) {
                 unordered_set<const node_t*> next;
@@ -344,8 +344,8 @@ parserProcessEnd state = case state.state of)""" << endl;
             }
             static transition_state_t expand(const unordered_map<const token_t*,pair<unordered_set<const node_t*>,bool>>& dict, unordered_set<const node_t*> set) {
                 queue<const node_t*> to_visit;
-                for (auto ptr : set) to_visit.push(ptr);
                 int end_no(-1), rule_no, input_no;
+                for (auto ptr : set) to_visit.push(ptr);
                 while (!to_visit.empty()) {
                     const node_t* next = to_visit.front(); to_visit.pop();
                     // Find the earliest rule + latest token
@@ -357,13 +357,14 @@ parserProcessEnd state = case state.state of)""" << endl;
                     if (next->token == NULL) {
                         if (end_no != -1) throw "Possible conflict between Rule " + to_string(end_no) + " and Rule " + to_string(next->rule_no);
                         end_no = next->rule_no;
-                    } else {
-                        // Find new rules with epsilon in the next token
-                        auto rule = dict.find(next->token);
-                        if (rule != dict.end() && rule->second.second && set.find(next->next) == set.end()) {
-                            to_visit.push(next->next);
-                            set.insert(next->next);
-                        }
+                        continue;
+                    }
+                    // Find new rules with epsilon in the next token
+                    auto rule = dict.find(next->token);
+                    if (rule == dict.end()) continue; // a string token
+                    if (rule->second.second && set.find(next->next) == set.cend()) { set.insert(next->next); to_visit.push(next->next); }
+                    for (auto ptr: rule->second.first) {
+                        if (set.find(ptr) == set.cend()) { set.insert(ptr); to_visit.push(ptr); }
                     }
                 }
                 return transition_state_t(std::move(set), end_no, rule_no, input_no);
@@ -372,28 +373,29 @@ parserProcessEnd state = case state.state of)""" << endl;
 
         const token_t* main_token;
         unordered_map<const token_t*,pair<unordered_set<const node_t*>,bool>> head;
-        vector<pair<int,pair<const token_t*,vector<const token_t*>>>> rules;
+        unordered_map<const token_t*,unordered_set<const token_t*>> first;
+        vector<pair<int,pair<const token_t*,vector<const token_t*>>>> raw_rules;
 
-        grammar_parser_t(): main_token(NULL), head(), rules() {}
+        grammar_parser_t(): main_token(NULL), head(), first(), raw_rules() {}
         grammar_parser_t(grammar_parser_t& o) =delete;
         grammar_parser_t(const grammar_parser_t& o) =delete;
-        grammar_parser_t(grammar_parser_t&& o): main_token(o.main_token), head(std::move(o.head)), rules(std::move(o.rules)) {}
+        grammar_parser_t(grammar_parser_t&& o): main_token(o.main_token), head(std::move(o.head)), first(o.first), raw_rules(o.raw_rules) {}
         ~grammar_parser_t() { for (auto [_, all_start]: head) for (auto ptr: all_start.first) delete ptr; }
 
         void add_rules(int line_no, const token_t* return_token, const vector<const token_t*>& tokens) {
             if (main_token == NULL) {
                 // Add the default rule
                 main_token = return_token;
-                rules.push_back({0,{return_token,{return_token}}});
+                raw_rules.push_back({0,{return_token,{return_token}}});
             }
             if (tokens.empty()) { head[return_token].second = true; return; }
-            rules.push_back({line_no, {return_token, tokens}});
+            raw_rules.push_back({line_no, {return_token, tokens}});
             node_t *ptr, **ptr_ptr = &ptr;
             int input_no = 1;
             for (const token_t* t: tokens) { *ptr_ptr = new node_t(t, line_no, input_no++); ptr_ptr = &((*ptr_ptr)->next); }
-            // Add a final node for specifying the end of the rule
-            *ptr_ptr = new node_t(NULL, line_no, 0);
+            *ptr_ptr = new node_t(NULL, line_no, 0); // To specify the return
             head[return_token].first.insert(ptr);
+            first[return_token].insert(tokens[0]);
         }
         void print(ostream& stream, const vector<const token_t*>& token_order) const {
             if (main_token == NULL) throw "No rules are registered";
@@ -438,7 +440,7 @@ type alias ParserState =
 parserExtractLastN: Int -> (ParserState, List ParserToken) -> Result () (ParserState, List ParserToken)
 parserExtractLastN remaining (state, stack) = case remaining of
     0 -> Result.Ok (state, stack)
-    r -> case parserExtractLastN (r-1) (state,stack) of
+    r -> case parserExtractLastN ( r - 1 ) (state,stack) of
         Result.Ok (newState, newStack) -> case newState.stack of
             (e::others) -> Result.Ok ({newState | stack = others}, (e::newStack))
             [] -> Result.Err ()
@@ -453,21 +455,24 @@ parserExtract extract errFunc stepNum state =
             |> Result.mapError (\_ -> errFunc stepNum t)
         [] -> Result.Err "Temporary stack is missing tokens to process the rule"
     )
-    state)""" << endl;
-            for (auto [line_no, rule]: rules) {
+    state
+)""" << endl;
+            for (auto [line_no, rule]: raw_rules) {
+                if (line_no == 0) continue; // Ignore the rule we generated (it's an identity mapping)
                 stream << "parserProcessRule" << line_no << ": ParserState -> Result String ParserState" << endl;
                 stream << "parserProcessRule" << line_no << " state = case parserExtractLastN " << rule.second.size() << " (state,[]) of" << endl;
                 stream << "    Result.Err _ -> Result.Err \"Parser is missing tokens to process the rule\"" << endl; 
                 stream << "    Result.Ok (newState, stack) ->" << endl;
                 stream << "        Result.Ok (stack, parserRule" << line_no << ")" << endl;
-                for (int i = 0 ; i < rule.second.size(); i++) stream << "        |> parserExtract parserExpectTokenExpression parserError" << line_no << " " << (i + 1) << endl;;
-                stream << "        |> Result.andThen ( \(_, output) -> case output of" << endl;
+                for (int i = 0 ; i < rule.second.size(); i++)
+                    stream << "        |> parserExtract parserExpect" << rule.second[i]->token_name() << " parserError" << line_no << " " << (i + 1) << endl;;
+                stream << "        |> Result.andThen ( \\(_, output) -> case output of" << endl;
                 stream << "            Result.Ok o -> Result.Ok {newState | stack = (Parser" << rule.first->token_name() << " o)::newState.stack}" << endl;
                 stream << "            Result.Err e -> Result.Err e" << endl;
                 stream << "        )" << endl << endl;
             }
             stream << "parserProcessToken: ParserToken -> ParserState -> Result String ParserState" << endl;
-            stream << "parserProcessToken token state = case state.state of" << endl;
+            stream << "parserProcessToken token state = case state.states of" << endl;
             stream << "    [] -> Result.Err \"Parser has completed\"" << endl;
 
             // process the transition table
@@ -478,15 +483,15 @@ parserExtract extract errFunc stepNum state =
             seen[initial_state.nodes] = 0;
             int state_no = 0;
             while (!to_process.empty()) {
-                auto state = to_process.front();
-                state.print_case_start(stream, state_no);
-                set<pair<int,const token_t*>> tokens;
+                transition_state_t state = to_process.front(); to_process.pop();
+                state.print_case_start(stream, state_no++);
+                set<pair<int,const token_t*>> transition_tokens;
                 for (auto node : state.nodes) if (node->token != NULL) {
                     // Use the index to keep the ordering deterministic
                     int index = find(token_order.cbegin(), token_order.cend(), node->token)-token_order.cend();
-                    tokens.insert({index, node->token});
+                    transition_tokens.insert({index, node->token});
                 }
-                for (auto [_, t] : tokens) {
+                for (auto [_, t] : transition_tokens) {
                     auto next_state = state.step(head, t);
                     int next_state_num;
                     if (seen.find(next_state.nodes) != seen.end()) next_state_num = seen[next_state.nodes];
@@ -495,7 +500,7 @@ parserExtract extract errFunc stepNum state =
                         seen[next_state.nodes] = next_state_num;
                         to_process.push(next_state);
                     }
-                    stream << "        Parser" << t->token_name() << " -> Result.Ok {state | states = (" << next_state_num << "::state.states) }" << endl;
+                    stream << "        Parser" << t->token_name() << " _ -> Result.Ok {state | states = (" << next_state_num << "::state.states), stack=(token::state.stack) }" << endl;
                 }
                 state.print_case_close(stream);
             }
@@ -533,9 +538,9 @@ parserExtract extract errFunc stepNum state =
                 // process previously extracted rule
                 if (rule_no != 0) {
                     grammar_parser.add_rules(rule_no, rule_output, inputs);
-                    rule_no = line_no + 1;
                     inputs.clear();
                 }
+                rule_no = line_no + 1;
                 const auto return_token = all_tokens.find(line[0]);
                 if (return_token == all_tokens.end()) throw "Unknown Rule name in line: " + to_string(line_no + 1);
                 rule_output = return_token->second;
@@ -566,7 +571,7 @@ parserExtract extract errFunc stepNum state =
         stream << "parserTokenName: ParserToken -> String" << endl;
         stream << "parserTokenName token = case token of" << endl;
         stream << "    ParserTokenEnd -> \"$\"" << endl;
-        for (const token_t* t : token_order) stream << "    Parser" << t->token_name() << " -> \"" << t->token_raw() << "\"" << endl;
+        for (const token_t* t : token_order) stream << "    Parser" << t->token_name() << " _ -> \"" << t->token_raw() << "\"" << endl;
         stream << endl;
         // Add extraction of expected token
         for (const token_t* t : token_order) {
@@ -642,21 +647,24 @@ void print_lines(ostream& stream, const vector<string>& lines) {
     stream << "-- Grammar input" << endl;
     stream << "parserGrammer: String" << endl;
     stream << "parserGrammer =" << endl;
-    stream << "\"\"\"" << endl;
+    stream << "    \"\"\"" << endl;
     for (const string& l : lines) {
-        stream << l << endl;
+        stream << "    ";
+        for (auto c : l) {
+            if (c == '\\') stream << '\\';
+            stream << c;
+        }
+        stream << endl;
     }
-    stream << "\"\"\"" << endl << endl;
+    stream << "    \"\"\"" << endl << endl;
 }
 
 /* main */
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        cerr << "Filename must be specified" << endl;
-        return 1;
-    }
     try {
-        vector<string> lines = read_lines(string(argv[1]));
+        if (argc == 1) throw "Filename must be specified as an argument";
+        if (argc > 2) throw "Multiple arugments passed. This only accepts exactly one input: the filename of the grammar";
+        vector<string> lines = read_lines(argv[1]);
         parser_t parser = extract_from_lines(lines);
         print_lines(cout, lines);
         parser.print(cout);
