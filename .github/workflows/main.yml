@@ -37,13 +37,16 @@ jobs:
         git config --global user.name 'Github Actions'
         git config --global user.email 'not-a-real-email@fake.com'
         git merge -X ours -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" --allow-unrelated-histories origin/gh-pages
-    - name: Instal curl
-      run: apt-get update && apt-get install -y curl
-      # Add the elm binary following https://github.com/elm/compiler/blob/master/installers/linux/README.md
+    # Add the elm binary following https://github.com/elm/compiler/blob/master/installers/linux/README.md
+    - name: Make bin directory
+      run: mkdir -p elm-bin
+    - name: Download elm
+      uses: sozo-design/curl@v1.0.2
+      with:
+        args: -L -o elm-bin/elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz
     - name: Install elm
       run: |
-        mkdir elm-bin && cd elm-bin
-        curl -L -o elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz
+        cd elm-bin
         gunzip elm.gz
         chmod +x elm
     - name: Compile
@@ -54,4 +57,3 @@ jobs:
         git add -f www/js/elm.js
         git commit --amend --no-edit
         git push origin HEAD:gh-pages
-        
