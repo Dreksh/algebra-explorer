@@ -36,7 +36,7 @@ jobs:
       run: |
         git config --global user.name 'Github Actions'
         git config --global user.email 'not-a-real-email@fake.com'
-        git merge -X=ours -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" --allow-unrelated-histories origin/gh-pages
+        git merge -X ours -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" --allow-unrelated-histories origin/gh-pages
     - name: Instal curl
       run: apt-get update && apt-get install -y curl
       # Add the elm binary following https://github.com/elm/compiler/blob/master/installers/linux/README.md
