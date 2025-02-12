@@ -644,19 +644,11 @@ parser_t extract_from_lines(const vector<string>& lines) {
 }
 
 void print_lines(ostream& stream, const vector<string>& lines) {
-    stream << "-- Grammar input" << endl;
-    stream << "parserGrammer: String" << endl;
-    stream << "parserGrammer =" << endl;
-    stream << "    \"\"\"" << endl;
+    stream << "{-" << endl;
     for (const string& l : lines) {
-        stream << "    ";
-        for (auto c : l) {
-            if (c == '\\') stream << '\\';
-            stream << c;
-        }
-        stream << endl;
+        stream << l << endl;
     }
-    stream << "    \"\"\"" << endl << endl;
+    stream << "-}" << endl << endl;
 }
 
 /* main */

@@ -5,14 +5,20 @@ Expression  ->  Expression Space "-" Multiple
 Expression  ->  Multiple
 Multiple    ->  Multiple Space "\*" Negatable
 Multiple    ->  Multiple Space "/" Negatable
+Multiple    ->  Multiple Space Term
 Multiple    ->  Negatable
 Negatable   ->  Space "-" Negatable
 Negatable   ->  Space Term
-Term        ->  "\o[0-9\o]*" "(" Args ")"
-Term        ->  "\o[0-9\o]*"
+Term        ->  "\\" "\o[0-9\o]+"
+Term        ->  "\\" "\o"
+Term        ->  "\\" "\o[0-9\o]+" "(" Args ")"
+Term        ->  "\\" "\o" "(" Args ")"
+Term        ->  "\o"
+Term        -> "[0-9]+" "\." "[0-9]+"
+Term        -> "[0-9]+"
 Term        ->  "(" Expression Space ")"
-Space       ->  " +"
-Space       ->
 Args        ->  Args Space "," Expression
 Args        ->  Expression
 Args        ->
+Space       ->  " +"
+Space       ->

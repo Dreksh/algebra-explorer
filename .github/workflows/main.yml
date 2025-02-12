@@ -30,11 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - name: Fetch gh-pages branch
+      run: git fetch origin gh-pages
     - name: Merge to gh-pages branch
       run: |
         git config --global user.name 'Github Actions'
         git config --global user.email 'not-a-real-email@fake.com'
-        git merge -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" gh-pages
+        git merge -X=ours -m "Merge commit '$(git rev-parse HEAD)' into gh-pages" gh-pages
     - name: Instal curl
       run: apt-get update && apt-get install -y curl
       # Add the elm binary following https://github.com/elm/compiler/blob/master/installers/linux/README.md
