@@ -4,19 +4,29 @@ html, body {
     font: sans-serif;
 }
 body {
-    min-height: 100vh;
+    height: 100vh;
     width: 100vw;
+    background-color: lightgray;
 }
-h1 {
-    margin: 0;
-}
-.verticalCenter {
+body > div {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
 }
-.horizontalCenter {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+#inputPane {
+    display: flex;
+    flex-direction: row;
+}
+#textbar {
+
+}
+#rules {
+
+}
+button.help {
+    border-radius: 50%;
+    background-color: gray;
+    font: white;
 }

@@ -3,14 +3,26 @@
     <head>
         <meta charset="UTF-8">
         <link rel="stylesheet" href="css/style.css" />
+        <!-- Use MathJax following https://docs.mathjax.org/en/latest/web/start.html -->
+        <script>
+            MathJax = {
+              tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']]
+              }
+            };
+        </script>
+        <script type="text/javascript" id="MathJax-script" async
+            src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.0.0/es5/latest?tex-mml-chtml.js">
+        </script>
     </head>
 <body>
     <script src="js/elm.js"></script>
     <script>
         var app = Elm.Main.init({
-            flags: {"message": "Hello World!"}
+            flags: {}
         });
-        /* Add subscriptions onto the app below */
+        /* Add commands / subscriptions onto the app below */
+        app.ports.updateMathJax.subscribe(MathJax.typeset);
     </script>
 </body>
 </html>

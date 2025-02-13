@@ -1,24 +1,34 @@
-module Math exposing (Tree(..), notation, parse, toString)
+module Math exposing (Tree(..), Properties, notation, parse, toString)
 
-import Array exposing (Array)
 import Parser exposing ((|.), (|=))
 import Set
 
 type Tree state =
-    Add state (List (Tree state))                   -- Unordered args
-    | Multiply state (List (Tree state))            -- Unordered args
-    | Equal state (List (Tree state))               -- Unordered args
-    | Negative state (Tree state)                   -- Single arg
-    | Reciprocal state (Tree state)                 -- Single arg
-    | Function state String (Array (Tree state))    -- Name & Number of args, args are ordered
-    | Variable state String                         -- No args
-    | Real state Float                              -- No args
-    | Collapsed state (Tree state)                  -- No args, simply marks the state for how to preview
+    Add state (List (Tree state))
+    | Multiply state (List (Tree state))
+    | Equal state (List (Tree state))
+    | Negative state (Tree state)
+    | Reciprocal state (Tree state)
+    | Function state (Properties state)
+    | Variable state String
+    | Real state Float
+    | Collapsed state (Tree state)
+
+type alias Properties state =
+    {   name: String
+    ,   args: List (Tree state)
+    ,   parameters: List (Tree state)
+    -- Settable by rules, so that substitution / expansion works well
+    ,   unary: Bool                                 -- Only allows 1 arg
+    ,   associative: Bool                           -- Can combine nodes, allowing N-children
+    ,   commutative: Bool                           -- Args can be reordered
+    ,   linear: Bool                                -- If addition can be split out
+    }
 
 toString: Tree state -> String
 toString root = case root of
     Reciprocal _ _ -> "1" ++ toStringRecursive root
-    Collapsed _ child -> toStringRecursive child
+    Collapsed _ child -> toString child
     _ -> toStringRecursive root
 
 toStringRecursive: Tree state -> String
@@ -30,7 +40,7 @@ toStringRecursive root = case root of
                 Multiply _ _ -> result ++ "+" ++ toStringRecursive elem
                 Negative _ _ -> result ++ toStringRecursive elem
                 Reciprocal _ _ -> result ++ "+1" ++ toStringRecursive elem
-                Function _ _ _ -> result ++ "+" ++ toStringRecursive elem
+                Function _ _ -> result ++ "+" ++ toStringRecursive elem
                 Variable _ _ -> result ++ "+" ++ toStringRecursive elem
                 Real _ _ -> result ++ "+" ++ toStringRecursive elem
                 _ -> result ++ "+(" ++ (toStringRecursive elem) ++ ")"
@@ -43,19 +53,19 @@ toStringRecursive root = case root of
                 _ -> (Just elem, toStringRecursive elem)
             Just (Variable _ name) -> if String.length name == 1
                 then case elem of
-                    Function _ _ _ -> (Just elem, result ++ toStringRecursive elem)
+                    Function _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Variable _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
                     _ -> (Just elem, result ++ "(" ++ toStringRecursive elem ++ ")")
                 else case elem of
-                    Function _ _ _ -> (Just elem, result ++ toStringRecursive elem)
+                    Function _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Variable _ nextName -> if String.length nextName == 1
                         then (Just elem, result ++ "*" ++ toStringRecursive elem)
                         else (Just elem, result ++ toStringRecursive elem)
                     Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
                     _ -> (Just elem, result ++ "*(" ++ toStringRecursive elem ++ ")")
             _ -> case elem of
-                Function _ _ _ -> (Just elem, result ++ toStringRecursive elem)
+                Function _ _ -> (Just elem, result ++ toStringRecursive elem)
                 Variable _ _ -> (Just elem, result ++ toStringRecursive elem)
                 Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
                 _ -> (Just elem, result ++ "(" ++ toStringRecursive elem ++ ")")
@@ -69,22 +79,23 @@ toStringRecursive root = case root of
     Negative _ child -> case child of
         Reciprocal _ _ -> "-1" ++ toStringRecursive child
         Multiply _ _ -> "-" ++ toStringRecursive child
-        Function _ _ _ -> "-" ++ toStringRecursive child
+        Function _ _ -> "-" ++ toStringRecursive child
         Variable _ _ -> "-" ++ toStringRecursive child
         Real _ _ -> "-" ++ toStringRecursive child
         _ -> "-(" ++ toStringRecursive child ++ ")"
     Reciprocal _ child -> case child of
         Negative _ _ -> "/" ++ toStringRecursive child
-        Function _ _ _ -> "/" ++ toStringRecursive child
+        Function _ _ -> "/" ++ toStringRecursive child
         Variable _ _ -> "/" ++ toStringRecursive child
         Real _ _ -> "/" ++ toStringRecursive child
         _ -> "/(" ++ toStringRecursive child ++ ")"
-    Function _ name list -> list
-        |> Array.foldl (\elem result -> 
-            if result == "" then toStringRecursive elem
-            else result ++ "," ++ toStringRecursive elem
-        ) ""
-        |> (\inside -> "\\" ++ name ++ "(" ++ inside ++ ")")
+    Function _ properties ->
+        let
+            input = List.foldl (\elem result -> if result == "" then toStringRecursive elem else result ++ "," ++ toStringRecursive elem) "" properties.args
+            params = List.foldl (\elem result -> if result == "" then toStringRecursive elem else result ++ "," ++ toStringRecursive elem) "" properties.parameters
+            args = if String.isEmpty params then input else input ++ ";" ++ params
+        in
+            "\\" ++ properties.name ++ "(" ++ args ++ ")"
     Variable _ name -> if String.length name == 1 then name else "\\" ++ name
     Real _ val -> String.fromFloat val
     Collapsed _ child -> "(" ++ toStringRecursive child ++ ")"
@@ -164,21 +175,38 @@ term_ = Parser.oneOf
     [   Parser.succeed identity |. Parser.symbol "(" |= expression_ |. Parser.spaces |. Parser.symbol ")"
     ,   tokenNumber_
     ,   Parser.succeed (\a b -> (a, b)) |. Parser.symbol "\\" |= tokenLongName_ |= varOrFunc_
-        |> Parser.map (\(name, args) -> case args of
+        |> Parser.map (\(name, props) -> case props of
             Nothing -> Variable () name
-            Just list -> Function () name list
+            Just p -> Function () {p | name = name}
         )
     ,   Parser.succeed (Variable ()) |= tokenShortName_
     ]
 
-varOrFunc_: Parser.Parser (Maybe (Array (Tree ())))
+varOrFunc_: Parser.Parser (Maybe (Properties()))
 varOrFunc_ = Parser.oneOf
-    [   Parser.succeed (\elem -> Just elem) |. Parser.symbol "(" |= args_ |. Parser.symbol ")"
+    [   Parser.succeed Just |. Parser.symbol "(" |= args_ |. Parser.symbol ")"
     ,   Parser.succeed Nothing
     ]
 
-args_: Parser.Parser (Array (Tree ()))
-args_ = Parser.loop []
+args_: Parser.Parser (Properties ())
+args_ = Parser.succeed (\a b -> (a, b)) |= argsList_ |= Parser.oneOf
+    [   Parser.succeed identity |. Parser.symbol ";" |= argsList_
+    ,   Parser.succeed []
+    ]
+    |> Parser.map (\(args, parameters) ->
+        {   name = ""
+        ,   args = args
+        ,   parameters = parameters
+        -- Assume none of the following properties
+        ,   unary = False
+        ,   associative = False
+        ,   commutative = False
+        ,   linear = False
+        }
+    )
+
+argsList_: Parser.Parser (List (Tree ()))
+argsList_ = Parser.loop []
     (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= expression_ |. Parser.spaces
         else Parser.oneOf
         [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
@@ -189,7 +217,6 @@ args_ = Parser.loop []
             |> Parser.map (\_ -> Parser.Done (List.reverse list))
         ]
     )
-    |> Parser.map Array.fromList
 
 tokenNumber_: Parser.Parser (Tree ())
 tokenNumber_ = Parser.number
@@ -201,7 +228,7 @@ tokenNumber_ = Parser.number
     }
 
 validVarStart_: Char -> Bool
-validVarStart_ char = not (String.contains (String.fromChar char) "+-*/\\.()[],;%!:;<>0123456789^&")
+validVarStart_ char = not (String.contains (String.fromChar char) " ~+-*/\\.()[],;%!:;<>0123456789^&|$")
 
 tokenLongName_: Parser.Parser String
 tokenLongName_ = Parser.variable
