@@ -68,7 +68,7 @@ init _ url key =
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
-        , createMode = if List.isEmpty eqs then Nothing else Just Nothing
+        , createMode = if List.isEmpty eqs then Just Nothing else Nothing
         }
     , Cmd.map NotificationEvent nCmd
     )
@@ -97,11 +97,17 @@ update event model = case event of
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     EnterCreateMode -> ({model | createMode = Just Nothing }, Cmd.none)
     SubmitEquation id str -> case Math.parse str of
-        Result.Ok root -> case id of
-            Nothing -> 
-                ({model | createMode = Nothing, display = Display.addEquation root model.display}, Cmd.none)
-            Just i ->
-                ({model | createMode = Nothing, display = Display.updateEquation root model.display}, Cmd.none)
+        Result.Ok root -> (
+            case id of
+                Nothing -> 
+                    Display.addEquation root model.display
+                Just i ->
+                    Display.updateEquation i root model.display
+            )
+            |> (\nModel -> Display.listEquations nModel
+                |> (\list -> Query.setEquations list model.query )
+                |> (\query -> ({model | createMode = Nothing, display = nModel}, Query.pushUrl query) )
+            )
         Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
 

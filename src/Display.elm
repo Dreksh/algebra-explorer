@@ -44,8 +44,8 @@ addEquation tree model = let (_, equation) = processNode_ 0 0 Dict.empty tree in
     ,   equations = Dict.insert model.nextEquationNum equation model.equations
     }
 
-updateEquation: Math.Tree () -> Model -> Model
-updateEquation _ model = model -- TODO: Not gotten to this yet
+updateEquation: Int -> Math.Tree () -> Model -> Model
+updateEquation _ _ model = model -- TODO: Not gotten to this yet
 
 listEquations: Model -> Dict.Dict Int (Math.Tree State)
 listEquations model = Dict.map (\_ (tree, _) -> tree) model.equations

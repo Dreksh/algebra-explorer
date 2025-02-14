@@ -28,8 +28,10 @@ parseInit url key =
     }
 
 pushUrl: Model -> Cmd msg
-pushUrl model =
-    Nav.replaceUrl model.key "str"
+pushUrl model = let eqs = marshalEquations_ model.equations in
+    model.current
+    |> (\url -> Url.toString { url | query = Just eqs} )
+    |> Nav.replaceUrl model.key 
 
 unmarshalModel_: String -> Model -> Model
 unmarshalModel_ line model =
