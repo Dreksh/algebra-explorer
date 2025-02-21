@@ -5,7 +5,7 @@ import Browser.Dom as Dom
 import Browser.Events as BrowserEvent
 import Browser.Navigation as Nav
 import Json.Decode as Decode
-import Html exposing (Html, a, button, div, form, input)
+import Html exposing (Html, a, button, div, form, input, pre, text)
 import Html.Attributes exposing (id, name, type_)
 import Parser
 import Task
@@ -45,6 +45,7 @@ type alias Model =
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
+    ,   showHelp: Bool
     ,   showRules: Bool
     }
 
@@ -61,6 +62,7 @@ type Event =
     | EnterCreateMode
     | CancelCreateMode
     | SubmitEquation (Maybe Int) String
+    | ToggleHelp
     | ToggleRules
 
 -- Events
@@ -78,6 +80,7 @@ init _ url key =
         , notification = nModel
         , query = query
         , createMode = if List.isEmpty eqs then Just Nothing else Nothing
+        , showHelp = False
         , showRules = False
         }
     , Cmd.map NotificationEvent nCmd
@@ -108,9 +111,9 @@ update event model = case event of
     NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     NoOp -> (model, Cmd.none)
-    PressedKey str -> if str == "Escape" then ({model | createMode = Nothing}, Cmd.none) else (model, Cmd.none)
+    PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
     EnterCreateMode -> ({model | createMode = Just Nothing }, Dom.focus "textInput" |> Task.attempt (\_ -> NoOp))
-    CancelCreateMode -> ({model | createMode = Nothing}, Cmd.none)
+    CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
     SubmitEquation id str -> case Math.parse str of
         Result.Ok root -> (
             case id of
@@ -121,10 +124,11 @@ update event model = case event of
             )
             |> (\nModel -> Display.listEquations nModel
                 |> (\list -> Query.setEquations list model.query )
-                |> (\query -> ({model | createMode = Nothing, display = nModel}, Query.pushUrl query) )
+                |> (\query -> ({model | createMode = Nothing, display = nModel, showHelp = False}, Query.pushUrl query) )
             )
         Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
+    ToggleHelp -> ({model | showHelp = not model.showHelp}, Cmd.none)
     ToggleRules -> ({model | showRules = not model.showRules}, Cmd.none)
 
 view: Model -> Browser.Document Event
@@ -134,7 +138,9 @@ view model =
         [   Display.view DisplayEvent [] model.display
         ,   div [id "inputPane"]
             [   div [id "leftPane"]
-                [  inputDiv model  ]
+                (   [  inputDiv model  ]
+                ++ if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else []
+                )
             ,   div [id "rightPane"]
                 [   a [id "menu"] [Icon.menu [HtmlEvent.onClick ToggleRules]]
                 ,   div [id "sidebar"]
@@ -159,7 +165,7 @@ inputDiv model = case model.createMode of
         ,   HtmlEvent.onSubmitField "equation" (SubmitEquation eq)
         ,   HtmlEvent.onBlur CancelCreateMode
         ]
-        [   Icon.help [id "help"]
+        [   Icon.help [id "help", HtmlEvent.onClick ToggleHelp]
         ,   input
             [ type_ "text"
             , name "equation"
