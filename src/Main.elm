@@ -3,13 +3,14 @@ port module Main exposing (main)
 import Browser
 import Browser.Navigation as Nav
 import Json.Decode as Decode
-import Html exposing (Html, button, div, form, input, span, text)
+import Html exposing (Html, a, button, div, form, input, span, text)
 import Html.Attributes exposing (class, id, name, type_)
 import Parser
 import Url
 -- Our imports
 import Display
 import HtmlEvent
+import Icon
 import Math
 import Notification
 import Query
@@ -119,8 +120,14 @@ view model =
     , body =
         [   Display.view DisplayEvent [] model.display
         ,   div [id "inputPane"]
-            [   inputDiv model
-            ,   Rules.view RulesEvent [] model.rules
+            [   div [id "leftPane"]
+                [  inputDiv model  ]
+            ,   div [id "rightPane"]
+                [   a [id "menu"] [Icon.menu []]
+                ,   div [id "sidebar"]
+                    [   Rules.view RulesEvent [] model.rules
+                    ]
+                ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
         ,   Notification.view NotificationEvent [] model.notification
@@ -128,24 +135,16 @@ view model =
     }
 
 inputDiv: Model -> Html Event
-inputDiv model = div [id "textBar"]
-    (   case model.createMode of
-        Nothing ->
-            [   button
-                [HtmlEvent.onClick EnterCreateMode]
-                [text "+"]
-            ]
-        Just id ->
-            [   span
-                [class "help"]
-                [text "?"]
-            ,   form [HtmlEvent.onSubmitField "equation" (SubmitEquation id) ]
-                [   input
-                    [type_ "text", name "equation"]
-                    []
-                ,   input
-                    [type_ "submit"]
-                    [text "+"] -- TODO: Change the symbol here for when we're editing an existing equation
-                ]
-            ]
-    )
+inputDiv model = case model.createMode of
+    Nothing ->
+        form [ id "textbar", HtmlEvent.onSubmit EnterCreateMode ]
+        [   button [type_ "submit"] [Icon.add []]
+        ]
+    Just eq ->
+        form [ id "textbar", HtmlEvent.onSubmitField "equation" (SubmitEquation eq) ]
+        [   Icon.help [id "help"]
+        ,   input [type_ "text", name "equation"]
+            []
+        ,   button [type_ "submit"]
+            [Icon.tick []]
+        ]

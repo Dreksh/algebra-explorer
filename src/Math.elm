@@ -55,6 +55,7 @@ toStringRecursive root = case root of
                 then case elem of
                     Function _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Variable _ _ -> (Just elem, result ++ toStringRecursive elem)
+                    Reciprocal _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
                     _ -> (Just elem, result ++ "(" ++ toStringRecursive elem ++ ")")
                 else case elem of
@@ -62,12 +63,14 @@ toStringRecursive root = case root of
                     Variable _ nextName -> if String.length nextName == 1
                         then (Just elem, result ++ "*" ++ toStringRecursive elem)
                         else (Just elem, result ++ toStringRecursive elem)
+                    Reciprocal _ _ -> (Just elem, result ++ toStringRecursive elem)
                     Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
                     _ -> (Just elem, result ++ "*(" ++ toStringRecursive elem ++ ")")
             _ -> case elem of
                 Function _ _ -> (Just elem, result ++ toStringRecursive elem)
                 Variable _ _ -> (Just elem, result ++ toStringRecursive elem)
                 Real _ _ -> (Just elem, result ++ "*" ++ toStringRecursive elem)
+                Reciprocal _ _ -> (Just elem, result ++ toStringRecursive elem)
                 _ -> (Just elem, result ++ "(" ++ toStringRecursive elem ++ ")")
         ) (Nothing, "")
         |> Tuple.second
@@ -124,7 +127,10 @@ equation_ = Parser.loop []
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
     )
-    |> Parser.map (Equal ()) 
+    |> Parser.map (\children -> case children of
+        [x] -> x
+        _ -> Equal () children
+    )
 
 expression_: Parser.Parser (Tree ())
 expression_ = Parser.loop []
@@ -141,7 +147,10 @@ expression_ = Parser.loop []
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
-    ) |> Parser.map (Add ())
+    ) |> Parser.map (\children -> case children of
+        [x] -> x
+        _ -> Add () children
+    )
 
 multiple_: Parser.Parser (Tree ())
 multiple_ = Parser.loop []
@@ -162,7 +171,10 @@ multiple_ = Parser.loop []
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
     )
-    |> Parser.map (Multiply ())
+    |> Parser.map (\children -> case children of
+        [x] -> x
+        _ -> Multiply () children
+    )
 
 negatable_: Parser.Parser (Tree ())
 negatable_ = Parser.oneOf
@@ -228,7 +240,7 @@ tokenNumber_ = Parser.number
     }
 
 validVarStart_: Char -> Bool
-validVarStart_ char = not (String.contains (String.fromChar char) " ~+-*/\\.()[],;%!:;<>0123456789^&|$")
+validVarStart_ char = not (String.contains (String.fromChar char) " ~+-=*/\\.()[],;%!:;<>0123456789^&|$")
 
 tokenLongName_: Parser.Parser String
 tokenLongName_ = Parser.variable
