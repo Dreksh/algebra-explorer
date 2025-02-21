@@ -28,14 +28,14 @@ displayParsingError str list (model, cmd) =
         ,   notifications =
             (model.nextID, parsingErrorMessage_ str list) :: model.notifications
         }
-    ,   Cmd.batch [ cmd, delayedClear_ (model.nextID + 1) ]
+    ,   Cmd.batch [ cmd, delayedClear_ model.nextID ]
     )
 
 parsingErrorMessage_: String -> List Parser.DeadEnd -> String
 parsingErrorMessage_ str err = "Error parsing \"" ++ str ++ "\": " ++ Parser.deadEndsToString err
 
 delayedClear_: Int -> Cmd Event
-delayedClear_ id = Task.perform (\_ -> ClearEvent id) (sleep 15)
+delayedClear_ id = Task.perform (\_ -> ClearEvent id) (sleep 15000)
 
 update: Event -> Model -> (Model, Cmd Event)
 update e model = case e of 

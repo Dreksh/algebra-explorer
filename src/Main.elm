@@ -1,11 +1,14 @@
 port module Main exposing (main)
 
 import Browser
+import Browser.Dom as Dom
+import Browser.Events as BrowserEvent
 import Browser.Navigation as Nav
 import Json.Decode as Decode
-import Html exposing (Html, a, button, div, form, input, span, text)
-import Html.Attributes exposing (class, id, name, type_)
+import Html exposing (Html, a, button, div, form, input)
+import Html.Attributes exposing (id, name, type_)
 import Parser
+import Task
 import Url
 -- Our imports
 import Display
@@ -52,7 +55,10 @@ type Event =
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     -- Event from the UI
+    | NoOp -- For setting focus on textbox
+    | PressedKey String -- For catching "Escape"
     | EnterCreateMode
+    | CancelCreateMode
     | SubmitEquation (Maybe Int) String
 
 -- Events
@@ -82,7 +88,9 @@ parseEquations_ elem (result, errs) = case Math.parse elem of
     Result.Err err -> (result, errs ++ [(elem, err)])
 
 subscriptions: Model -> Sub Event
-subscriptions _ = Sub.none
+subscriptions model = case model.createMode of
+    Just _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+    Nothing -> Sub.none
 
 update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
@@ -96,7 +104,10 @@ update event model = case event of
         ({model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
     NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
-    EnterCreateMode -> ({model | createMode = Just Nothing }, Cmd.none)
+    NoOp -> (model, Cmd.none)
+    PressedKey str -> if str == "Escape" then ({model | createMode = Nothing}, Cmd.none) else (model, Cmd.none)
+    EnterCreateMode -> ({model | createMode = Just Nothing }, Dom.focus "textInput" |> Task.attempt (\_ -> NoOp))
+    CancelCreateMode -> ({model | createMode = Nothing}, Cmd.none)
     SubmitEquation id str -> case Math.parse str of
         Result.Ok root -> (
             case id of
@@ -130,7 +141,7 @@ view model =
                 ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
-        ,   Notification.view NotificationEvent [] model.notification
+        ,   Notification.view NotificationEvent [id "notification"] model.notification
         ]
     }
 
@@ -143,7 +154,12 @@ inputDiv model = case model.createMode of
     Just eq ->
         form [ id "textbar", HtmlEvent.onSubmitField "equation" (SubmitEquation eq) ]
         [   Icon.help [id "help"]
-        ,   input [type_ "text", name "equation"]
+        ,   input
+            [ type_ "text"
+            , name "equation"
+            , id "textInput"
+            , HtmlEvent.onBlur CancelCreateMode
+            ]
             []
         ,   button [type_ "submit"]
             [Icon.tick []]
