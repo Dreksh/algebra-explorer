@@ -5,6 +5,7 @@ import Math
 
 type alias Model =
     {   rules: List Rule
+    ,   createMode: Bool
     }
 
 type alias Rule = 
@@ -17,7 +18,7 @@ type Event =
     Click
 
 init: Model
-init = {rules = []}
+init = {rules = [], createMode = False}
 
 update: Event -> Model -> (Model, Cmd Event)
 update _ model = (model, Cmd.none)

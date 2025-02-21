@@ -27,8 +27,13 @@ body > div > * {
     flex-grow: 1;
     flex-shrink: 1;
     pointer-events: none;
+    position: relative;
+}
+#leftPane > * {
+    pointer-events: auto;
 }
 #rightPane {
+    display: flex;
     flex-grow: 0;
     flex-shrink: 1;
     flex-direction: row;
@@ -36,22 +41,25 @@ body > div > * {
 /* Text bar */
 #textbar {
     display: block;
-    pointer-events: auto;
     width: 100%;
     height: 3rem;
+    display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: start;
-    padding: 0;
-}
-#textbar > * {
-    align-self: center;
 }
 #textbar button {
     border: 0;
-    background: none;
+    height: 100%;
+    background-color: none;
     border-radius: none;
+    padding: 0;
+    margin: 0;
     box-shadow: none;
+}
+#textbar button > svg {
+    height: 100%;
+    color: blue;
 }
 #textbar > input[type="text"] {
     height: 100%;
@@ -64,7 +72,6 @@ body > div > * {
 svg#help {
     height: 2rem;
     width: 2rem;
-    text-align: center;
 }
 /* */
 #sidebar {
@@ -76,13 +83,11 @@ svg#help {
 #menu {
     align-self: center;
     background-color: gray;
-    height: 100%;
+    rotate: 90deg;
     display: block;
 }
 #menu > svg {
     color: black;
-    transform: rotate(90);
-    text-align: center;
     height: 1em;
 }
 #notification {

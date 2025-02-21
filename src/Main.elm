@@ -45,6 +45,7 @@ type alias Model =
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
+    ,   showRules: Bool
     }
 
 type Event =
@@ -60,6 +61,7 @@ type Event =
     | EnterCreateMode
     | CancelCreateMode
     | SubmitEquation (Maybe Int) String
+    | ToggleRules
 
 -- Events
 
@@ -76,6 +78,7 @@ init _ url key =
         , notification = nModel
         , query = query
         , createMode = if List.isEmpty eqs then Just Nothing else Nothing
+        , showRules = False
         }
     , Cmd.map NotificationEvent nCmd
     )
@@ -122,8 +125,7 @@ update event model = case event of
             )
         Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
-
-
+    ToggleRules -> ({model | showRules = not model.showRules}, Cmd.none)
 
 view: Model -> Browser.Document Event
 view model =
@@ -134,7 +136,7 @@ view model =
             [   div [id "leftPane"]
                 [  inputDiv model  ]
             ,   div [id "rightPane"]
-                [   a [id "menu"] [Icon.menu []]
+                [   a [id "menu"] [Icon.menu [HtmlEvent.onClick ToggleRules]]
                 ,   div [id "sidebar"]
                     [   Rules.view RulesEvent [] model.rules
                     ]
@@ -152,13 +154,16 @@ inputDiv model = case model.createMode of
         [   button [type_ "submit"] [Icon.add []]
         ]
     Just eq ->
-        form [ id "textbar", HtmlEvent.onSubmitField "equation" (SubmitEquation eq) ]
+        form
+        [   id "textbar"
+        ,   HtmlEvent.onSubmitField "equation" (SubmitEquation eq)
+        ,   HtmlEvent.onBlur CancelCreateMode
+        ]
         [   Icon.help [id "help"]
         ,   input
             [ type_ "text"
             , name "equation"
             , id "textInput"
-            , HtmlEvent.onBlur CancelCreateMode
             ]
             []
         ,   button [type_ "submit"]
