@@ -38,7 +38,7 @@ init =
     }
 
 addEquation: Math.Tree () -> Model -> Model
-addEquation tree model = let equation = processNode_ 0 (1, Dict.empty) tree |> Debug.log "eq" in
+addEquation tree model = let equation = processNode_ 0 (1, Dict.empty) tree in
     {   model
     |   nextEquationNum = model.nextEquationNum + 1
     ,   equations = Dict.insert model.nextEquationNum equation model.equations
