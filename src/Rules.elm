@@ -14,6 +14,10 @@ type alias Rule =
     ,   requirements: List (Math.Tree ())
     }
 
+type Category =
+    Function (Math.Properties ())
+    | Collection String -- Just a name
+
 type Event =
     Click
 

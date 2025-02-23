@@ -47,6 +47,10 @@ body > div > * {
     flex-direction: row;
     align-items: center;
     justify-content: start;
+    pointer-events: none;
+}
+#textbar > * {
+    pointer-events: auto;
 }
 #textbar button {
     border: 0;
@@ -102,4 +106,14 @@ svg#help {
     width: 80vw;
     margin: 0;
     background-color: lightcyan;
+}
+/* Nodes */
+.node {
+    padding: 0.2rem;
+    display: inline-block;
+    border: none
+}
+/* https://stackoverflow.com/a/73901232 to thank */
+.node:not(:has(.node:hover)):hover {
+    border: yellow thin solid;
 }

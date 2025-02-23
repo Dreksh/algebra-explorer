@@ -22,7 +22,7 @@
             flags: {}
         });
         /* Add commands / subscriptions onto the app below */
-        app.ports.updateMathJax.subscribe(MathJax.typeset);
+        app.ports.updateMathJax.subscribe(function (val) { if (MathJax.typeset) MathJax.typeset(); });
     </script>
 </body>
 </html>

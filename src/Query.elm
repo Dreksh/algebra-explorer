@@ -14,8 +14,15 @@ type alias Model =
 
 setEquations: Dict.Dict Int (Math.Tree msg) -> Model -> Model
 setEquations dict model = Dict.foldl
-    (\_ elem result -> Math.toString elem :: result) [] dict
+    (\_ elem result -> Math.symbolicate elem
+        |> (\symbols -> eqToString_ symbols:: result)
+    ) [] dict
     |> (\result -> {model | equations = result})
+
+eqToString_: Math.Symbol msg -> String
+eqToString_ root = case root of
+    Math.Text str -> str
+    Math.Node _ children -> List.map eqToString_ children |> String.join ""
 
 parseInit: Url.Url -> Nav.Key -> Model
 parseInit url key =

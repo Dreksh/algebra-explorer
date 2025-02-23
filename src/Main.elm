@@ -102,8 +102,12 @@ update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
     EventUrlRequest _ -> (model, Cmd.none)
     EventUrlChange _ -> (model, Cmd.none)
-    DisplayEvent e -> let (dModel, dCmd) = Display.update e model.display in
-        ({model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
+    DisplayEvent e ->
+        let
+            (dModel, dCmd) = Display.update e model.display
+            query = Query.setEquations (Display.listEquations dModel) model.query
+        in
+            ({model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, Query.pushUrl query, updateMathJax ()])
     RulesEvent e -> let (rModel, rCmd) = Rules.update e model.rules in
         ({model | rules = rModel}, Cmd.map RulesEvent rCmd)
     TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
@@ -122,9 +126,9 @@ update event model = case event of
                 Just i ->
                     Display.updateEquation i root model.display
             )
-            |> (\nModel -> Display.listEquations nModel
+            |> (\dModel -> Display.listEquations dModel
                 |> (\list -> Query.setEquations list model.query )
-                |> (\query -> ({model | createMode = Nothing, display = nModel, showHelp = False}, Query.pushUrl query) )
+                |> (\query -> ({model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
             )
         Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
