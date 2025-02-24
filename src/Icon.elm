@@ -21,9 +21,13 @@ help attr = svg (attr ++ [viewBox "0 0 24 24"])
 
 menu: List (Html.Attribute msg) -> Html.Html msg
 menu attr = svg (attr ++ [viewBox "0 0 150 50"])
-    [   path [d "M5 0H145A5 5 0 0 1 145 10H5A5 5 0 0 1 5 0Z", stroke "none", fill "currentColor"] []
-    ,   path [d "M5 20H145A5 5 0 0 1 145 30H5A5 5 0 0 1 5 20Z", stroke "none", fill "currentColor"] []
-    ,   path [d "M5 40H145A5 5 0 0 1 145 50H5A5 5 0 0 1 5 40Z", stroke "none", fill "currentColor"] []
+    [   defs []
+        [ Svg.mask [id "mask"]
+            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
+            ,   path [d "M50 15H100M50 35H100", stroke "#000", strokeWidth "10", fill "none"] []
+            ]
+        ]
+    ,   path [d "M0 50C25 50 25 0 50 0H100C125 0 125 50 150 50Z", stroke "none", fill "currentColor", mask "url(#mask)"] []
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg

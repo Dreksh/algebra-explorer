@@ -46,7 +46,8 @@ type alias Model =
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
     ,   showHelp: Bool
-    ,   showRules: Bool
+    ,   showMenu: Bool
+    ,   menuSelection: Maybe MenuSelection
     }
 
 type Event =
@@ -63,7 +64,12 @@ type Event =
     | CancelCreateMode
     | SubmitEquation (Maybe Int) String
     | ToggleHelp
-    | ToggleRules
+    | ToggleMenu
+    | SelectMenuItem MenuSelection
+
+type MenuSelection =
+    RuleSelected
+    | TutorialSelected
 
 -- Events
 
@@ -73,17 +79,19 @@ init _ url key =
         query = Query.parseInit url key
         (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations
         (nModel, nCmd) = List.foldl (\(a, b) result -> Notification.displayParsingError a b result) (Notification.init, Cmd.none) errs
+        newScreen = List.isEmpty eqs
     in
     (   { display = Display.init eqs
         , rules = Rules.init
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
-        , createMode = if List.isEmpty eqs then Just Nothing else Nothing
+        , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
-        , showRules = False
+        , showMenu = if newScreen then True else False
+        , menuSelection = if newScreen then Just TutorialSelected else Nothing
         }
-    , Cmd.batch [Cmd.map NotificationEvent nCmd, if List.isEmpty eqs then focusTextBar_ else Cmd.none]
+    , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ else Cmd.none]
     )
 
 type alias ParseError_ = List Parser.DeadEnd
@@ -132,8 +140,11 @@ update event model = case event of
             )
         Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
-    ToggleHelp -> ({model | showHelp = not model.showHelp}, Cmd.none)
-    ToggleRules -> ({model | showRules = not model.showRules}, Cmd.none)
+    ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_)
+    ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
+    SelectMenuItem select -> if Maybe.map ((==) select) model.menuSelection |> Maybe.withDefault False
+        then ({model | menuSelection = Nothing}, Cmd.none)
+        else ({model | menuSelection = Just select}, Cmd.none)
 
 focusTextBar_: Cmd Event
 focusTextBar_ = Dom.focus "textInput" |> Task.attempt (\_ -> NoOp)
@@ -148,10 +159,13 @@ view model =
                 (   [  inputDiv model  ]
                 ++ if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else []
                 )
-            ,   div [id "rightPane"]
-                [   a [id "menu"] [Icon.menu [HtmlEvent.onClick ToggleRules]]
-                ,   div [id "sidebar"]
-                    [   Rules.view RulesEvent [] model.rules
+            ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
+                [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
+                ,   div [id "menu"]
+                    [   menuTitle_ "Tutorials" TutorialSelected
+                    ,   Tutorial.menu TutorialEvent (menuDisplayAttr_ model.menuSelection TutorialSelected) model.tutorial
+                    ,   menuTitle_ "Rules" RuleSelected
+                    ,   Rules.view RulesEvent (menuDisplayAttr_ model.menuSelection RuleSelected) model.rules
                     ]
                 ]
             ]
@@ -169,16 +183,26 @@ inputDiv model =
             Just eq -> [HtmlEvent.onSubmitField "equation" (SubmitEquation eq)]
         )
     )
-    [   Icon.help [id "help", Icon.class "clickable", HtmlEvent.onClick ToggleHelp]
+    [   Icon.help [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
     ,   input
         [ type_ "text"
         , name "equation"
         , id "textInput"
         ]
         []
-    ,   Icon.cancel [Icon.class "clickable", HtmlEvent.onClick CancelCreateMode]
+    ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CancelCreateMode]
     ,   button [type_ "submit"] [   case model.createMode of
-            Nothing -> Icon.add [Icon.class "clickable"]
-            Just _ -> Icon.tick [Icon.class "clickable"]
+            Nothing -> Icon.add [Icon.class "clickable", Icon.class "submitable"]
+            Just _ -> Icon.tick [Icon.class "clickable", Icon.class "submitable"]
         ]
     ]
+
+menuDisplayAttr_: Maybe MenuSelection -> MenuSelection -> List (Html.Attribute msg)
+menuDisplayAttr_ selected title = if Maybe.map ((==) title) selected |> Maybe.withDefault False
+    then []
+    else [class "closed"]
+
+
+-- TODO: Have an arrow to indicate if it's expanded
+menuTitle_: String -> MenuSelection -> Html Event
+menuTitle_ name selection = div [HtmlEvent.onClick (SelectMenuItem selection), class "clickable"] [text name]

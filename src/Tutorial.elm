@@ -1,4 +1,4 @@
-module Tutorial exposing (Model, Event, init, update, view)
+module Tutorial exposing (Model, Event, init, menu, update, view)
 
 import Html exposing (Html, div)
 
@@ -18,3 +18,6 @@ update _ model = (model, Cmd.none)
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attrs model = div (attrs ++ []) []
+
+menu: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
+menu converter attrs model = div (attrs ++ []) []

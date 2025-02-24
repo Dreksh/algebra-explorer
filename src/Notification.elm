@@ -88,7 +88,7 @@ view converter attrs model = node "div" (attrs ++ [])
 
 notificationDiv_: (Event->msg) -> Int -> (Bool, String) -> (String, Html msg)
 notificationDiv_ converter id (deleting, message) =
-    ("notification-" ++ (String.fromInt id), div (notificationAttr_ converter id deleting) [Icon.cancel [Icon.class "clickable"], pre [] [text message]])
+    ("notification-" ++ (String.fromInt id), div (notificationAttr_ converter id deleting) [Icon.cancel [Icon.class "clickable", Icon.class "cancelable"], pre [] [text message]])
 
 notificationAttr_: (Event -> msg) -> Int -> Bool -> List (Html.Attribute msg)
 notificationAttr_ converter id deleting =
@@ -98,6 +98,5 @@ notificationAttr_ converter id deleting =
         ]
     else
         [   class "notificationMessage"
-        ,   class "displaying"
         ,   HtmlEvent.onClick (ClearEvent id |> converter)
         ]

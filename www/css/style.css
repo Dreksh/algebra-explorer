@@ -1,10 +1,11 @@
 :root {
     --color-background: lightgray;
-    --color-clickable: blue;
+    --color-cancel: red;
     --color-highlight: yellow;
     --color-hovered: lightblue;
     --color-menu: grey;
     --color-notification: pink;
+    --color-submit: green;
     --color-text: black;
     --color-textbox: white;
 }
@@ -44,12 +45,22 @@ body > div > * {
 }
 #rightPane {
     display: flex;
-    flex-grow: 0;
-    flex-shrink: 1;
+    position: relative;
+    background-color: var(--color-menu);
+    overflow: visible;
+    width: 25rem;
     flex-direction: row;
 }
+.submitable {
+    color: var(--color-submit);
+}
+.cancelable {
+    color: var(--color-cancel);
+}
+.helpable {
+    color: var(--color-menu);
+}
 .clickable {
-    color: var(--color-clickable);
     cursor: pointer;
 }
 .clickable:hover {
@@ -105,21 +116,33 @@ body > div > * {
     flex-shrink: 1;
 }
 /* Menu */
-#sidebar {
-    flex-grow: 1;
-    flex-shrink: 1;
-    overflow-x: hidden;
-    overflow-y: scroll;
+#menuToggle {
+    position: absolute;
+    color: var(--color-text);
+    height: 2em;
+    left: -4rem;
+    top: 50vh;
+    transform: translateY(-50%);
+}
+#menuToggle > svg {
+    height: 2rem;
+    transform: rotate(-90deg);
+}
+#rightPane {
+    max-width: 25rem;
+    transition: max-width 0.5s ease-out;
+}
+#rightPane.closed {
+    max-width: 0;
+    transition: max-width 0.5s ease-out;
 }
 #menu {
-    align-self: center;
-    background-color: var(--color-menu);
-    rotate: 90deg;
-    display: block;
-}
-#menu > svg {
-    color: var(--color-text);
-    height: 1em;
+    display: flex;
+    flex-direction: column;
+    justify-content: start;
+    align-items: start;
+    overflow-x: hidden;
+    overflow-y: scroll;
 }
 /* Notifications */
 #notification {
