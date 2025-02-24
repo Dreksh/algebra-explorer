@@ -104,7 +104,7 @@ body > div > * {
     flex-grow: 1;
     flex-shrink: 1;
 }
-/* */
+/* Menu */
 #sidebar {
     flex-grow: 1;
     flex-shrink: 1;
@@ -121,6 +121,7 @@ body > div > * {
     color: var(--color-text);
     height: 1em;
 }
+/* Notifications */
 #notification {
     height: 100%;
     display: flex;
@@ -128,11 +129,39 @@ body > div > * {
     justify-content: end;
     align-items: center;
 }
+@keyframes notificationAppear {
+    from { max-height: 0; }
+    to { max-height: 2rem; }
+}
+@keyframes notificationDisappear {
+    from { max-height: 2rem; }
+    to { max-height: 0; }
+}
 .notificationMessage {
     display: block;
     width: 80vw;
-    margin: 0;
+    height: 2rem;
+    overflow-y: scroll;
+    text-align: center;
+    margin: 0.2rem 0;
+    padding: 0 0.2rem;
+    border-radius: 0.5rem;
     background-color: var(--color-notification);
+    animation: notificationAppear 0.5s ease forwards;
+}
+.notificationMessage.deleting {
+    animation: notificationDisappear 0.5s ease forwards;
+}
+.notificationMessage > svg {
+    float: right;
+    margin-top: 0.5rem;
+    height: 1rem;
+}
+.notificationMessage >p {
+    float: left;
+    margin: 0.2rem 0;
+    padding: 0;
+    vertical-align: center;
 }
 /* Display */
 #display {
