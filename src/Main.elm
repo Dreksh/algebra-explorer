@@ -83,7 +83,7 @@ init _ url key =
         , showHelp = False
         , showRules = False
         }
-    , Cmd.map NotificationEvent nCmd
+    , Cmd.batch [Cmd.map NotificationEvent nCmd, if List.isEmpty eqs then focusTextBar_ else Cmd.none]
     )
 
 type alias ParseError_ = List Parser.DeadEnd
@@ -116,7 +116,7 @@ update event model = case event of
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     NoOp -> (model, Cmd.none)
     PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
-    EnterCreateMode -> ({model | createMode = Just Nothing }, Dom.focus "textInput" |> Task.attempt (\_ -> NoOp))
+    EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_)
     CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
     SubmitEquation id str -> case Math.parse str of
         Result.Ok root -> (
@@ -134,6 +134,9 @@ update event model = case event of
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     ToggleHelp -> ({model | showHelp = not model.showHelp}, Cmd.none)
     ToggleRules -> ({model | showRules = not model.showRules}, Cmd.none)
+
+focusTextBar_: Cmd Event
+focusTextBar_ = Dom.focus "textInput" |> Task.attempt (\_ -> NoOp)
 
 view: Model -> Browser.Document Event
 view model =

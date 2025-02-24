@@ -4,7 +4,7 @@ module Notification exposing (
     )
 
 import Dict
-import Html exposing (Html, div, p, text)
+import Html exposing (Html, div, pre, text)
 import Html.Attributes exposing (class)
 import Html.Keyed exposing (node)
 import Process exposing (sleep)
@@ -36,7 +36,30 @@ displayParsingError str list (model, cmd) =
     )
 
 parsingErrorMessage_: String -> List Parser.DeadEnd -> String
-parsingErrorMessage_ str err = "Error parsing \"" ++ str ++ "\": " ++ Parser.deadEndsToString err
+parsingErrorMessage_ str err = "Error parsing \"" ++ str ++ "\":\n" ++ deadEndToString_ err
+
+deadEndToString_: List Parser.DeadEnd -> String
+deadEndToString_ = List.map
+    (\deadEnd ->
+        (   case deadEnd.problem of
+                Parser.Expecting str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingInt -> "Expecting a whole number"
+                Parser.ExpectingHex -> "Expecting a hex number"
+                Parser.ExpectingOctal -> "Expecting an octal number"
+                Parser.ExpectingBinary -> "Expecting a binary number"
+                Parser.ExpectingFloat -> "Expecting a decimal number"
+                Parser.ExpectingNumber -> "Expecting a number"
+                Parser.ExpectingVariable -> "Expecting a variable"
+                Parser.ExpectingSymbol str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingKeyword str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingEnd -> "Expecting no more characters"
+                Parser.UnexpectedChar -> "Unknown symbol"
+                Parser.Problem str -> str
+                Parser.BadRepeat -> "Bad repeat"
+        )
+        |> (\str -> str ++ ", at position: " ++ String.fromInt deadEnd.col)
+    )
+    >> String.join "\n"
 
 delayedClear_: Int -> Cmd Event
 delayedClear_ id = Task.perform (\_ -> ClearEvent id) (sleep 15000)
@@ -65,7 +88,7 @@ view converter attrs model = node "div" (attrs ++ [])
 
 notificationDiv_: (Event->msg) -> Int -> (Bool, String) -> (String, Html msg)
 notificationDiv_ converter id (deleting, message) =
-    ("notification-" ++ (String.fromInt id), div (notificationAttr_ converter id deleting) [Icon.cancel [Icon.class "clickable"], p [] [text message]])
+    ("notification-" ++ (String.fromInt id), div (notificationAttr_ converter id deleting) [Icon.cancel [Icon.class "clickable"], pre [] [text message]])
 
 notificationAttr_: (Event -> msg) -> Int -> Bool -> List (Html.Attribute msg)
 notificationAttr_ converter id deleting =

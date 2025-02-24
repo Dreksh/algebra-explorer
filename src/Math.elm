@@ -270,12 +270,17 @@ argsList_ = Parser.loop []
     )
 
 tokenNumber_: Parser.Parser (Tree ())
-tokenNumber_ = Parser.number
-    {   int = Just ( toFloat >> Real ())
-    ,   hex = Nothing
-    ,   octal = Nothing
-    ,   binary = Nothing
-    ,   float = Just (Real ())
+tokenNumber_ = Parser.succeed (\a b -> a ++ b) |= tokenDigit_ |= Parser.oneOf [Parser.succeed (\b -> "." ++ b) |. Parser.symbol "." |= tokenDigit_ , Parser.succeed ""]
+    |> Parser.andThen (\str -> case String.toFloat str of
+        Nothing -> Parser.problem (str ++ " is not a valid number")
+        Just f -> Parser.succeed (Real () f)
+    )
+
+tokenDigit_: Parser.Parser String
+tokenDigit_ = Parser.variable
+    {   start = Char.isDigit
+    ,   inner = Char.isDigit
+    ,   reserved = Set.empty
     }
 
 validVarStart_: Char -> Bool

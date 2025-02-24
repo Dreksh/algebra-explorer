@@ -131,16 +131,15 @@ body > div > * {
 }
 @keyframes notificationAppear {
     from { max-height: 0; }
-    to { max-height: 2rem; }
+    to { max-height: 8rem; }
 }
 @keyframes notificationDisappear {
-    from { max-height: 2rem; }
+    from { max-height: 8rem; }
     to { max-height: 0; }
 }
 .notificationMessage {
     display: block;
     width: 80vw;
-    height: 2rem;
     overflow-y: scroll;
     text-align: center;
     margin: 0.2rem 0;
@@ -157,7 +156,7 @@ body > div > * {
     margin-top: 0.5rem;
     height: 1rem;
 }
-.notificationMessage >p {
+.notificationMessage >pre {
     float: left;
     margin: 0.2rem 0;
     padding: 0;
@@ -176,5 +175,5 @@ body > div > * {
 }
 /* https://stackoverflow.com/a/73901232 to thank */
 .node:not(:has(.node:hover)):hover {
-    border: var(--color-yellow) thin solid;
+    border: var(--color-highlight) thin solid;
 }
