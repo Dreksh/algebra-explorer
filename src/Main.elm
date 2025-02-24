@@ -6,7 +6,7 @@ import Browser.Events as BrowserEvent
 import Browser.Navigation as Nav
 import Json.Decode as Decode
 import Html exposing (Html, a, button, div, form, input, pre, text)
-import Html.Attributes exposing (id, name, type_)
+import Html.Attributes exposing (class, id, name, type_)
 import Parser
 import Task
 import Url
@@ -139,7 +139,7 @@ view: Model -> Browser.Document Event
 view model =
     { title = "Maths"
     , body =
-        [   Display.view DisplayEvent [] model.display
+        [   Display.view DisplayEvent [id "display"] model.display
         ,   div [id "inputPane"]
             [   div [id "leftPane"]
                 (   [  inputDiv model  ]
@@ -158,24 +158,24 @@ view model =
     }
 
 inputDiv: Model -> Html Event
-inputDiv model = case model.createMode of
-    Nothing ->
-        form [ id "textbar", HtmlEvent.onSubmit EnterCreateMode ]
-        [   button [type_ "submit"] [Icon.add []]
+inputDiv model =
+    form
+    (   id "textbar"
+    ::  (   case model.createMode of
+            Nothing -> [class "closed", HtmlEvent.onSubmit EnterCreateMode]
+            Just eq -> [HtmlEvent.onSubmitField "equation" (SubmitEquation eq)]
+        )
+    )
+    [   Icon.help [id "help", Icon.class "clickable", HtmlEvent.onClick ToggleHelp]
+    ,   input
+        [ type_ "text"
+        , name "equation"
+        , id "textInput"
         ]
-    Just eq ->
-        form
-        [   id "textbar"
-        ,   HtmlEvent.onSubmitField "equation" (SubmitEquation eq)
-        ,   HtmlEvent.onBlur CancelCreateMode
+        []
+    ,   Icon.cancel [Icon.class "clickable", HtmlEvent.onClick CancelCreateMode]
+    ,   button [type_ "submit"] [   case model.createMode of
+            Nothing -> Icon.add [Icon.class "clickable"]
+            Just _ -> Icon.tick [Icon.class "clickable"]
         ]
-        [   Icon.help [id "help", HtmlEvent.onClick ToggleHelp]
-        ,   input
-            [ type_ "text"
-            , name "equation"
-            , id "textInput"
-            ]
-            []
-        ,   button [type_ "submit"]
-            [Icon.tick []]
-        ]
+    ]

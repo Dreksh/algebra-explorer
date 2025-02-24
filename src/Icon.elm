@@ -11,12 +11,12 @@ class = Svg.Attributes.class
 help: List (Html.Attribute msg) -> Html.Html msg
 help attr = svg (attr ++ [viewBox "0 0 24 24"])
     [   defs []
-        [ Svg.mask [id "text"]
+        [ Svg.mask [id "mask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
             ,   text_ [x "8", y "17", fill "#000"] [text "?"]
             ]
         ]
-    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#text)"] []
+    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#mask)"] []
     ]
 
 menu: List (Html.Attribute msg) -> Html.Html msg
@@ -28,12 +28,33 @@ menu attr = svg (attr ++ [viewBox "0 0 150 50"])
 
 tick: List (Html.Attribute msg) -> Html.Html msg
 tick attr = svg (attr ++ [viewBox "0 0 24 24"])
-    [   rect [width "100%", height "100%", fill "currentColor", x "0", y "0"] []
-    ,   path [d "M5 15L11 20L20 5", fill "none", stroke "#fff", strokeWidth "2"] []
+    [   defs []
+        [ Svg.mask [id "mask"]
+            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
+            ,   path [d "M6 15L11 19L17 6", fill "none", stroke "#000", strokeWidth "2"] []
+            ]
+        ]
+    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#mask)"] []
     ]
 
 add: List (Html.Attribute msg) -> Html.Html msg
 add attr = svg (attr ++ [viewBox "0 0 24 24"])
-    [   rect [width "100%", height "100%", fill "currentColor", x "0", y "0"] []
-    ,   path [d "M12 4V20M4 12H20", fill "none", stroke "#fff", strokeWidth "2"] []
+    [   defs []
+        [ Svg.mask [id "mask"]
+            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
+            ,   path [d "M12 6V18M6 12H18", fill "none", stroke "#000", strokeWidth "2"] []
+            ]
+        ]
+    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#mask)"] []
+    ]
+
+cancel: List (Html.Attribute msg) -> Html.Html msg
+cancel attr = svg (attr ++ [viewBox "0 0 24 24"])
+    [   defs []
+        [ Svg.mask [id "mask"]
+            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
+            ,   path [d "M6 6L18 18M6 18L18 6", fill "none", stroke "#000", strokeWidth "2"] []
+            ]
+        ]
+    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#mask)"] []
     ]

@@ -1,3 +1,13 @@
+:root {
+    --color-background: lightgray;
+    --color-clickable: blue;
+    --color-highlight: yellow;
+    --color-hovered: lightblue;
+    --color-menu: grey;
+    --color-notification: pink;
+    --color-text: black;
+    --color-textbox: white;
+}
 html, body {
     margin: 0;
     padding: 0;
@@ -6,7 +16,7 @@ html, body {
 body {
     height: 100vh;
     width: 100vw;
-    background-color: lightgray;
+    background-color: var(--color-background);
 }
 body > div {
     position: absolute;
@@ -38,44 +48,61 @@ body > div > * {
     flex-shrink: 1;
     flex-direction: row;
 }
+.clickable {
+    color: var(--color-clickable);
+    cursor: pointer;
+}
+.clickable:hover {
+    color: var(--color-hovered);
+}
 /* Text bar */
 #textbar {
     display: block;
+    background-color: var(--color-textbox);
     width: 100%;
     height: 3rem;
+    max-width: 100vw;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: start;
     pointer-events: none;
+    border-radius: 1.5rem;
+    transition: max-width 0.5s ease-out;
+}
+#textbar.closed {
+    max-width: 3rem;
+    transition: max-width 0.5s ease-out;
 }
 #textbar > * {
     pointer-events: auto;
 }
 #textbar button {
     border: 0;
-    height: 100%;
-    background-color: none;
-    border-radius: none;
     padding: 0;
     margin: 0;
+    background: none;
     box-shadow: none;
 }
-#textbar button > svg {
-    height: 100%;
-    color: blue;
+#textbar svg {
+    height: 2rem;
+    margin: 0 0.5rem;
+}
+#textbar.closed > svg {
+    margin: 0;
 }
 #textbar > input[type="text"] {
     height: 100%;
-    flex-grow: 1;
-    flex-shrink: 1;
     padding: 0;
     margin: 0;
+    min-width: 0;
+    font-size: 2rem;
     box-sizing: border-box;
-}
-svg#help {
-    height: 2rem;
-    width: 2rem;
+    background: none;
+    border: none;
+    box-shadow: none;
+    flex-grow: 1;
+    flex-shrink: 1;
 }
 /* */
 #sidebar {
@@ -86,12 +113,12 @@ svg#help {
 }
 #menu {
     align-self: center;
-    background-color: gray;
+    background-color: var(--color-menu);
     rotate: 90deg;
     display: block;
 }
 #menu > svg {
-    color: black;
+    color: var(--color-text);
     height: 1em;
 }
 #notification {
@@ -105,9 +132,14 @@ svg#help {
     display: block;
     width: 80vw;
     margin: 0;
-    background-color: lightcyan;
+    background-color: var(--color-notification);
 }
-/* Nodes */
+/* Display */
+#display {
+    display:flex;
+    flex-direction: column;
+    align-items: center;
+}
 .node {
     padding: 0.2rem;
     display: inline-block;
@@ -115,5 +147,5 @@ svg#help {
 }
 /* https://stackoverflow.com/a/73901232 to thank */
 .node:not(:has(.node:hover)):hover {
-    border: yellow thin solid;
+    border: var(--color-yellow) thin solid;
 }
