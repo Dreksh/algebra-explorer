@@ -1,4 +1,4 @@
-module Math exposing (Children, Tree(..), Processor, Symbol(..), getChildren, notation, parse, process, processState, symbolicate)
+module Math exposing (Children, Tree(..), Processor, Symbol(..), getChildren, getState, notation, parse, process, symbolicate)
 
 import Parser exposing ((|.), (|=))
 import Set
@@ -17,40 +17,28 @@ type alias Children state =
 -- First argument to all potentially recursive processing is
 -- the recursive call to process, using the same Processor properties
 type alias Processor prevState state global =
-    {   function: (global -> Tree prevState -> (global, Maybe (Tree state))) -> global -> Children prevState  -> (global, Maybe (Children state))
-    ,   var: global -> String -> (global, Maybe String)
-    ,   real: global -> Float -> (global, Maybe Float)
-    ,   finalize: global -> global -> prevState -> (global, state) -- Original + Updated global states
+    {   function: (global -> Tree prevState -> (global, Maybe (Tree state))) -> global -> (prevState, Children prevState) -> (global, Maybe (Tree state))
+    ,   var: global -> (prevState, String) -> (global, Maybe (Tree state))
+    ,   real: global -> (prevState, Float) -> (global, Maybe (Tree state))
     }
 
 process: Processor prevState state global -> global -> Tree prevState -> (global, Maybe (Tree state))
 process processor g root = case root of
-    Function s children -> processor.function (process processor) g children
-        |> processStep_ Function processor.finalize g s
-    Variable s name -> processor.var g name
-        |> processStep_ Variable processor.finalize g s
-    Real s val -> processor.real g val
-        |> processStep_ Real processor.finalize g s
+    Function s children -> processor.function (process processor) g (s, children)
+    Variable s name -> processor.var g (s, name)
+    Real s val -> processor.real g (s, val)
 
-processStep_: (state -> result -> Tree state) -> (global -> global -> prevState -> (global, state)) -> global -> prevState -> (global, Maybe result) -> (global, Maybe (Tree state))
-processStep_ nodeType finalize oldG s (newG, res) = case res of
-    Nothing -> (newG, Nothing)
-    Just newRes -> finalize oldG newG s
-        |> (\(newerG, newState) -> (newerG, Just (nodeType newState newRes)))
-
-processState: (state -> result) -> Tree state -> result
-processState p node =
-    (   case node of
-            Function s _ -> s
-            Variable s _ -> s
-            Real s _ -> s
-    ) |> p
+getState: Tree state -> state
+getState node = case node of
+    Function s _ -> s
+    Variable s _ -> s
+    Real s _ -> s
 
 getChildren: Tree state -> List (Tree state)
-getChildren root = case root of
-    Function _ children -> children.args ++ children.parameters
-    Variable _ _ -> []
-    Real _ _ -> []
+getChildren node = case node of
+    Function _ s -> s.args ++ s.parameters
+    _ -> []
+
 
 type Symbol state =
     Text String
