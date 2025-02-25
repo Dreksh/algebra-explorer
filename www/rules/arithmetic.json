@@ -1,0 +1,90 @@
+{
+    "name": "Arithmetic",
+    "functions":{
+        "=": {"args": 2, "associative": true, "commutative": true, "linear": false},
+        "+": {"args": 2, "associative": true, "commutative": true, "linear": false},
+        "*": {"args": 2, "associative": true, "commutative": true, "linear": true},
+        "-": {"args": 1, "associative": false, "commutative": false, "linear": true},
+        "/": {"args": 1, "associative": false, "commutative": false, "linear": false}
+    },
+    "equations": [
+        {
+            "title": "Associative Property of Addition",
+            "description": "Addition can be performed in a different order",
+            "lhs": "(a+b)+c",
+            "rhs": "a+(b+c)"
+        },
+        {
+            "title": "Commutative Property of Addition",
+            "description": "Numbers being added can be swapped",
+            "lhs": "a+b",
+            "rhs": "b+a"
+        },
+        {
+            "title": "Inverse of Addition",
+            "description": "Definition of negative numbers",
+            "lhs": "a-a",
+            "rhs": "0"
+        },
+        {
+            "title": "Double Inverse of Addition",
+            "description": "Definition of negating a number",
+            "lhs": "--a",
+            "rhs": "a"
+        },
+        {
+            "title": "Associative Property of Multiplication",
+            "description": "Multiplication can be performed in a different order",
+            "lhs": "(a*b)*c",
+            "rhs": "a*(b*c)"
+        },
+        {
+            "title": "Commutative Property of Multiplication",
+            "description": "Numbers being multiplied can be swapped",
+            "lhs": "a*b",
+            "rhs": "b*a"
+        },
+        {
+            "title": "Inverse of Multiplication",
+            "description": "Definition of reciprocals",
+            "lhs": "a/a",
+            "rhs": "1"
+        },
+        {
+            "title": "Double Inverse of Multiplication",
+            "description": "Definition of reciprocating a number",
+            "lhs": "1/(1/a)",
+            "rhs": "a"
+        },
+        {
+            "title": "Factorizing or Expanding Brackets",
+            "description": "Multiplying m to a sum is equivalent to Adding the product of each term with m",
+            "reversible": true,
+            "lhs": "m(a+b)",
+            "rhs": "ma+mb",
+            "parameters": {
+                "m": "The common factor to extract or to insert"
+            }
+        },
+        {
+            "title": "Operating on both sides of the equation",
+            "description": "Applying the same steps to both sides",
+            "reversible": false,
+            "lhs": "x=y",
+            "rhs": "\\f(x)=\\f(y)",
+            "parameters": {
+                "\\f(x)": "The function to apply on both sides"
+            }
+        },
+        {
+            "title": "Substitution",
+            "description": "Replace a variable with an equal identity",
+            "reversible": true,
+            "lhs": "\\f(x)",
+            "rhs": "\\f(y)",
+            "parameters": {
+                "x=y": "All occurances of x will be replaced by y"
+            }
+        }
+    ]
+}

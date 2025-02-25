@@ -79,7 +79,7 @@ init _ url key =
     let
         query = Query.parseInit url key
         (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations
-        (nModel, nCmd) = List.foldl (\(a, b) result -> Notification.displayParsingError a b result) (Notification.init, Cmd.none) errs
+        (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
     (   { display = Display.init eqs
@@ -97,10 +97,10 @@ init _ url key =
 
 type alias ParseError_ = List Parser.DeadEnd
 
-parseEquations_: String -> (List (Math.Tree ()), List (String, ParseError_)) -> (List (Math.Tree ()), List (String, ParseError_))
+parseEquations_: String -> (List (Math.Tree ()), List String) -> (List (Math.Tree ()), List String)
 parseEquations_ elem (result, errs) = case Math.parse elem of
     Result.Ok root -> (result ++ [root], errs)
-    Result.Err err -> (result, errs ++ [(elem, err)])
+    Result.Err err -> (result, errs ++ [err])
 
 subscriptions: Model -> Sub Event
 subscriptions model = case model.createMode of
@@ -139,7 +139,7 @@ update event model = case event of
                 |> (\list -> Query.setEquations list model.query )
                 |> (\query -> ({model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
             )
-        Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
+        Result.Err err -> let (nModel, nCmd) = Notification.displayError err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_)
     ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
