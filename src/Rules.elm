@@ -1,4 +1,4 @@
-module Rules exposing (Model, Rule, Event, init, update, view)
+module Rules exposing (Model, Rule, Event, init, update, view, function)
 
 import Html exposing (Html, div)
 import Math
@@ -15,8 +15,7 @@ type alias Rule =
     }
 
 type Category =
-    Function (Math.Properties ())
-    | Collection String -- Just a name
+    Collection String -- Just a name
 
 type Event =
     Click
@@ -29,3 +28,6 @@ update _ model = (model, Cmd.none)
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attrs model = div (attrs ++ []) []
+
+function: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
+function converter attrs model = div (attrs ++ []) []

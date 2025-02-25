@@ -70,6 +70,7 @@ type Event =
 type MenuSelection =
     RuleSelected
     | TutorialSelected
+    | FunctionSelected
 
 -- Events
 
@@ -164,6 +165,8 @@ view model =
                 ,   div [id "menu"]
                     [   menuTitle_ "Tutorials" TutorialSelected
                     ,   Tutorial.menu TutorialEvent (menuDisplayAttr_ model.menuSelection TutorialSelected) model.tutorial
+                    ,   menuTitle_ "Functions" FunctionSelected
+                    ,   Rules.function RulesEvent (menuDisplayAttr_ model.menuSelection FunctionSelected) model.rules
                     ,   menuTitle_ "Rules" RuleSelected
                     ,   Rules.view RulesEvent (menuDisplayAttr_ model.menuSelection RuleSelected) model.rules
                     ]
