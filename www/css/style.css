@@ -129,7 +129,7 @@ body > div > * {
     transform: rotate(-90deg);
 }
 #rightPane {
-    max-width: 25rem;
+    max-width: min(15rem, 30vw);
     transition: max-width 0.5s ease-out;
 }
 #rightPane.closed {
@@ -138,11 +138,44 @@ body > div > * {
 }
 #menu {
     display: flex;
+    width: min(15rem, 30vw);
     flex-direction: column;
     justify-content: start;
     align-items: start;
     overflow-x: hidden;
     overflow-y: scroll;
+}
+.menuTitle {
+    display: flex;
+    height: 2rem;
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+}
+.menuTitle > h1 {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+.menuTitle.shown > svg {
+    height: 2rem;
+}
+.menuTitle.shown > svg.shown {
+    rotate: 90deg;
+}
+.subMenu {
+    margin-left: 1rem;
+    flex-direction: column;
+    align-items: start;
+    max-height: 0;
+    overflow-y: scroll;
+    transition: max-height 0.5s ease-out;
+}
+.subMenu.shown {
+    max-height: 100vh;
+    transition: max-height 0.5s ease-out;
+}
+.subMenu * {
+    display: block;
 }
 /* Notifications */
 #notification {

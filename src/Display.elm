@@ -59,7 +59,7 @@ listEquations: Model -> Dict.Dict Int (Math.Tree State)
 listEquations model = Dict.map (\_ -> Tuple.second) model.equations
 
 deleteNode_: Int -> Equation_ -> Maybe Equation_
-deleteNode_ id (dict, root) = processSearch_ id deleteSubTree_ (dict, root) |> Tuple.first
+deleteNode_ id eq = processSearch_ id deleteSubTree_ eq |> Tuple.first
 
 deleteSubTree_: Equation_ -> (ParentMap_, Maybe (Math.Tree State), ())
 deleteSubTree_ ((maxNum, map), node) = let id = Math.getState node |> (\s -> s.id) in

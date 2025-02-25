@@ -39,7 +39,6 @@ getChildren node = case node of
     FunctionNode _ s -> s.args ++ s.parameters
     _ -> []
 
-
 type Symbol state =
     Text String
     | Node state (List (Symbol state))
@@ -115,8 +114,8 @@ ab - a variable "a" multiplied by a variable "b"
 """
 
 -- Parser implementation
-parse: String -> Result (List Parser.DeadEnd) (Tree ())
-parse = Parser.run equation_
+parse: String -> Result String (Tree ())
+parse input = Parser.run equation_ input |> Result.mapError (createErrorMessage_ input)
 
 equation_: Parser.Parser (Tree ())
 equation_ = Parser.loop []
@@ -243,7 +242,7 @@ tokenDigit_ = Parser.variable
     }
 
 validVarStart_: Char -> Bool
-validVarStart_ char = not (String.contains (String.fromChar char) " ~+-=*/\\.()[],;%!:;<>0123456789^&|$")
+validVarStart_ char = not (String.contains (String.fromChar char) " ~+-=*/\\.()[],;%!:;<>0123456789^&|$↔→")
 
 tokenLongName_: Parser.Parser String
 tokenLongName_ = Parser.variable
@@ -258,4 +257,29 @@ tokenShortName_ = Parser.variable
     ,   inner = (\_ -> False)
     ,   reserved = Set.empty
     }
-    
+
+createErrorMessage_: String -> List Parser.DeadEnd -> String
+createErrorMessage_ str err = "Error parsing \"" ++ str ++ "\":\n" ++ deadEndToString_ err
+
+deadEndToString_: List Parser.DeadEnd -> String
+deadEndToString_ = List.map
+    (\deadEnd ->
+        (   case deadEnd.problem of
+                Parser.Expecting str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingInt -> "Expecting a whole number"
+                Parser.ExpectingHex -> "Expecting a hex number"
+                Parser.ExpectingOctal -> "Expecting an octal number"
+                Parser.ExpectingBinary -> "Expecting a binary number"
+                Parser.ExpectingFloat -> "Expecting a decimal number"
+                Parser.ExpectingNumber -> "Expecting a number"
+                Parser.ExpectingVariable -> "Expecting a variable"
+                Parser.ExpectingSymbol str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingKeyword str -> "Expecting '" ++ str ++ "'"
+                Parser.ExpectingEnd -> "Expecting no more characters"
+                Parser.UnexpectedChar -> "Unknown symbol"
+                Parser.Problem str -> str
+                Parser.BadRepeat -> "Bad repeat"
+        )
+        |> (\str -> str ++ ", at position: " ++ String.fromInt deadEnd.col)
+    )
+    >> String.join "\n"

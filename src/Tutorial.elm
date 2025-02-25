@@ -19,5 +19,6 @@ update _ model = (model, Cmd.none)
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attrs model = div (attrs ++ []) []
 
-menu: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
-menu converter attrs model = div (attrs ++ []) []
+type alias MenuItem_ msg = Bool -> List (Html.Attribute msg) -> String -> List (Html.Html msg) -> List (Html.Html msg)
+menu: (Event -> msg) -> MenuItem_ msg -> Model -> List (Html msg)
+menu converter menuItem model = menuItem True [] "Tutorials" []

@@ -62,3 +62,8 @@ cancel attr = svg (attr ++ [viewBox "0 0 24 24"])
         ]
     ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#mask)"] []
     ]
+
+rightArrow: List (Html.Attribute msg) -> Html.Html msg
+rightArrow attr = svg (attr ++ [viewBox "0 0 24 24"])
+    [   path [d "M3 5L18 12 L3 19 L9 12Z", stroke "none", fill "currentColor"] []
+    ]

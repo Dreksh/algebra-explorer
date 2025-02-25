@@ -1,6 +1,6 @@
 module Notification exposing (
     Model, Event, init, update, view,
-    displayParsingError
+    displayError
     )
 
 import Dict
@@ -26,40 +26,14 @@ type Event =
 init: Model
 init = {nextID = 0, notifications = Dict.empty}
 
-displayParsingError: String -> List Parser.DeadEnd -> (Model, Cmd Event) -> (Model, Cmd Event)
-displayParsingError str list (model, cmd) =
+displayError: String -> (Model, Cmd Event) -> (Model, Cmd Event)
+displayError str (model, cmd) =
     (   {   model
         |   nextID = model.nextID + 1
-        ,   notifications = Dict.insert model.nextID (False, parsingErrorMessage_ str list) model.notifications
+        ,   notifications = Dict.insert model.nextID (False, str) model.notifications
         }
     ,   Cmd.batch [ cmd, delayedClear_ model.nextID ]
     )
-
-parsingErrorMessage_: String -> List Parser.DeadEnd -> String
-parsingErrorMessage_ str err = "Error parsing \"" ++ str ++ "\":\n" ++ deadEndToString_ err
-
-deadEndToString_: List Parser.DeadEnd -> String
-deadEndToString_ = List.map
-    (\deadEnd ->
-        (   case deadEnd.problem of
-                Parser.Expecting str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingInt -> "Expecting a whole number"
-                Parser.ExpectingHex -> "Expecting a hex number"
-                Parser.ExpectingOctal -> "Expecting an octal number"
-                Parser.ExpectingBinary -> "Expecting a binary number"
-                Parser.ExpectingFloat -> "Expecting a decimal number"
-                Parser.ExpectingNumber -> "Expecting a number"
-                Parser.ExpectingVariable -> "Expecting a variable"
-                Parser.ExpectingSymbol str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingKeyword str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingEnd -> "Expecting no more characters"
-                Parser.UnexpectedChar -> "Unknown symbol"
-                Parser.Problem str -> str
-                Parser.BadRepeat -> "Bad repeat"
-        )
-        |> (\str -> str ++ ", at position: " ++ String.fromInt deadEnd.col)
-    )
-    >> String.join "\n"
 
 delayedClear_: Int -> Cmd Event
 delayedClear_ id = Task.perform (\_ -> ClearEvent id) (sleep 15000)

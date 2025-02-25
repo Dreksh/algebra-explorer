@@ -7,7 +7,7 @@ import Browser.Navigation as Nav
 import Json.Decode as Decode
 import Html exposing (Html, a, button, div, form, input, pre, text)
 import Html.Attributes exposing (class, id, name, type_)
-import Parser
+import Set
 import Task
 import Url
 -- Our imports
@@ -15,6 +15,7 @@ import Display
 import HtmlEvent
 import Icon
 import Math
+import Menu
 import Notification
 import Query
 import Rules
@@ -42,12 +43,12 @@ type alias Model =
     ,   tutorial: Tutorial.Model
     ,   notification: Notification.Model
     ,   query: Query.Model
+    ,   menu: Menu.Model
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
     ,   showHelp: Bool
     ,   showMenu: Bool
-    ,   menuSelection: Maybe MenuSelection
     }
 
 type Event =
@@ -57,6 +58,7 @@ type Event =
     | RulesEvent Rules.Event
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
+    | MenuEvent Menu.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
     | PressedKey String -- For catching "Escape"
@@ -65,12 +67,6 @@ type Event =
     | SubmitEquation (Maybe Int) String
     | ToggleHelp
     | ToggleMenu
-    | SelectMenuItem MenuSelection
-
-type MenuSelection =
-    RuleSelected
-    | TutorialSelected
-    | FunctionSelected
 
 -- Events
 
@@ -79,7 +75,7 @@ init _ url key =
     let
         query = Query.parseInit url key
         (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations
-        (nModel, nCmd) = List.foldl (\(a, b) result -> Notification.displayParsingError a b result) (Notification.init, Cmd.none) errs
+        (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
     (   { display = Display.init eqs
@@ -87,20 +83,18 @@ init _ url key =
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
+        , menu = Menu.init (Set.singleton "Settings")
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
-        , menuSelection = if newScreen then Just TutorialSelected else Nothing
         }
     , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ else Cmd.none]
     )
 
-type alias ParseError_ = List Parser.DeadEnd
-
-parseEquations_: String -> (List (Math.Tree ()), List (String, ParseError_)) -> (List (Math.Tree ()), List (String, ParseError_))
+parseEquations_: String -> (List (Math.Tree ()), List String) -> (List (Math.Tree ()), List String)
 parseEquations_ elem (result, errs) = case Math.parse elem of
     Result.Ok root -> (result ++ [root], errs)
-    Result.Err err -> (result, errs ++ [(elem, err)])
+    Result.Err err -> (result, errs ++ [err])
 
 subscriptions: Model -> Sub Event
 subscriptions model = case model.createMode of
@@ -123,6 +117,7 @@ update event model = case event of
         ({model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
     NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
+    MenuEvent e -> ({model | menu = Menu.update e model.menu}, Cmd.none)
     NoOp -> (model, Cmd.none)
     PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
     EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_)
@@ -139,13 +134,10 @@ update event model = case event of
                 |> (\list -> Query.setEquations list model.query )
                 |> (\query -> ({model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
             )
-        Result.Err err -> let (nModel, nCmd) = Notification.displayParsingError str err (model.notification, Cmd.none) in
+        Result.Err err -> let (nModel, nCmd) = Notification.displayError err (model.notification, Cmd.none) in
             ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_)
     ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
-    SelectMenuItem select -> if Maybe.map ((==) select) model.menuSelection |> Maybe.withDefault False
-        then ({model | menuSelection = Nothing}, Cmd.none)
-        else ({model | menuSelection = Just select}, Cmd.none)
 
 focusTextBar_: Cmd Event
 focusTextBar_ = Dom.focus "textInput" |> Task.attempt (\_ -> NoOp)
@@ -163,13 +155,17 @@ view model =
             ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                 [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
                 ,   div [id "menu"]
-                    [   menuTitle_ "Tutorials" TutorialSelected
-                    ,   Tutorial.menu TutorialEvent (menuDisplayAttr_ model.menuSelection TutorialSelected) model.tutorial
-                    ,   menuTitle_ "Functions" FunctionSelected
-                    ,   Rules.function RulesEvent (menuDisplayAttr_ model.menuSelection FunctionSelected) model.rules
-                    ,   menuTitle_ "Rules" RuleSelected
-                    ,   Rules.view RulesEvent (menuDisplayAttr_ model.menuSelection RuleSelected) model.rules
-                    ]
+                    (   let menuItem = Menu.menuItem MenuEvent model.menu in
+                        menuItem True [] "Settings"
+                        [   a [] [text "Load from Save File"] -- TODO
+                        ,   a [] [text "Save to Save File"] -- TODO
+                        ,   a [] [text "Add Topic"] -- TODO
+                        ]
+                    ++  Tutorial.menu TutorialEvent menuItem model.tutorial
+                    ++  Rules.menuConstants RulesEvent menuItem model.rules
+                    ++  Rules.menuFunctions RulesEvent menuItem model.rules
+                    ++  Rules.menuRules RulesEvent menuItem model.rules
+                    )
                 ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
@@ -199,13 +195,3 @@ inputDiv model =
             Just _ -> Icon.tick [Icon.class "clickable", Icon.class "submitable"]
         ]
     ]
-
-menuDisplayAttr_: Maybe MenuSelection -> MenuSelection -> List (Html.Attribute msg)
-menuDisplayAttr_ selected title = if Maybe.map ((==) title) selected |> Maybe.withDefault False
-    then []
-    else [class "closed"]
-
-
--- TODO: Have an arrow to indicate if it's expanded
-menuTitle_: String -> MenuSelection -> Html Event
-menuTitle_ name selection = div [HtmlEvent.onClick (SelectMenuItem selection), class "clickable"] [text name]
