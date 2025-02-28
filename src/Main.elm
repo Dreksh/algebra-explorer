@@ -4,9 +4,12 @@ import Browser
 import Browser.Dom as Dom
 import Browser.Events as BrowserEvent
 import Browser.Navigation as Nav
+import File
+import File.Select as FSelect
 import Json.Decode as Decode
 import Html exposing (Html, a, button, div, form, input, pre, text)
-import Html.Attributes exposing (class, id, name, type_)
+import Html.Attributes exposing (attribute, class, id, name, type_)
+import Http
 import Set
 import Task
 import Url
@@ -49,6 +52,7 @@ type alias Model =
     ,   createMode: Maybe (Maybe Int)
     ,   showHelp: Bool
     ,   showMenu: Bool
+    ,   dialog: Maybe (String, String -> Event)
     }
 
 type Event =
@@ -67,6 +71,18 @@ type Event =
     | SubmitEquation (Maybe Int) String
     | ToggleHelp
     | ToggleMenu
+    | OpenDialog String (String -> Event)
+    | CloseDialog
+    | DeleteTopic String
+    | DownloadTopic String
+    | ProcessTopic String (Result Http.Error Rules.Topic)
+    | FileSelect LoadableFile
+    | FileSelected LoadableFile File.File
+    | FileLoaded LoadableFile String
+
+type LoadableFile =
+    TopicFile 
+    | SaveFile
 
 -- Events
 
@@ -83,10 +99,11 @@ init _ url key =
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
-        , menu = Menu.init (Set.singleton "Settings")
+        , menu = Menu.init
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
+        , dialog = Nothing
         }
     , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ else Cmd.none]
     )
@@ -134,10 +151,41 @@ update event model = case event of
                 |> (\list -> Query.setEquations list model.query )
                 |> (\query -> ({model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
             )
-        Result.Err err -> let (nModel, nCmd) = Notification.displayError err (model.notification, Cmd.none) in
-            ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
+        Result.Err err -> submitNotification_ model err
     ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_)
     ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
+    OpenDialog title generator -> ({model | dialog = Just (title, generator)}, Cmd.none)
+    CloseDialog -> ({model | dialog = Nothing}, Cmd.none)
+    DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules}, Cmd.none)
+    DownloadTopic url -> (model, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
+    ProcessTopic url result -> case result of
+        Err err -> httpErrorToString_ url err |> submitNotification_ model
+        Ok topic -> case Rules.addTopic topic model.rules of
+            Err errStr -> submitNotification_ model errStr
+            Ok rModel -> ({model | rules = rModel}, Cmd.none)
+    FileSelect fileType -> (model, FSelect.file ["application/json"] (FileSelected fileType))
+    FileSelected fileType file -> (model, Task.perform (FileLoaded fileType) (File.toString file))
+    FileLoaded fileType str -> case fileType of
+        TopicFile -> Decode.decodeString Rules.topicDecoder str
+            |> Result.mapError Decode.errorToString
+            |> Result.andThen (\topic -> Rules.addTopic topic model.rules)
+            |> (\result -> case result of
+                Err errStr -> submitNotification_ model errStr
+                Ok rModel -> ({model | rules = rModel}, Cmd.none)
+            )
+        SaveFile -> (model, Cmd.none) -- TODO
+
+submitNotification_: Model -> String -> (Model, Cmd Event)
+submitNotification_ model str = let (nModel, nCmd) = Notification.displayError str (model.notification, Cmd.none) in
+    ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
+
+httpErrorToString_: String -> Http.Error -> String
+httpErrorToString_ url err = case err of
+    Http.BadUrl _ -> "Invalid URL provided: " ++ url
+    Http.Timeout -> "Timed out waitiing for: " ++ url
+    Http.NetworkError -> "Unable to reach: " ++ url
+    Http.BadStatus code -> "The url returned an error code [" ++ String.fromInt code ++ "]: " ++ url
+    Http.BadBody str -> "The file is malformed:\n" ++ str
 
 focusTextBar_: Cmd Event
 focusTextBar_ = Dom.focus "textInput" |> Task.attempt (\_ -> NoOp)
@@ -159,18 +207,27 @@ view model =
                         menuItem True [] "Settings"
                         [   a [] [text "Load from Save File"] -- TODO
                         ,   a [] [text "Save to Save File"] -- TODO
-                        ,   a [] [text "Add Topic"] -- TODO
+                        ,   a 
+                            [HtmlEvent.onClick (OpenDialog "Enter the url for the topic" DownloadTopic), class "clickable"]
+                            [text "Add Topic From URL"]
+                        ,   a
+                            [HtmlEvent.onClick (FileSelect TopicFile), class "clickable"]
+                            [text "Add Topic From File"]
+                        ,   a
+                            [HtmlEvent.onClick (OpenDialog "Enter the topic to delete" DeleteTopic), class "clickable"]
+                            [text "Delete a Topic"]
                         ]
                     ++  Tutorial.menu TutorialEvent menuItem model.tutorial
                     ++  Rules.menuConstants RulesEvent menuItem model.rules
                     ++  Rules.menuFunctions RulesEvent menuItem model.rules
-                    ++  Rules.menuRules RulesEvent menuItem model.rules
+                    ++  Rules.menuRules RulesEvent menuItem model.rules (Display.selectedNode model.display)
                     )
                 ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
         ,   Notification.view NotificationEvent [id "notification"] model.notification
         ]
+        ++ (dialogPane_ model.dialog)
     }
 
 inputDiv: Model -> Html Event
@@ -195,3 +252,17 @@ inputDiv model =
             Just _ -> Icon.tick [Icon.class "clickable", Icon.class "submitable"]
         ]
     ]
+
+dialogPane_: Maybe (String, String -> Event) -> List (Html.Html Event)
+dialogPane_ selection = case selection of
+    Nothing -> []
+    Just (prompt, event) -> [
+            Html.node "dialog" [attribute "open" "true"] [
+                form [HtmlEvent.onSubmitField "answer" event, attribute "method" "dialog"]
+                [   text prompt
+                ,   input [type_ "text", name "answer"] []
+                ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CloseDialog]
+                ,   button [type_ "submit"] [Icon.tick [Icon.class "clickable", Icon.class "submitable"]]
+                ]
+            ]
+        ]

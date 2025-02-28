@@ -152,22 +152,23 @@ body > div > * {
     align-items: center;
     gap: 1rem;
 }
+.menuTitle > svg {
+    height: 2rem;
+}
 .menuTitle > h1 {
     flex-grow: 1;
     flex-shrink: 1;
-}
-.menuTitle.shown > svg {
-    height: 2rem;
 }
 .menuTitle.shown > svg.shown {
     rotate: 90deg;
 }
 .subMenu {
-    margin-left: 1rem;
+    padding-left: 1rem;
     flex-direction: column;
     align-items: start;
     max-height: 0;
     overflow-y: scroll;
+    overflow-x: hidden;
     transition: max-height 0.5s ease-out;
 }
 .subMenu.shown {

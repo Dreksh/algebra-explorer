@@ -1,12 +1,12 @@
 module Display exposing (
     Model, Event(..), init, update, view,
-    addEquation, updateEquation, listEquations
+    addEquation, updateEquation, listEquations,
+    selectedNode
     )
 
 import Dict
 import Html exposing (Html, div, text)
 import Html.Attributes exposing (class)
-import Set
 -- Ours
 import Math
 import HtmlEvent
@@ -17,15 +17,13 @@ type alias Equation_ = (ParentMap_, Math.Tree State)
 type alias Model =
     {   equations: Dict.Dict Int Equation_
     ,   nextEquationNum: Int
-    -- runtime, don't need to store into query
-    ,   selected: Maybe (Int, List Int)
+    ,   selected: Maybe (Int, Int)
     ,   createModeForEquation: Maybe Int
     }
 
 type Event =
     Select Int Int
     | Unselect
-    | Reselect Int Int
     | DeleteTree Int Int -- Eq Num + Node Num
 
 type alias State =
@@ -66,12 +64,26 @@ deleteSubTree_ ((maxNum, map), node) = let id = Math.getState node |> (\s -> s.i
     Math.getChildren node
     |> List.foldl (\elem ((_, newMap),_, _) -> deleteSubTree_ ((maxNum, newMap), elem)) ((maxNum, Dict.remove id map), Nothing, ())
 
+selectedNode: Model -> Maybe (Math.Tree State)
+selectedNode model = model.selected
+    |> Maybe.andThen (\(eq, num) -> Dict.get eq model.equations
+        |> Maybe.andThen (\equation -> equation
+            |> processSearch_ num (\(map, node) -> (map, Just node, node)) 
+            |> Tuple.second
+        )
+    )
+
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of
+    Select eq node -> case model.selected of
+        Nothing -> ({model | selected = Just (eq, node)}, Cmd.none)
+        Just (e, n) -> if e == eq && n == node 
+            then ({model | selected = Nothing}, Cmd.none)
+            else ({model | selected = Just (eq, node)}, Cmd.none)
+    Unselect -> ({model | selected = Nothing}, Cmd.none)
     DeleteTree eq node -> if node == 0
         then ({model | equations = Dict.remove eq model.equations}, Cmd.none)
         else ({model | equations = Dict.update eq (Maybe.andThen (deleteNode_ node)) model.equations}, Cmd.none)
-    _ -> (model, Cmd.none)
 
 {-
 # View-related functions
@@ -80,22 +92,25 @@ update event model = case event of
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div (attr ++ [])
     (   Dict.foldl
-        (\eqNum (_, root) result ->
+        (\eqNum (_, root) result -> let highlight = Maybe.andThen (\(eq, num) -> if eq == eqNum then Just num else Nothing) model.selected in
             Math.symbolicate root
-            |> collapsedView_ eqNum Set.empty
+            |> collapsedView_ eqNum highlight
             |> (\child -> (div [] [child] |> Html.map converter) :: result)
         )
         []
         model.equations
     )
 
-collapsedView_: Int -> Set.Set Int -> Math.Symbol State -> Html Event
+collapsedView_: Int -> Maybe Int -> Math.Symbol State -> Html Event
 collapsedView_ eq highlight node = case node of
     Math.Text val -> text val
     Math.Node s children ->
         children
         |> List.map (collapsedView_ eq highlight)
-        |> div [class "node", HtmlEvent.onClick (DeleteTree eq s.id)]
+        |> div
+            (   [class "node", HtmlEvent.onClick (Select eq s.id)]
+            ++  if s.id == Maybe.withDefault -1 highlight then [class "selected"] else []
+            )
 
 -- Parent's ID, Maximum ID num, Dict
 type alias IDGlobal_ = (Int, ParentMap_)

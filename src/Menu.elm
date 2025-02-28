@@ -7,28 +7,28 @@ import HtmlEvent
 import Icon
 
 type alias Model =
-    {   selected: Set.Set String
+    {   closed: Set.Set String
     }
 
 type Event =
     Click String
 
-init: Set.Set String -> Model
-init opened = { selected = opened }
+init: Model
+init = { closed = Set.empty }
 
 update: Event -> Model -> Model
 update event model = case event of
-    Click entry -> if Set.member entry model.selected
-        then {model | selected = Set.remove entry model.selected}
-        else {model | selected = Set.insert entry model.selected}
+    Click entry -> if Set.member entry model.closed
+        then {model | closed = Set.remove entry model.closed}
+        else {model | closed = Set.insert entry model.closed}
 
 -- TODO: Have an arrow to indicate if it's expanded
 menuItem: (Event->msg) -> Model -> Bool -> List (Html.Attribute msg) -> String -> List (Html.Html msg) -> List (Html.Html msg)
-menuItem converter model = (\display attr name children -> let shown = display && Set.member name model.selected in
-    [   div (class "menuTitle"::if display then [class "shown"] else [])
-        [   Icon.rightArrow (HtmlEvent.onClick (Click name |> converter)::if shown then [Icon.class "shown"] else [])
+menuItem converter model = (\display attr name children -> let closed = not display || Set.member name model.closed in
+    [   div (class "menuTitle"::if closed then [] else [class "shown"])
+        [   Icon.rightArrow (HtmlEvent.onClick (Click name |> converter)::if closed then [] else [Icon.class "shown"])
         ,   h1 attr [text name]
         ]
-    ,   div (class "subMenu"::if shown then [class "shown"] else []) children
+    ,   div (class "subMenu"::if closed then [] else [class "shown"]) children
     ]
     )

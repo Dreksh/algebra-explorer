@@ -1,11 +1,11 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "=": {"args": 2, "associative": true, "commutative": true, "linear": false},
-        "+": {"args": 2, "associative": true, "commutative": true, "linear": false},
-        "*": {"args": 2, "associative": true, "commutative": true, "linear": true},
-        "-": {"args": 1, "associative": false, "commutative": false, "linear": true},
-        "/": {"args": 1, "associative": false, "commutative": false, "linear": false}
+        "=": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
+        "+": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
+        "*": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
+        "-": {"arguments": 1, "parameters": 0, "associative": false, "commutative": false},
+        "/": {"arguments": 1, "parameters": 0, "associative": false, "commutative": false}
     },
     "constants": [],
     "equations": [
