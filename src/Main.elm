@@ -81,7 +81,7 @@ type Event =
     | FileLoaded LoadableFile String
 
 type LoadableFile =
-    TopicFile 
+    TopicFile
     | SaveFile
 
 -- Events
@@ -207,7 +207,7 @@ view model =
                         menuItem True [] "Settings"
                         [   a [] [text "Load from Save File"] -- TODO
                         ,   a [] [text "Save to Save File"] -- TODO
-                        ,   a 
+                        ,   a
                             [HtmlEvent.onClick (OpenDialog "Enter the url for the topic" DownloadTopic), class "clickable"]
                             [text "Add Topic From URL"]
                         ,   a

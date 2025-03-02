@@ -68,7 +68,7 @@ selectedNode: Model -> Maybe (Math.Tree State)
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, num) -> Dict.get eq model.equations
         |> Maybe.andThen (\equation -> equation
-            |> processSearch_ num (\(map, node) -> (map, Just node, node)) 
+            |> processSearch_ num (\(map, node) -> (map, Just node, node))
             |> Tuple.second
         )
     )
@@ -77,7 +77,7 @@ update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of
     Select eq node -> case model.selected of
         Nothing -> ({model | selected = Just (eq, node)}, Cmd.none)
-        Just (e, n) -> if e == eq && n == node 
+        Just (e, n) -> if e == eq && n == node
             then ({model | selected = Nothing}, Cmd.none)
             else ({model | selected = Just (eq, node)}, Cmd.none)
     Unselect -> ({model | selected = Nothing}, Cmd.none)
