@@ -51,18 +51,18 @@ functionName_ node = case node of
     FunctionNode _ children -> children.name
     _ -> ""
 
-functionPrecedence_: Tree state -> Int -- Lower Int has higher precedence, this is specifically from math notation
+functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
 functionPrecedence_ node = case functionName_ node of
     -- multiplicative
-    "*" -> 1
-    "/" -> 1
+    "*" -> 2
+    "/" -> 2
     -- additive
-    "+" -> 2
-    "-" -> 2
+    "+" -> 1
+    "-" -> 1
     -- inequalities
-    "=" -> 3
+    "=" -> 0
     -- Others (variables, function calls)
-    _ -> 0
+    _ -> -1
 
 symbolicateRecursive_: Maybe (Tree state) -> Bool -> Tree state -> Symbol state
 symbolicateRecursive_ parent multiplicativeFirst root = case root of
@@ -98,7 +98,7 @@ symbolicateRecursive_ parent multiplicativeFirst root = case root of
         |> (\tokens -> case parent of
             Nothing -> Node s tokens
             Just p ->
-                if (functionPrecedence_ p) < (functionPrecedence_ root)
+                if (functionPrecedence_ p) > (functionPrecedence_ root)
                 then Node s ((Text "(")::tokens ++ [Text ")"])
                 else Node s tokens
         )

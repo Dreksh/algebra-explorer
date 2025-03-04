@@ -4,7 +4,7 @@ module Rules exposing (Model, Event, Topic, init, update,
     )
 
 import Dict
-import Html exposing (Html, a, h2, p, text)
+import Html exposing (a, h2, p, text)
 import Json.Decode as Dec
 import Set
 import Math
@@ -27,7 +27,8 @@ type Token_ =
     | AnyToken
 
 type alias Expression_ =
-    {   root: Math.Tree ()
+    {   name: String
+    ,   root: Math.Tree ()
     ,   tokens: Dict.Dict String Token_
     }
 
@@ -71,13 +72,14 @@ init =
     }
 
 addTopic: Topic -> Model -> Result String Model
-addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
+addTopic topic m = let id = String.toLower topic.name in
+    let model = deleteTopic id m in -- Clear Existing topic
     topic.functions |> Dict.foldl (\name props result -> case result of
         Err _ -> result
         Ok dict -> case Dict.get name dict of
             Nothing -> Ok (Dict.insert name (props, 1) dict)
             Just (p, count) -> if p.args == props.args && p.params == props.params && p.associative == props.associative && p.commutative == props.commutative
-                then Ok (Dict.insert name (p, count + 1) dict) 
+                then Ok (Dict.insert name (p, count + 1) dict)
                 else Err ("'" ++ name ++ "' differs from existing definition from other topics")
     )
     (Ok model.functions)
@@ -87,33 +89,34 @@ addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing top
                 Err _ -> result
                 Ok dict -> case Dict.get name dict of
                     Nothing -> Ok (Dict.insert name 1 dict)
-                    Just count -> Ok (Dict.insert name (count + 1) dict) 
+                    Just count -> Ok (Dict.insert name (count + 1) dict)
             )
             (Ok model.constants)
-            |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert topic.name topic model.topics})
+            |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert id topic model.topics})
     )
 
 deleteTopic: String -> Model -> Model
-deleteTopic name model = case Dict.get name model.topics of
-    Nothing -> model
-    Just topic ->
-        let
-            newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
-                    Nothing -> newDict
-                    Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i-1) newDict
-                )
-                model.functions
-            newConstants = topic.constants |> Set.foldl (\n newSet -> case Dict.get n newSet of
-                    Nothing -> newSet
-                    Just i -> if i < 2 then Dict.remove n newSet else Dict.insert n (i-1) newSet
-                )   
-                model.constants
-        in
-            {   model
-            |   topics = Dict.remove name model.topics
-            ,   constants = newConstants
-            ,   functions = newFunctions
-            }
+deleteTopic name model = let id = String.toLower name in
+    case Dict.get id model.topics of
+        Nothing -> model
+        Just topic ->
+            let
+                newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
+                        Nothing -> newDict
+                        Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i-1) newDict
+                    )
+                    model.functions
+                newConstants = topic.constants |> Set.foldl (\n newSet -> case Dict.get n newSet of
+                        Nothing -> newSet
+                        Just i -> if i < 2 then Dict.remove n newSet else Dict.insert n (i-1) newSet
+                    )
+                    model.constants
+            in
+                {   model
+                |   topics = Dict.remove id model.topics
+                ,   constants = newConstants
+                ,   functions = newFunctions
+                }
 
 update: Event -> Model -> (Model, Cmd Event)
 update _ model = (model, Cmd.none)
@@ -124,7 +127,7 @@ menuRules converter model selectedNode = Menu.Section "Rules" True
             [   Menu.Section topic.name True
                 (   List.foldl (\rule (index, res) -> (index + 1, res ++
                         [   Menu.Section
-                            (expressionToString_ rule.lhs ++ (if rule.reversible then "↔" else "→") ++ expressionToString_ rule.rhs)
+                            (rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name)
                             (Maybe.map (matchRuleToNode_ rule) selectedNode |> Maybe.withDefault True)
                             ( Menu.Content
                               [   h2 [] [text rule.title]
@@ -148,7 +151,7 @@ menuRules converter model selectedNode = Menu.Section "Rules" True
     )
 
 matchRuleToNode_: Rule_ -> Math.Tree state -> Bool
-matchRuleToNode_ rule node = 
+matchRuleToNode_ rule node =
     matchExpressionToNode_ rule.lhs node || (rule.reversible && matchExpressionToNode_ rule.rhs node)
 
 matchExpressionToNode_: Expression_ -> Math.Tree state -> Bool
@@ -187,14 +190,6 @@ menuConstants converter model = Menu.Section "Constants" True
         []
         model.constants
     )
-
-expressionToString_: Expression_ -> String
-expressionToString_ exp = Math.symbolicate exp.root |> mathSymbolsToString_
-
-mathSymbolsToString_: Math.Symbol () -> String
-mathSymbolsToString_ root = case root of
-    Math.Text str -> str
-    Math.Node _ list -> list |> List.map mathSymbolsToString_ |> String.join ""
 
 {-
 ## Parser
@@ -238,7 +233,7 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
                             Ok newDict -> case Dict.get name newDict of
                                 Nothing -> Ok (Dict.insert name tok newDict)
                                 Just oldTok -> case (oldTok, tok) of
-                                    ((FunctionToken oArgs oNum), (FunctionToken args num)) -> 
+                                    ((FunctionToken oArgs oNum), (FunctionToken args num)) ->
                                         if oArgs == args && oNum == num then Ok newDict
                                         else Err ("Different function signature for '" ++ name ++ "' detected within parameters")
                                     (AnyToken, AnyToken) -> Ok newDict
@@ -263,7 +258,7 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
             Err errStr -> Dec.fail errStr
             Ok lhs -> case originalRhs.tokens |> extractUniqueTokens_ functions constants pDict of
                 Err errStr -> Dec.fail errStr
-                Ok rhs -> 
+                Ok rhs ->
                     Set.union (Dict.keys lhs |> Set.fromList) (Dict.keys rhs |> Set.fromList)
                     |> Set.foldl
                         (\name result -> case result of
@@ -315,7 +310,7 @@ parseExpression_ functions str = case Math.parse str of
     Err errStr -> Err ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
     Ok root -> case Math.process (tokenExtractor_ str functions) (Ok Dict.empty) root |> Tuple.first of
         Err errStr -> Err errStr
-        Ok tokens -> Ok {root = root, tokens = tokens}
+        Ok tokens -> Ok {name = str, root = root, tokens = tokens}
 
 tokenExtractor_: String -> Dict.Dict String FunctionProperties_ -> Math.Processor () () (Result String (Dict.Dict String Token_))
 tokenExtractor_ str functions =

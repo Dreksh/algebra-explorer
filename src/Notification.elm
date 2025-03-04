@@ -12,7 +12,6 @@ import Task
 -- Our modules
 import HtmlEvent
 import Icon
-import Parser
 
 type alias Model =
     {   nextID: Int
@@ -42,7 +41,7 @@ delayedDelete_: Int -> Cmd Event
 delayedDelete_ id = Task.perform (\_ -> DeleteEvent id) (sleep 750) -- Match this with css animation
 
 update: Event -> Model -> (Model, Cmd Event)
-update e model = case e of 
+update e model = case e of
     ClearEvent id ->
         (   {   model
             |   notifications = Dict.update id (Maybe.map (\(_, str) -> (True, str))) model.notifications
