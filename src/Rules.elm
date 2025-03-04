@@ -4,10 +4,11 @@ module Rules exposing (Model, Event, Topic, init, update,
     )
 
 import Dict
-import Html exposing (Html, h2, p, text)
+import Html exposing (Html, a, h2, p, text)
 import Json.Decode as Dec
 import Set
 import Math
+import Menu
 import HtmlEvent
 
 {-
@@ -117,25 +118,30 @@ deleteTopic name model = case Dict.get name model.topics of
 update: Event -> Model -> (Model, Cmd Event)
 update _ model = (model, Cmd.none)
 
-type alias MenuItem_ msg = Bool -> List (Html.Attribute msg) -> String -> List (Html.Html msg) -> List (Html.Html msg)
-menuRules: (Event -> msg) -> MenuItem_ msg -> Model -> Maybe (Math.Tree state) -> List (Html msg)
-menuRules converter menuItem model selectedNode = menuItem True [] "Rules"
+menuRules: (Event -> msg) -> Model -> Maybe (Math.Tree state) -> Menu.Part msg
+menuRules converter model selectedNode = Menu.Section "Rules" True
     (   Dict.foldl (\_ topic result -> result ++
-            menuItem True [] topic.name
-            (   List.foldl (\rule (index, res) -> (index + 1, res ++
-                    menuItem
-                    (Maybe.map (matchRuleToNode_ rule) selectedNode |> Maybe.withDefault False)
-                    [HtmlEvent.onClick (ClickRule topic.name index |> converter)]
-                    (expressionToString_ rule.lhs ++ (if rule.reversible then "↔" else "→") ++ expressionToString_ rule.rhs)
-                    [   h2 [] [text rule.title]
-                    ,   p [] [text rule.description]
-                    ]
+            [   Menu.Section topic.name True
+                (   List.foldl (\rule (index, res) -> (index + 1, res ++
+                        [   Menu.Section
+                            (expressionToString_ rule.lhs ++ (if rule.reversible then "↔" else "→") ++ expressionToString_ rule.rhs)
+                            (Maybe.map (matchRuleToNode_ rule) selectedNode |> Maybe.withDefault True)
+                            ( Menu.Content
+                              [   h2 [] [text rule.title]
+                              ,   p [] [text rule.description]
+                              ]
+                            :: case selectedNode of
+                                Nothing -> []
+                                Just _ -> [Menu.Content [a [HtmlEvent.onClick (ClickRule topic.name index |> converter)] [text "Apply"]]]
+                            )
+                        ]
+                    )
+                    )
+                    (0,[])
+                    topic.rules
+                    |> Tuple.second
                 )
-                )
-                (0,[])
-                topic.rules
-                |> Tuple.second
-            )
+            ]
         )
         []
         model.topics
@@ -155,24 +161,28 @@ matchExpressionToNode_ exp node = case exp.root of
         Math.FunctionNode _ actual -> actual.name == fProp.name
         _ -> False
 
-menuFunctions: (Event -> msg) -> MenuItem_ msg -> Model -> List (Html msg)
-menuFunctions converter menuItem model = menuItem True [] "Functions"
+menuFunctions: (Event -> msg) -> Model -> Bool -> Menu.Part msg
+menuFunctions converter model createMode = Menu.Section "Functions" True
     (   Dict.foldl (\name (props, _) result -> result ++
-            menuItem True [HtmlEvent.onClick (ClickFunction name |> converter)] name
-            [   p [] [text ("Arguments: " ++ String.fromInt props.args)]
-            ,   p [] [text ("Parameters: " ++ String.fromInt props.params)]
-            ,   p [] [text ("Associative: " ++ if props.associative then "Yes" else "No")]
-            ,   p [] [text ("Commutative: " ++ if props.commutative then "Yes" else "No")]
+            [   Menu.Section name True
+                ( Menu.Content
+                    [ p [] [text ("Arguments: " ++ String.fromInt props.args)]
+                    , p [] [text ("Parameters: " ++ String.fromInt props.params)]
+                    , p [] [text ("Associative: " ++ if props.associative then "Yes" else "No")]
+                    , p [] [text ("Commutative: " ++ if props.commutative then "Yes" else "No")]
+                    ]
+                :: if createMode then [Menu.Content [a [HtmlEvent.onClick (ClickFunction name |> converter)] [text "Add"]]] else []
+                )
             ]
         )
         []
         model.functions
     )
 
-menuConstants: (Event -> msg) -> MenuItem_ msg -> Model -> List (Html msg)
-menuConstants converter menuItem model = menuItem True [] "Constants"
+menuConstants: (Event -> msg) -> Model -> Menu.Part msg
+menuConstants converter model = Menu.Section "Constants" True
     (   Dict.foldl (\name _ result -> result ++
-            [h2 [HtmlEvent.onClick (ClickVariable name |> converter)] [text name]]
+            [Menu.Content [h2 [HtmlEvent.onClick (ClickVariable name |> converter)] [text name]]]
         )
         []
         model.constants

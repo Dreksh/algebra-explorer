@@ -87,7 +87,7 @@ type LoadableFile =
 -- Events
 
 init: Decode.Value -> Url.Url -> Nav.Key -> (Model, Cmd Event)
-init _ url key = 
+init _ url key =
     let
         query = Query.parseInit url key
         (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations
@@ -99,13 +99,13 @@ init _ url key =
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
-        , menu = Menu.init
+        , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Constants", "Functions", "Rules"])
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
         , dialog = Nothing
         }
-    , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ else Cmd.none]
+    , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
     )
 
 parseEquations_: String -> (List (Math.Tree ()), List String) -> (List (Math.Tree ()), List String)
@@ -137,12 +137,12 @@ update event model = case event of
     MenuEvent e -> ({model | menu = Menu.update e model.menu}, Cmd.none)
     NoOp -> (model, Cmd.none)
     PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
-    EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_)
+    EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_ "textInput")
     CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
     SubmitEquation id str -> case Math.parse str of
         Result.Ok root -> (
             case id of
-                Nothing -> 
+                Nothing ->
                     Display.addEquation root model.display
                 Just i ->
                     Display.updateEquation i root model.display
@@ -152,12 +152,12 @@ update event model = case event of
                 |> (\query -> ({model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
             )
         Result.Err err -> submitNotification_ model err
-    ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_)
+    ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_ "textInput")
     ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
-    OpenDialog title generator -> ({model | dialog = Just (title, generator)}, Cmd.none)
+    OpenDialog title generator -> ({model | dialog = Just (title, generator)}, focusTextBar_ "dialogAnswer")
     CloseDialog -> ({model | dialog = Nothing}, Cmd.none)
-    DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules}, Cmd.none)
-    DownloadTopic url -> (model, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
+    DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules, dialog = Nothing}, Cmd.none)
+    DownloadTopic url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
     ProcessTopic url result -> case result of
         Err err -> httpErrorToString_ url err |> submitNotification_ model
         Ok topic -> case Rules.addTopic topic model.rules of
@@ -187,8 +187,8 @@ httpErrorToString_ url err = case err of
     Http.BadStatus code -> "The url returned an error code [" ++ String.fromInt code ++ "]: " ++ url
     Http.BadBody str -> "The file is malformed:\n" ++ str
 
-focusTextBar_: Cmd Event
-focusTextBar_ = Dom.focus "textInput" |> Task.attempt (\_ -> NoOp)
+focusTextBar_: String -> Cmd Event
+focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
 
 view: Model -> Browser.Document Event
 view model =
@@ -202,26 +202,28 @@ view model =
                 )
             ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                 [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
-                ,   div [id "menu"]
-                    (   let menuItem = Menu.menuItem MenuEvent model.menu in
-                        menuItem True [] "Settings"
-                        [   a [] [text "Load from Save File"] -- TODO
-                        ,   a [] [text "Save to Save File"] -- TODO
-                        ,   a
-                            [HtmlEvent.onClick (OpenDialog "Enter the url for the topic" DownloadTopic), class "clickable"]
-                            [text "Add Topic From URL"]
-                        ,   a
-                            [HtmlEvent.onClick (FileSelect TopicFile), class "clickable"]
-                            [text "Add Topic From File"]
-                        ,   a
-                            [HtmlEvent.onClick (OpenDialog "Enter the topic to delete" DeleteTopic), class "clickable"]
-                            [text "Delete a Topic"]
+                ,   Menu.view MenuEvent model.menu
+                    [   Menu.Section "Settings" True
+                        [   Menu.Content [a [] [text "Load from Save File"]] -- TODO
+                        ,   Menu.Content [a [] [text "Save to Save File"]] -- TODO
+                        ,   Menu.Content [ a
+                                [HtmlEvent.onClick (OpenDialog "Enter the url for the topic" DownloadTopic), class "clickable"]
+                                [text "Add Topic From URL"]
+                            ]
+                        ,   Menu.Content [ a
+                                [HtmlEvent.onClick (FileSelect TopicFile), class "clickable"]
+                                [text "Add Topic From File"]
+                            ]
+                        ,   Menu.Content [ a
+                                [HtmlEvent.onClick (OpenDialog "Enter the topic to delete" DeleteTopic), class "clickable"]
+                                [text "Delete a Topic"]
+                            ]
                         ]
-                    ++  Tutorial.menu TutorialEvent menuItem model.tutorial
-                    ++  Rules.menuConstants RulesEvent menuItem model.rules
-                    ++  Rules.menuFunctions RulesEvent menuItem model.rules
-                    ++  Rules.menuRules RulesEvent menuItem model.rules (Display.selectedNode model.display)
-                    )
+                    ,   Tutorial.menu TutorialEvent model.tutorial
+                    ,   Rules.menuConstants RulesEvent model.rules
+                    ,   Rules.menuFunctions RulesEvent model.rules (inCreateMode_ model)
+                    ,   Rules.menuRules RulesEvent model.rules (Display.selectedNode model.display)
+                    ]
                 ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
@@ -259,10 +261,15 @@ dialogPane_ selection = case selection of
     Just (prompt, event) -> [
             Html.node "dialog" [attribute "open" "true"] [
                 form [HtmlEvent.onSubmitField "answer" event, attribute "method" "dialog"]
-                [   text prompt
-                ,   input [type_ "text", name "answer"] []
+                [   text (prompt ++ ":")
+                ,   input [type_ "text", name "answer", id "dialogAnswer"] []
                 ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CloseDialog]
                 ,   button [type_ "submit"] [Icon.tick [Icon.class "clickable", Icon.class "submitable"]]
                 ]
             ]
         ]
+
+inCreateMode_: Model -> Bool
+inCreateMode_ model = case model.createMode of
+    Nothing -> False
+    Just _ -> True

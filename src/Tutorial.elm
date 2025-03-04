@@ -1,6 +1,7 @@
 module Tutorial exposing (Model, Event, init, menu, update, view)
 
 import Html exposing (Html, div)
+import Menu
 
 type alias Model =
     {   number: Int
@@ -19,6 +20,5 @@ update _ model = (model, Cmd.none)
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attrs model = div (attrs ++ []) []
 
-type alias MenuItem_ msg = Bool -> List (Html.Attribute msg) -> String -> List (Html.Html msg) -> List (Html.Html msg)
-menu: (Event -> msg) -> MenuItem_ msg -> Model -> List (Html msg)
-menu converter menuItem model = menuItem True [] "Tutorials" []
+menu: (Event -> msg) -> Model -> Menu.Part msg
+menu converter model = Menu.Section "Tutorials" True []
