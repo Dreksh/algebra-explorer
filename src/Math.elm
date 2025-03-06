@@ -65,23 +65,29 @@ symbolicateRecursive_ parent multiplicativeFirst root = (
                 else [Text "/", symbolicateRecursive_ (Just root) False s.child]
             else [Text s.name, symbolicateRecursive_ (Just root) True s.child]
         BinaryNode s -> s.children
-            |> List.foldl (\child result -> case child of
+            |> List.foldl (\child result -> if List.isEmpty result
+                then [symbolicateRecursive_ (Just root) True child]
+                else case child of
                     UnaryNode c -> case (s.name, c.name) of
                         ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) True child]
                         ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) (List.isEmpty result) child]
                         _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
-                    _ -> [symbolicateRecursive_ (Just root) True child]
+                    _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
                 )
                 []
-            |> List.intersperse (Text s.name)
         GenericNode s -> s.children
             |> List.map (symbolicateRecursive_ (Just root) True)
             |> List.intersperse (Text ",")
             |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
     )
-    |> (\tokens -> case parent of
-        Nothing -> Node {state = getState root, children = tokens}
-        Just p ->
+    |> (\tokens -> case (parent, root) of
+        -- Ignore when top-level
+        (Nothing, _) -> Node {state = getState root, children = tokens}
+        -- Ignore if variable, number or the traditional way of expressing functions
+        (_, RealNode _) -> Node {state = getState root, children = tokens}
+        (_, VariableNode _) -> Node {state = getState root, children = tokens}
+        (_, GenericNode _) -> Node {state = getState root, children = tokens}
+        (Just p, _) ->
             if (functionPrecedence_ p) > (functionPrecedence_ root)
             then Node {state = getState root, children= Text "("::tokens ++ [Text ")"]}
             else Node {state = getState root, children = tokens}
