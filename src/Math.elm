@@ -1,55 +1,45 @@
-module Math exposing (Function, Tree(..), Processor, Symbol(..), getChildren, getState, notation, parse, process, symbolicate)
+module Math exposing (Tree(..), Symbol(..), getChildren, getState, notation, parse, symbolicate)
 
 import Parser exposing ((|.), (|=))
 import Set
 
-type Tree state =
-    FunctionNode state (Function state)
-    | VariableNode state String
-    | RealNode state Float
-
-type alias Function state =
-    {   name: String
-    ,   args: List (Tree state)
-    ,   parameters: List (Tree state)
-    }
-
--- First argument to all potentially recursive processing is
--- the recursive call to process, using the same Processor properties
-type alias Processor prevState state global =
-    {   function: (global -> Tree prevState -> (global, Maybe (Tree state))) -> global -> (prevState, Function prevState) -> (global, Maybe (Tree state))
-    ,   var: global -> (prevState, String) -> (global, Maybe (Tree state))
-    ,   real: global -> (prevState, Float) -> (global, Maybe (Tree state))
-    }
-
-process: Processor prevState state global -> global -> Tree prevState -> (global, Maybe (Tree state))
-process processor g root = case root of
-    FunctionNode s children -> processor.function (process processor) g (s, children)
-    VariableNode s name -> processor.var g (s, name)
-    RealNode s val -> processor.real g (s, val)
+type Tree s =
+    RealNode {state: s, value: Float}
+    | VariableNode {state: s, name: String}
+    | UnaryNode {state: s, name: String, child: Tree s}
+    | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, children: List (Tree s)}
+    | GenericNode {state: s, name: String, children: List (Tree s)} -- Order matters
 
 getState: Tree state -> state
 getState node = case node of
-    FunctionNode s _ -> s
-    VariableNode s _ -> s
-    RealNode s _ -> s
+    RealNode s -> s.state
+    VariableNode s -> s.state
+    UnaryNode s -> s.state
+    BinaryNode s -> s.state
+    GenericNode s -> s.state
 
 getChildren: Tree state -> List (Tree state)
 getChildren node = case node of
-    FunctionNode _ s -> s.args ++ s.parameters
-    _ -> []
+    RealNode _ -> []
+    VariableNode _ -> []
+    UnaryNode s -> [s.child]
+    BinaryNode s -> s.children
+    GenericNode s -> s.children
 
-type Symbol state =
+type Symbol s =
     Text String
-    | Node state (List (Symbol state))
+    | Node {state: s, children: List (Symbol s)}
 
 symbolicate: Tree state -> Symbol state
 symbolicate root = symbolicateRecursive_ Nothing True root
 
 functionName_: Tree state -> String
 functionName_ node = case node of
-    FunctionNode _ children -> children.name
-    _ -> ""
+    RealNode _ -> ""
+    VariableNode _ -> ""
+    UnaryNode s -> s.name
+    BinaryNode s -> s.name
+    GenericNode s -> s.name
 
 functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
 functionPrecedence_ node = case functionName_ node of
@@ -65,45 +55,37 @@ functionPrecedence_ node = case functionName_ node of
     _ -> -1
 
 symbolicateRecursive_: Maybe (Tree state) -> Bool -> Tree state -> Symbol state
-symbolicateRecursive_ parent multiplicativeFirst root = case root of
-    FunctionNode s children -> (
-        case children.name of
-            "=" -> List.map (symbolicateRecursive_ (Just root) True) children.args |> List.intersperse (Text "=")
-            "+" -> children.args
-                |> List.foldl (\elem result ->
-                    if List.isEmpty result then [symbolicateRecursive_ (Just root) True elem]
-                    else if (functionName_ elem) == "-" then result ++ [symbolicateRecursive_ (Just root) True elem]
-                    else result ++ [Text "+", symbolicateRecursive_ (Just root) True elem]
+symbolicateRecursive_ parent multiplicativeFirst root = (
+    case root of
+        RealNode s -> [String.fromFloat s.value |> Text]
+        VariableNode s -> if String.length s.name == 1 then [Text s.name] else [Text ("\\" ++ s.name)]
+        UnaryNode s -> if s.name == "/"
+            then if multiplicativeFirst
+                then [Text "1/", symbolicateRecursive_ (Just root) False s.child]
+                else [Text "/", symbolicateRecursive_ (Just root) False s.child]
+            else [Text s.name, symbolicateRecursive_ (Just root) True s.child]
+        BinaryNode s -> s.children
+            |> List.foldl (\child result -> case child of
+                    UnaryNode c -> case (s.name, c.name) of
+                        ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) True child]
+                        ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) (List.isEmpty result) child]
+                        _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
+                    _ -> [symbolicateRecursive_ (Just root) True child]
                 )
                 []
-            "-" -> children.args
-                |> List.foldl (\elem result -> result ++ [symbolicateRecursive_ (Just root) True elem]) [Text "-"]
-            "*" -> children.args
-                |> List.foldl (\elem result ->
-                    if List.isEmpty result then [symbolicateRecursive_ (Just root) True elem]
-                    else if (functionName_ elem) == "/" then result ++ [symbolicateRecursive_ (Just root) False elem]
-                    else result ++ [Text "*", symbolicateRecursive_ (Just root) False elem] -- (Could we do something smarter here?)
-                )
-                []
-            "/" -> children.args
-                |> List.foldl (\elem result -> result ++ [symbolicateRecursive_ (Just root) True elem]) [Text (if multiplicativeFirst then "1/" else "/")]
-            _ ->
-                let
-                    input = List.map (symbolicateRecursive_ (Just root) True) children.args |> List.intersperse (Text ",")
-                    params = List.map (symbolicateRecursive_ (Just root) True) children.parameters |> List.intersperse (Text ",")
-                    args = if List.isEmpty params then input else input ++ (Text ";"::params)
-                in
-                    Text ("\\" ++ children.name ++ "(")::args ++ [Text ")"]
-        )
-        |> (\tokens -> case parent of
-            Nothing -> Node s tokens
-            Just p ->
-                if (functionPrecedence_ p) > (functionPrecedence_ root)
-                then Node s ((Text "(")::tokens ++ [Text ")"])
-                else Node s tokens
-        )
-    VariableNode s name -> if String.length name == 1 then Node s [Text name] else Node s [Text ("\\" ++ name)]
-    RealNode s val -> Node s [String.fromFloat val |> Text]
+            |> List.intersperse (Text s.name)
+        GenericNode s -> s.children
+            |> List.map (symbolicateRecursive_ (Just root) True)
+            |> List.intersperse (Text ",")
+            |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
+    )
+    |> (\tokens -> case parent of
+        Nothing -> Node {state = getState root, children = tokens}
+        Just p ->
+            if (functionPrecedence_ p) > (functionPrecedence_ root)
+            then Node {state = getState root, children= Text "("::tokens ++ [Text ")"]}
+            else Node {state = getState root, children = tokens}
+    )
 
 notation: String
 notation = """
@@ -131,7 +113,7 @@ equation_ = Parser.loop []
     )
     |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> FunctionNode () {name = "=", parameters =[], args = children}
+        _ -> BinaryNode {state = (), name = "=", associative = True, commutative = True, children = children}
     )
 
 expression_: Parser.Parser (Tree ())
@@ -142,7 +124,7 @@ expression_ = Parser.loop []
                 |. Parser.symbol "+"
                 |= multiple_
                 |. Parser.spaces
-            ,   Parser.succeed (\elem -> Parser.Loop ((FunctionNode () {name = "-", parameters = [], args = [elem]}) :: list))
+            ,   Parser.succeed (\elem -> Parser.Loop ((UnaryNode {state = (), name = "-", child = elem}) :: list))
                 |. Parser.symbol "-"
                 |= multiple_
                 |. Parser.spaces
@@ -151,7 +133,7 @@ expression_ = Parser.loop []
             ]
     ) |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> FunctionNode () {name = "+", parameters =[], args = children}
+        _ -> BinaryNode {state = (), name = "+", associative = True, commutative = True, children = children}
     )
 
 multiple_: Parser.Parser (Tree ())
@@ -162,7 +144,7 @@ multiple_ = Parser.loop []
                 |. Parser.symbol "*"
                 |= negatable_
                 |. Parser.spaces
-            ,   Parser.succeed (\elem -> Parser.Loop (FunctionNode () {name = "/", parameters = [], args = [elem]} :: list))
+            ,   Parser.succeed (\elem -> Parser.Loop (UnaryNode {state = (), name = "/", child = elem} :: list))
                 |. Parser.symbol "/"
                 |= negatable_
                 |. Parser.spaces
@@ -175,12 +157,12 @@ multiple_ = Parser.loop []
     )
     |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> FunctionNode () {name = "*", parameters =[], args = children}
+        _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, children = children}
     )
 
 negatable_: Parser.Parser (Tree ())
 negatable_ = Parser.oneOf
-    [   Parser.succeed (\x -> FunctionNode () {name="-", parameters=[], args = [x]}) |. Parser.symbol "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_)
+    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. Parser.symbol "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_)
     ,   Parser.succeed identity |= term_
     ]
 
@@ -190,29 +172,17 @@ term_ = Parser.oneOf
     ,   tokenNumber_
     ,   Parser.succeed (\a b -> (a, b)) |. Parser.symbol "\\" |= tokenLongName_ |= varOrFunc_
         |> Parser.map (\(name, props) -> case props of
-            Nothing -> VariableNode () name
-            Just p -> FunctionNode () {p | name = name}
+            Nothing -> VariableNode {state = (), name = name}
+            Just children -> GenericNode {state = (), name = name, children = children}
         )
-    ,   Parser.succeed (VariableNode ()) |= tokenShortName_
+    ,   Parser.succeed (\name -> VariableNode {state = (), name = name}) |= tokenShortName_
     ]
 
-varOrFunc_: Parser.Parser (Maybe (Function ()))
+varOrFunc_: Parser.Parser (Maybe (List (Tree ())))
 varOrFunc_ = Parser.oneOf
-    [   Parser.succeed Just |. Parser.symbol "(" |= args_ |. Parser.symbol ")"
+    [   Parser.succeed Just |. Parser.symbol "(" |= argsList_ |. Parser.symbol ")"
     ,   Parser.succeed Nothing
     ]
-
-args_: Parser.Parser (Function ())
-args_ = Parser.succeed (\a b -> (a, b)) |= argsList_ |= Parser.oneOf
-    [   Parser.succeed identity |. Parser.symbol ";" |= argsList_
-    ,   Parser.succeed []
-    ]
-    |> Parser.map (\(args, parameters) ->
-        {   name = ""
-        ,   args = args
-        ,   parameters = parameters
-        }
-    )
 
 argsList_: Parser.Parser (List (Tree ()))
 argsList_ = Parser.loop []
@@ -231,7 +201,7 @@ tokenNumber_: Parser.Parser (Tree ())
 tokenNumber_ = Parser.succeed (\a b -> a ++ b) |= tokenDigit_ |= Parser.oneOf [Parser.succeed (\b -> "." ++ b) |. Parser.symbol "." |= tokenDigit_ , Parser.succeed ""]
     |> Parser.andThen (\str -> case String.toFloat str of
         Nothing -> Parser.problem (str ++ " is not a valid number")
-        Just f -> Parser.succeed (RealNode () f)
+        Just f -> Parser.succeed (RealNode {state = (), value = f})
     )
 
 tokenDigit_: Parser.Parser String

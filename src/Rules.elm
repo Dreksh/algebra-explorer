@@ -155,14 +155,7 @@ matchRuleToNode_ rule node =
     matchExpressionToNode_ rule.lhs node || (rule.reversible && matchExpressionToNode_ rule.rhs node)
 
 matchExpressionToNode_: Expression_ -> Math.Tree state -> Bool
-matchExpressionToNode_ exp node = case exp.root of
-    Math.VariableNode _ _ -> True
-    Math.RealNode _ num -> case node of
-        Math.RealNode _ actual -> actual == num
-        _ -> False
-    Math.FunctionNode _ fProp -> case node of
-        Math.FunctionNode _ actual -> actual.name == fProp.name
-        _ -> False
+matchExpressionToNode_ exp node =  True -- TODO: Fix matching logic
 
 menuFunctions: (Event -> msg) -> Model -> Bool -> Menu.Part msg
 menuFunctions converter model createMode = Menu.Section "Functions" True
@@ -308,51 +301,4 @@ resultToParser_ res = case res of
 parseExpression_: Dict.Dict String FunctionProperties_ -> String -> Result String Expression_
 parseExpression_ functions str = case Math.parse str of
     Err errStr -> Err ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
-    Ok root -> case Math.process (tokenExtractor_ str functions) (Ok Dict.empty) root |> Tuple.first of
-        Err errStr -> Err errStr
-        Ok tokens -> Ok {name = str, root = root, tokens = tokens}
-
-tokenExtractor_: String -> Dict.Dict String FunctionProperties_ -> Math.Processor () () (Result String (Dict.Dict String Token_))
-tokenExtractor_ str functions =
-    {   function = (\recurse res (_, fProp) -> (case res of
-            Err _ -> res
-            Ok seenDict -> (
-                case (Dict.get fProp.name functions, Dict.get fProp.name seenDict) of
-                    (Nothing, Nothing) -> Ok (Dict.insert fProp.name (FunctionToken (List.length fProp.args) (List.length fProp.parameters)) seenDict)
-                    (Nothing, Just seen) -> case seen of
-                        AnyToken -> Err ("'" ++ fProp.name ++ "' is used as both a variable and a function in: " ++ str)
-                        FunctionToken numArgs numParams -> if (List.length fProp.args) == numArgs && (List.length fProp.parameters) == numParams
-                            then Ok seenDict
-                            else Err ("The function signature of '" ++ fProp.name ++ "' differs within " ++ str)
-                    (Just given, Nothing) -> if matchFunction_ given fProp
-                            then Ok seenDict
-                            else Err ("The function usage of '" ++ fProp.name ++ "', in '" ++ str ++ "' differs with the declared function")
-                    (Just _, Just _) -> Err ("Processing error: Added function '" ++ fProp.name ++ "' as a token")
-                )
-                |> (\result -> case result of
-                    Err _ -> result
-                    Ok _ -> case List.foldl (\child r -> recurse r child |> Tuple.first) result fProp.args of
-                        Err errStr -> Err errStr
-                        Ok dict -> List.foldl (\child r -> recurse r child |> Tuple.first) (Ok dict) fProp.parameters
-                )
-        , Just (Math.FunctionNode () fProp)
-        )
-    )
-    ,   var = (\res (_, name) -> case res of
-            Err _ -> (res, Just (Math.VariableNode () name))
-            Ok dict -> case Dict.get name functions of
-                Just _ -> (Err ("'" ++ name ++ "' is treated as a variable in: " ++ str), Just (Math.VariableNode () name))
-                Nothing -> case Dict.get name dict of
-                    Nothing -> (Ok (Dict.insert name AnyToken dict), Just (Math.VariableNode () name))
-                    Just AnyToken -> (Ok dict, Just (Math.VariableNode () name))
-                    Just (FunctionToken _ _) -> (Err (name ++ " is shown as both a variable and a function"), Just (Math.VariableNode () name))
-        )
-    ,   real = (\res (_, val) -> (res, Just (Math.RealNode () val))) -- Numbers don't need to be tracked
-    }
-
-matchFunction_: FunctionProperties_ -> Math.Function msg -> Bool
-matchFunction_ props node =
-    if props.associative && props.commutative then
-        List.isEmpty node.parameters && (List.length node.args) > 1
-    else
-        props.args == List.length node.args && props.params == List.length node.parameters
+    Ok root -> Ok {name = str, root = root, tokens = Dict.empty} -- TODO: Add parsing and validity checks

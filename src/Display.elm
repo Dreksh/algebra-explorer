@@ -41,14 +41,11 @@ init =
     }
 
 addEquation: Math.Tree () -> Model -> Model
-addEquation tree model = let ((_, map), root) = Math.process idProcessor_ (-1, (0, Dict.empty)) tree in
-    case root of
-        Nothing -> model
-        Just r ->
-            {   model
-            |   nextEquationNum = model.nextEquationNum + 1
-            ,   equations = Dict.insert model.nextEquationNum (map, r) model.equations
-            }
+addEquation tree model = let eq = processID_ -1 (0, Dict.empty) tree in
+    {   model
+    |   nextEquationNum = model.nextEquationNum + 1
+    ,   equations = Dict.insert model.nextEquationNum eq model.equations
+    }
 
 updateEquation: Int -> Math.Tree () -> Model -> Model
 updateEquation _ _ model = model -- TODO: Not gotten to this yet
@@ -56,21 +53,10 @@ updateEquation _ _ model = model -- TODO: Not gotten to this yet
 listEquations: Model -> Dict.Dict Int (Math.Tree State)
 listEquations model = Dict.map (\_ -> Tuple.second) model.equations
 
-deleteNode_: Int -> Equation_ -> Maybe Equation_
-deleteNode_ id eq = processSearch_ id deleteSubTree_ eq |> Tuple.first
-
-deleteSubTree_: Equation_ -> (ParentMap_, Maybe (Math.Tree State), ())
-deleteSubTree_ ((maxNum, map), node) = let id = Math.getState node |> (\s -> s.id) in
-    Math.getChildren node
-    |> List.foldl (\elem ((_, newMap),_, _) -> deleteSubTree_ ((maxNum, newMap), elem)) ((maxNum, Dict.remove id map), Nothing, ())
-
 selectedNode: Model -> Maybe (Math.Tree State)
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, num) -> Dict.get eq model.equations
-        |> Maybe.andThen (\equation -> equation
-            |> processSearch_ num (\(map, node) -> (map, Just node, node))
-            |> Tuple.second
-        )
+        |> Maybe.andThen (processSearch_ num)
     )
 
 update: Event -> Model -> (Model, Cmd Event)
@@ -81,9 +67,7 @@ update event model = case event of
             then ({model | selected = Nothing}, Cmd.none)
             else ({model | selected = Just (eq, node)}, Cmd.none)
     Unselect -> ({model | selected = Nothing}, Cmd.none)
-    DeleteTree eq node -> if node == 0
-        then ({model | equations = Dict.remove eq model.equations}, Cmd.none)
-        else ({model | equations = Dict.update eq (Maybe.andThen (deleteNode_ node)) model.equations}, Cmd.none)
+    DeleteTree _ _ -> (model, Cmd.none) -- TODO: Implement this when we need it
 
 {-
 # View-related functions
@@ -104,113 +88,52 @@ view converter attr model = div (attr ++ [])
 collapsedView_: Int -> Maybe Int -> Math.Symbol State -> Html Event
 collapsedView_ eq highlight node = case node of
     Math.Text val -> text val
-    Math.Node s children ->
-        children
+    Math.Node s ->
+        s.children
         |> List.map (collapsedView_ eq highlight)
         |> div
-            (   [class "node", HtmlEvent.onClick (Select eq s.id)]
-            ++  if s.id == Maybe.withDefault -1 highlight then [class "selected"] else []
+            (   [class "node", HtmlEvent.onClick (Select eq s.state.id)]
+            ++  if s.state.id == Maybe.withDefault -1 highlight then [class "selected"] else []
             )
 
 -- Parent's ID, Maximum ID num, Dict
-type alias IDGlobal_ = (Int, ParentMap_)
-idProcessor_: Math.Processor () State IDGlobal_
-idProcessor_ =
-    {   function = (\recurse (p, (id, dict)) (_, children) ->
-            let
-                ((_, g),args) = idChildren_ recurse id (id+1,dict) children.args
-                ((_,(next, finalDict)), parameters) = idChildren_ recurse id g children.parameters
-            in
-                ((p, (next, Dict.insert id p finalDict)), Just (Math.FunctionNode {position=(0,0), id=id} {name = children.name, args = args, parameters = parameters}))
-        )
-    ,   var = (\(p, (id, dict)) (_, name) -> ((p, (id+1, Dict.insert id p dict)), Just (Math.VariableNode {position=(0,0), id = id} name) ))
-    ,   real = (\(p, (id, dict)) (_, val) -> ((p, (id+1, Dict.insert id p dict)), Just (Math.RealNode {position=(0,0), id = id} val) ))
-    }
+processID_: Int -> ParentMap_ -> Math.Tree () -> Equation_
+processID_ parent (next, map) oldRoot = case oldRoot of
+    Math.RealNode s -> ((next+1, Dict.insert next parent map), Math.RealNode {state = {id = next, position = (0,0)}, value = s.value})
+    Math.VariableNode s -> ((next+1, Dict.insert next parent map), Math.VariableNode {state = {id = next, position = (0,0)}, name = s.name})
+    Math.UnaryNode s -> let ((newNext, newDict), newChild) = processID_ next (next+1, map) s.child in
+        ((newNext, Dict.insert next parent newDict), Math.UnaryNode {state = {id = next, position = (0,0)}, name = s.name, child = newChild})
+    Math.BinaryNode s -> let ((finalNext, finalMap), newChildren) = List.foldl (processIDChild_ next) ((next+1, map),[]) s.children in
+        ((finalNext, Dict.insert next parent finalMap), Math.BinaryNode {state = {id = next, position = (0,0)}, name = s.name, associative = s.associative, commutative = s.commutative, children = newChildren})
+    Math.GenericNode s -> let ((finalNext, finalMap), newChildren) = List.foldl (processIDChild_ next) ((next+1,map), []) s.children in
+        ((finalNext, Dict.insert next parent finalMap), Math.GenericNode {state = {id = next, position = (0,0)}, name = s.name, children = newChildren})
 
--- Do not use id*_ directly, use Math.process idProcessor_
-idChildren_: (IDGlobal_ -> Math.Tree () -> (IDGlobal_, Maybe (Math.Tree State))) -> Int -> ParentMap_ -> List (Math.Tree ()) -> (IDGlobal_, List (Math.Tree State))
-idChildren_ recurse parent dict children = List.foldl
-    (\elem (s, list) -> let (g, e) = recurse s elem in
-        case e of
-            Nothing -> (g, list)
-            Just newChild -> (g, list ++ [newChild])
-    )
-    ((parent, dict), [])
-    children
+processIDChild_: Int -> Math.Tree () -> (ParentMap_, List (Math.Tree State)) -> (ParentMap_, List (Math.Tree State))
+processIDChild_ parent oldRoot (parentMap, result) = let (newMap, newChild) = processID_ parent parentMap oldRoot in
+    (newMap, result ++ [newChild])
 
-{-
-# Search-based functions
--}
-type alias SearchGlobal_ output = (List Int, ParentMap_, Maybe output)
+-- Searching for a specific node
+processSearch_: Int -> Equation_ -> Maybe (Math.Tree State)
+processSearch_ id (map, root) = if id == 0 then Just root
+    else let path = searchPath_ map id in
+        Math.getChildren root
+        |> processSearchRecursive_ path
 
-processSearch_: Int -> (Equation_ -> (ParentMap_, Maybe (Math.Tree State), output)) -> Equation_ -> (Maybe Equation_, Maybe output)
-processSearch_ id process (map, root) =
-    if id == 0 then process (map, root) |> (\(newMap, newTree, o) -> case newTree of
-        Nothing -> (Nothing, Just o)
-        Just newRoot -> (Just (newMap,newRoot), Just o)
-    )
-    else
-        let
-            path = searchPath_ map id |> List.reverse
-            p = searchProcessor_ process
-        in
-            Math.process p (path, map, Nothing) root
-            |> (\((_, dict, o), newRoot) -> case newRoot of
-                Nothing -> (Nothing, o)
-                Just r -> (Just (dict, r), o)
-            )
 
--- Do not use the search*_ methods directly, use processSearch_
 searchPath_: ParentMap_ -> Int -> List Int
 searchPath_ (num, map) id = case Dict.get id map of
     Nothing -> []
     -- No matching on negative numbers: https://github.com/elm/compiler/issues/1773
     Just a -> if a < 0 then [] else searchPath_ (num, map) a |> (\list -> id::list)
 
-searchProcessor_: (Equation_ -> (ParentMap_, Maybe (Math.Tree State), output)) -> Math.Processor State State (SearchGlobal_ output)
-searchProcessor_ process =
-    {   function = searchFunction_ process
-    -- Cannot search leaf nodes
-    ,   var = (\g (s, name) -> (g, Just (Math.VariableNode s name) ))
-    ,   real = (\g (s, val) -> (g, Just (Math.RealNode s val) ))
-    }
-
-searchChildren_: (Equation_ -> (ParentMap_, Maybe (Math.Tree State), output)) -> (SearchGlobal_ output -> Math.Tree State -> (SearchGlobal_ output, Maybe (Math.Tree State))) -> SearchGlobal_ output -> List (Math.Tree State) -> (SearchGlobal_ output, List (Math.Tree State))
-searchChildren_ process recurse (path, map, _) children = case children of
-    -- No more children to process, with recursion, the children will be added back
-    [] -> ((path, map, Nothing), [])
-    (child::nextChildren) -> case path of
-        -- Reached end of path for some reason
-        [] -> ((path, map, Nothing), children)
-        (id::next) ->
-            -- Search next child
-            if (Math.getState child |> (\s -> s.id)) /= id then searchChildren_ process recurse (path, map, Nothing) nextChildren
-                |> (\(o, newChildren) -> (o, child::newChildren)) -- Add back the child
-            else if List.isEmpty next |> not then
-                -- Step to the next child
-                recurse (next, map, Nothing) child
-                |>  (\(o, newNode) -> case newNode of
-                    Nothing -> (o, nextChildren)
-                    Just n -> (o, n::nextChildren)
-                )
-            else
-                -- Process child node
-                process (map,child)
-                |> (\(newMap, newNode, o) -> case newNode of
-                    Nothing -> ((path, newMap, Just o), nextChildren)
-                    Just n -> ((path, newMap, Just o), n::nextChildren)
-                )
-
-searchFunction_: (Equation_ -> (ParentMap_, Maybe (Math.Tree State), output)) -> (SearchGlobal_ output -> Math.Tree State -> (SearchGlobal_ output, Maybe (Math.Tree State))) -> SearchGlobal_ output -> (State, Math.Function State) -> (SearchGlobal_ output, Maybe (Math.Tree State))
-searchFunction_ process recurse (path, map, _) (s, props) =
-    searchChildren_ process recurse (path, map, Nothing) props.args
-    |> (\((_, firstMap, firstO), args) -> case firstO of
-        -- Child node found
-        Just _ -> ((path, firstMap, firstO), {props | args = args})
-        -- Continue searching
-        Nothing ->
-            searchChildren_ process recurse (path, map, Nothing) props.parameters
-            |> (\(secondO,parameters) -> (secondO, {props | parameters = parameters}))
-    )
-    -- Remove the node if no children are left
-    |> (\(o, func) -> if List.isEmpty func.args && List.isEmpty func.parameters then (o, Nothing) else (o, Just (Math.FunctionNode s func) ))
+processSearchRecursive_: List Int -> List (Math.Tree State) -> Maybe (Math.Tree State)
+processSearchRecursive_ path children = case children of
+    [] -> Nothing
+    (root::other) -> let s = Math.getState root in
+        case path of
+            [] -> Nothing
+            [x] -> if x /= s.id then Nothing else Just root
+            (x::next) -> if x /= s.id
+                then processSearchRecursive_ path other
+                else Math.getChildren root
+                    |> processSearchRecursive_ next
