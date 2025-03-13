@@ -6,10 +6,11 @@ module Display exposing (
 
 import Dict
 import Html exposing (Html, div, text)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, style)
 -- Ours
 import Math
 import HtmlEvent
+import Html exposing (button)
 
 type alias ParentMap_ = (Int, Dict.Dict Int Int) -- Next available ID + mapping of child to parent node, allowing for faster traversal
 type alias Equation_ = (ParentMap_, Math.Tree State)
@@ -77,9 +78,13 @@ view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div (attr ++ [])
     (   Dict.foldl
         (\eqNum (_, root) result -> let highlight = Maybe.andThen (\(eq, num) -> if eq == eqNum then Just num else Nothing) model.selected in
-            Math.symbolicate root
-            |> collapsedView_ eqNum highlight
-            |> (\child -> (div [] [child] |> Html.map converter) :: result)
+            [   root
+                |>  Math.symbolicate
+                |>  collapsedView_ eqNum highlight
+            ,   root
+                |>  stackedView_ eqNum highlight
+            ]
+            |> (\children -> (div [] children |> Html.map converter) :: result)
         )
         []
         model.equations
@@ -95,6 +100,45 @@ collapsedView_ eq highlight node = case node of
             (   [class "node", HtmlEvent.onClick (Select eq s.state.id)]
             ++  if s.state.id == Maybe.withDefault -1 highlight then [class "selected"] else []
             )
+
+stackedView_: Int -> Maybe Int -> Math.Tree State -> Html Event
+stackedView_ eq highlight node =
+    let
+        (width, depth) = stackRecursive 0 0 node
+        _ = Debug.log "stacked" node
+        _ = Debug.log "stacked" (String.fromInt width ++ ";" ++ String.fromInt depth)
+    in
+        div
+        [   style "display" "grid"
+        ,   style "grid-template-columns" "repeat(7, 1fr)"  -- this should be from the result of tree depth
+        ,   style "grid-template-rows" "repeat(7, 1fr)"  -- this should be the number of symbolicate symbols
+        ]
+        [   div
+            [   style "grid-column" "1"  -- this should be
+            ,   style "grid-row" "1 / 4"  -- can be more than one width for fat stack
+            ] [ button [] [ text "hello" ] ]
+        ,   div
+            [   style "grid-column" "2 / 4"
+            ,   style "grid-row" "5"
+            ] [ button [] [ text "sup" ] ]
+        ]
+
+stackRecursive: Int -> Int -> Math.Tree State -> (Int, Int)
+stackRecursive width depth node =
+    let
+        -- _ = Debug.log "stack" (String.fromInt (Math.getState node).id ++ ":" ++ String.fromInt width ++ "," ++ String.fromInt depth)
+        children = Math.getChildren node
+    in
+        if List.isEmpty children
+        then (width+1, depth)
+        else
+            children
+            |>  List.foldl (\child (maxWidth, maxDepth) ->
+                stackRecursive maxWidth (maxDepth+1) child
+            ) (width, depth)
+        -- style "grid-row" ((String.fromInt width) ++ "/" ++ (String.fromInt childWidth)
+        -- style "grid-column" (String.fromInt depth)
+
 
 -- Parent's ID, Maximum ID num, Dict
 processID_: Int -> ParentMap_ -> Math.Tree () -> Equation_
