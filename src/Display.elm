@@ -104,35 +104,37 @@ collapsedView_ eq highlight node = case node of
 stackedView_: Int -> Maybe Int -> Math.Tree State -> Html Event
 stackedView_ eq highlight node =
     let
-        (width, depth, divs) = stackRecursive 1 1 node
+        (width, depth, divs) = stackRecursive eq highlight 1 1 node
     in
         div
         [   style "display" "grid"
+        ,   style "column-gap" ".3rem"
         ,   style "grid-template-columns" ("repeat(" ++ String.fromInt (width - 1) ++ ", 1fr)")
         ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++ ", 1fr)")
         ] divs
 
-stackRecursive: Int -> Int -> Math.Tree State -> (Int, Int, List (Html Event))
-stackRecursive width depth node =
+stackRecursive: Int -> Maybe Int -> Int -> Int -> Math.Tree State -> (Int, Int, List (Html Event))
+stackRecursive eq highlight width depth node =
     let
         children = Math.getChildren node
+        state = Math.getState node
         (maxWidth, maxDepth, childDivs) =
             if List.isEmpty children
             then (width+1, depth, [])
             else
                 children
                 |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
-                    let (w, d, divs) = stackRecursive foldWidth (depth+1) child
+                    let (w, d, divs) = stackRecursive eq highlight foldWidth (depth+1) child
                     in (w, max foldDepth d, foldDivs ++ divs)
                 ) (width, depth, [])
     in
         (   maxWidth
         ,   maxDepth
-        ,   (   div
-                [   class "node"
-                ,   style "text-align" "center"
+        ,   (   button
+                [   style "text-align" "center"
                 ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
                 ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
+                ,   HtmlEvent.onClick (Select eq state.id)
                 ]
                 [   text ( case node of
                         Math.RealNode n -> String.fromFloat n.value
