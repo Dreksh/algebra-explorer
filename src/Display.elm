@@ -108,8 +108,8 @@ stackedView_ eq highlight node =
     in
         div
         [   style "display" "grid"
-        ,   style "grid-template-columns" ("repeat(" ++ String.fromInt width ++ ", 1fr)")
-        ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++", 1fr)")
+        ,   style "grid-template-columns" ("repeat(" ++ String.fromInt (width - 1) ++ ", 1fr)")
+        ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++ ", 1fr)")
         ] divs
 
 stackRecursive: Int -> Int -> Math.Tree State -> (Int, Int, List (Html Event))
@@ -132,7 +132,7 @@ stackRecursive width depth node =
                 [   class "node"
                 ,   style "text-align" "center"
                 ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
-                ,   style "grid-row" (String.fromInt depth)
+                ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
                 ]
                 [   text ( case node of
                         Math.RealNode n -> String.fromFloat n.value
