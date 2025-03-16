@@ -122,14 +122,16 @@ stackRecursive width depth node =
             else
                 children
                 |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
-                    let (w, d, divs) = stackRecursive foldWidth (foldDepth+1) child
-                    in (w, d, foldDivs ++ divs)
+                    let (w, d, divs) = stackRecursive foldWidth (depth+1) child
+                    in (w, max foldDepth d, foldDivs ++ divs)
                 ) (width, depth, [])
     in
         (   maxWidth
         ,   maxDepth
         ,   (   div
-                [   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
+                [   class "node"
+                ,   style "text-align" "center"
+                ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
                 ,   style "grid-row" (String.fromInt depth)
                 ]
                 [   text ( case node of
