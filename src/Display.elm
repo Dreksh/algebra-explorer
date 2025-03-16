@@ -104,16 +104,15 @@ collapsedView_ eq highlight node = case node of
 stackedView_: Int -> Maybe Int -> Math.Tree State -> Html Event
 stackedView_ eq highlight node =
     let
-        (width, depth, rootDiv) = stackRecursive 0 0 node
+        (width, depth, divs) = stackRecursive 1 1 node
     in
         div
         [   style "display" "grid"
         ,   style "grid-template-columns" ("repeat(" ++ String.fromInt width ++ ", 1fr)")
         ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++", 1fr)")
-        ]
-        [ rootDiv ]
+        ] divs
 
-stackRecursive: Int -> Int -> Math.Tree State -> (Int, Int, Html Event)
+stackRecursive: Int -> Int -> Math.Tree State -> (Int, Int, List (Html Event))
 stackRecursive width depth node =
     let
         children = Math.getChildren node
@@ -122,26 +121,26 @@ stackRecursive width depth node =
             then (width+1, depth, [])
             else
                 children
-                |>  List.foldl (\child (currWidth, currDepth, divs) ->
-                    let (w, d, childDiv) = stackRecursive currWidth (currDepth+1) child
-                    in (w, d, childDiv::divs)
+                |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
+                    let (w, d, divs) = stackRecursive foldWidth (foldDepth+1) child
+                    in (w, d, foldDivs ++ divs)
                 ) (width, depth, [])
     in
         (   maxWidth
         ,   maxDepth
-        ,   div
-            [   style "grid-row" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
-            ,   style "grid-column" (String.fromInt depth)
-            ]
-            (
-                text ( case node of
-                    Math.RealNode n -> String.fromFloat n.value
-                    Math.VariableNode n -> n.name
-                    Math.UnaryNode n -> n.name
-                    Math.BinaryNode n -> n.name
-                    Math.GenericNode n -> n.name
-                )::childDivs
-            )
+        ,   (   div
+                [   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
+                ,   style "grid-row" (String.fromInt depth)
+                ]
+                [   text ( case node of
+                        Math.RealNode n -> String.fromFloat n.value
+                        Math.VariableNode n -> n.name
+                        Math.UnaryNode n -> n.name
+                        Math.BinaryNode n -> n.name
+                        Math.GenericNode n -> n.name
+                    )
+                ]
+            )::childDivs
         )
 
 -- Parent's ID, Maximum ID num, Dict
