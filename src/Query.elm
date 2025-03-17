@@ -4,6 +4,7 @@ import Browser.Navigation as Nav
 import Dict
 import Url
 import Math
+import Matcher
 
 type alias Model =
     {   current: Url.Url
@@ -12,9 +13,9 @@ type alias Model =
     ,   equations: List String
     }
 
-setEquations: Dict.Dict Int (Math.Tree msg) -> Model -> Model
+setEquations: Dict.Dict Int (Matcher.Equation msg) -> Model -> Model
 setEquations dict model = Dict.foldl
-    (\_ elem result -> Math.symbolicate elem
+    (\_ elem result -> Math.symbolicate elem.root
         |> (\symbols -> eqToString_ symbols:: result)
     ) [] dict
     |> (\result -> {model | equations = result})

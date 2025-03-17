@@ -23,6 +23,7 @@ import Notification
 import Query
 import Rules
 import Tutorial
+import Matcher
 
 -- Overall Structure of the app: it's a document
 
@@ -108,8 +109,8 @@ init _ url key =
     , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
     )
 
-parseEquations_: String -> (List (Math.Tree ()), List String) -> (List (Math.Tree ()), List String)
-parseEquations_ elem (result, errs) = case Math.parse elem of
+parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
+parseEquations_ elem (result, errs) = case Matcher.parseEquation {position = (0,0)} elem of
     Result.Ok root -> (result ++ [root], errs)
     Result.Err err -> (result, errs ++ [err])
 
@@ -139,7 +140,7 @@ update event model = case event of
     PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
     EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_ "textInput")
     CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
-    SubmitEquation id str -> case Math.parse str of
+    SubmitEquation id str -> case Matcher.parseEquation {position= (0,0)} str of
         Result.Ok root -> (
             case id of
                 Nothing ->

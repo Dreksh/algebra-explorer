@@ -1,7 +1,9 @@
-module Math exposing (Tree(..), Symbol(..), getChildren, getState, notation, parse, symbolicate)
+module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, notation, parse, symbolicate)
 
 import Parser exposing ((|.), (|=))
 import Set
+-- Ours
+import Backtrack
 
 type Tree s =
     RealNode {state: s, value: Float}
@@ -25,6 +27,27 @@ getChildren node = case node of
     UnaryNode s -> [s.child]
     BinaryNode s -> s.children
     GenericNode s -> s.children
+
+equal: Tree a -> Tree b -> Bool
+equal left right = case (left, right) of
+    (RealNode l, RealNode r) -> l.value == r.value
+    (VariableNode l, VariableNode r) -> l.name == r.name
+    (UnaryNode l, UnaryNode r) -> l.name == r.name
+        && equal l.child r.child
+    (BinaryNode l, BinaryNode r) -> l.name == r.name
+        && l.associative == r.associative && l.commutative == r.commutative
+        && List.length l.children == List.length r.children
+        &&  (   Backtrack.searchUnordered
+                (\lhs rhs result -> if equal lhs rhs then Backtrack.return Just result else Backtrack.fail)
+                l.children r.children
+                (Backtrack.init True)
+            |> Backtrack.toMaybe
+            |> Maybe.withDefault False
+            )
+    (GenericNode l, GenericNode r) -> l.name == r.name
+        && List.length l.children == List.length r.children
+        && (List.map2 equal l.children r.children |> List.foldl (&&) True)
+    _ -> False
 
 type Symbol s =
     Text String
