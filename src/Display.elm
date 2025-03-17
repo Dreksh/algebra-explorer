@@ -5,12 +5,11 @@ module Display exposing (
     )
 
 import Dict
-import Html exposing (Html, div, text)
+import Html exposing (Html, div, text, button)
 import Html.Attributes exposing (class, style)
 -- Ours
 import Math
 import HtmlEvent
-import Html exposing (button)
 
 type alias ParentMap_ = (Int, Dict.Dict Int Int) -- Next available ID + mapping of child to parent node, allowing for faster traversal
 type alias Equation_ = (ParentMap_, Math.Tree State)
@@ -78,13 +77,15 @@ view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div (attr ++ [])
     (   Dict.foldl
         (\eqNum (_, root) result -> let highlight = Maybe.andThen (\(eq, num) -> if eq == eqNum then Just num else Nothing) model.selected in
-            [   root
-                |>  Math.symbolicate
-                |>  collapsedView_ eqNum highlight
-            ,   root
-                |>  stackedView_ eqNum highlight
-            ]
-            |> (\children -> (div [] children |> Html.map converter) :: result)
+            (   div []
+                [   root
+                    |>  Math.symbolicate
+                    |>  collapsedView_ eqNum highlight
+                ,   root
+                    |>  stackedView_ eqNum highlight
+                ]
+                |> Html.map converter
+            ) :: result
         )
         []
         model.equations
@@ -107,8 +108,7 @@ stackedView_ eq highlight node =
         (width, depth, divs) = stackRecursive eq highlight 1 1 node
     in
         div
-        [   style "display" "grid"
-        ,   style "column-gap" ".3rem"
+        [   class "blocks"
         ,   style "grid-template-columns" ("repeat(" ++ String.fromInt (width - 1) ++ ", 1fr)")
         ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++ ", 1fr)")
         ] divs
@@ -131,7 +131,7 @@ stackRecursive eq highlight width depth node =
         (   maxWidth
         ,   maxDepth
         ,   (   button
-                [   style "text-align" "center"
+                [   class "block"
                 ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
                 ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
                 ,   HtmlEvent.onClick (Select eq state.id)
@@ -144,7 +144,7 @@ stackRecursive eq highlight width depth node =
                         Math.GenericNode n -> n.name
                     )
                 ]
-            )::childDivs
+            ) :: childDivs
         )
 
 -- Parent's ID, Maximum ID num, Dict

@@ -272,3 +272,11 @@ dialog > form {
 .node.selected {
     border: var(--color-selected) thin solid;
 }
+
+.blocks {
+    display: grid;
+    column-gap: .3rem
+}
+.block {
+    text-align: center
+}
