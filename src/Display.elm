@@ -5,8 +5,8 @@ module Display exposing (
     )
 
 import Dict
-import Html exposing (Html, div, text)
-import Html.Attributes exposing (class)
+import Html exposing (Html, div, text, button)
+import Html.Attributes exposing (class, style)
 -- Ours
 import Math
 import HtmlEvent
@@ -77,9 +77,15 @@ view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div (attr ++ [])
     (   Dict.foldl
         (\eqNum (_, root) result -> let highlight = Maybe.andThen (\(eq, num) -> if eq == eqNum then Just num else Nothing) model.selected in
-            Math.symbolicate root
-            |> collapsedView_ eqNum highlight
-            |> (\child -> (div [] [child] |> Html.map converter) :: result)
+            (   div []
+                [   root
+                    |>  Math.symbolicate
+                    |>  collapsedView_ eqNum highlight
+                ,   root
+                    |>  stackedView_ eqNum highlight
+                ]
+                |> Html.map converter
+            ) :: result
         )
         []
         model.equations
@@ -95,6 +101,51 @@ collapsedView_ eq highlight node = case node of
             (   [class "node", HtmlEvent.onClick (Select eq s.state.id)]
             ++  if s.state.id == Maybe.withDefault -1 highlight then [class "selected"] else []
             )
+
+stackedView_: Int -> Maybe Int -> Math.Tree State -> Html Event
+stackedView_ eq highlight node =
+    let
+        (width, depth, divs) = stackRecursive eq highlight 1 1 node
+    in
+        div
+        [   class "blocks"
+        ,   style "grid-template-columns" ("repeat(" ++ String.fromInt (width - 1) ++ ", 1fr)")
+        ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++ ", 1fr)")
+        ] divs
+
+stackRecursive: Int -> Maybe Int -> Int -> Int -> Math.Tree State -> (Int, Int, List (Html Event))
+stackRecursive eq highlight width depth node =
+    let
+        children = Math.getChildren node
+        state = Math.getState node
+        (maxWidth, maxDepth, childDivs) =
+            if List.isEmpty children
+            then (width+1, depth, [])
+            else
+                children
+                |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
+                    let (w, d, divs) = stackRecursive eq highlight foldWidth (depth+1) child
+                    in (w, max foldDepth d, foldDivs ++ divs)
+                ) (width, depth, [])
+    in
+        (   maxWidth
+        ,   maxDepth
+        ,   (   button
+                [   class "block"
+                ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
+                ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
+                ,   HtmlEvent.onClick (Select eq state.id)
+                ]
+                [   text ( case node of
+                        Math.RealNode n -> String.fromFloat n.value
+                        Math.VariableNode n -> n.name
+                        Math.UnaryNode n -> n.name
+                        Math.BinaryNode n -> n.name
+                        Math.GenericNode n -> n.name
+                    )
+                ]
+            ) :: childDivs
+        )
 
 -- Parent's ID, Maximum ID num, Dict
 processID_: Int -> ParentMap_ -> Math.Tree () -> Equation_
