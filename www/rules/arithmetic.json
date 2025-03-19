@@ -66,10 +66,7 @@
             "description": "Multiplying m to a sum is equivalent to Adding the product of each term with m",
             "reversible": true,
             "lhs": "m(a+b)",
-            "rhs": "ma+mb",
-            "parameters": {
-                "m": "The common factor to extract or to insert"
-            }
+            "rhs": "ma+mb"
         },
         {
             "title": "Operating on both sides of the equation",
@@ -77,7 +74,7 @@
             "lhs": "x=y",
             "rhs": "\\f(x)=\\f(y)",
             "parameters": {
-                "\\f(x)": "The function to apply on both sides"
+                "\\f(a)": "The function to apply on both sides"
             }
         },
         {

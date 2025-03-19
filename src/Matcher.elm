@@ -1,5 +1,5 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
-    getID, matchSubtree, parseEquation, selectedSubtree
+    getID, matchNode, matchSubtree, parseEquation, selectedSubtree
     )
 
 import Dict
@@ -7,7 +7,6 @@ import Math
 import Set
 -- Ours
 import Backtrack
-import Custom
 
 type State state = State_ Int state
 
@@ -64,12 +63,24 @@ addNode_: Int -> Tracker_ state -> (State state, Tracker_ state)
 addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent})
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
-selectedSubtree: Set.Set Int -> Equation state -> Maybe (Math.Tree (State state), Set.Set Int)
+selectedSubtree: Set.Set Int -> Equation state -> Maybe (Math.Tree (State state))
 selectedSubtree ids eq = affectedSubtree_ ids eq.tracker.parent
         |> Maybe.andThen (\(id, nodes) ->
             processSubtree_ (searchPath_ eq.tracker.parent id) (\node -> (Just node, node)) eq.root
             |> (\(root, _) -> Maybe.map (\r -> (r, nodes)) root)
         )
+        |> Maybe.map (\(root, nodes) -> reducedNode_ nodes root)
+
+-- We only care about the root node's children, everything under those are included
+-- as they can't just be "set-aside"
+reducedNode_: Set.Set Int -> Math.Tree (State state) -> Math.Tree (State state)
+reducedNode_ selected root = case root of
+    Math.BinaryNode s -> Math.BinaryNode
+        {   s
+        | children = s.children
+            |> List.filter (\child -> Set.member (Math.getState child |> getID) selected)
+        }
+    _ -> root
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)
 affectedSubtree_ nodes parent = case Set.toList nodes of
@@ -140,6 +151,15 @@ processSubtree_ path processor node =
                                 |> (\c -> (r, Math.BinaryNode {s | children = c}))
                 Math.GenericNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.GenericNode {s | children = children}))
 
+matchNode: Matcher -> Math.Tree (State state) -> Bool
+matchNode matcher root = case (matcher, root) of
+    (AnyMatcher _, _) -> True
+    (RealMatcher m, Math.RealNode n) -> m.value == n.value
+    (ExactMatcher m, Math.VariableNode n) -> m.name == n.name && List.isEmpty m.arguments
+    (ExactMatcher m, Math.GenericNode n) -> m.name == n.name && List.length m.arguments == List.length n.children
+    (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name
+    _ -> False
+
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
 matchSubtree matcher root =
@@ -182,6 +202,7 @@ extractPattern_ from root token = case from of
             Math.GenericNode n -> if n.name /= s.name then Backtrack.fail
                 else Backtrack.searchOrdered extractPattern_ s.arguments n.children token
             _ -> Backtrack.fail
+    -- TODO: Ensure all children are matched
     CommutativeMatcher s -> case root of
         Math.BinaryNode n -> if s.name /= n.name then Backtrack.fail
             else Backtrack.searchUnordered extractPattern_ s.arguments n.children token

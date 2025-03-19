@@ -4,6 +4,7 @@ import Browser
 import Browser.Dom as Dom
 import Browser.Events as BrowserEvent
 import Browser.Navigation as Nav
+import Dict
 import File
 import File.Select as FSelect
 import Json.Decode as Decode
@@ -17,13 +18,13 @@ import Url
 import Display
 import HtmlEvent
 import Icon
+import Matcher
 import Math
 import Menu
 import Notification
 import Query
 import Rules
 import Tutorial
-import Matcher
 
 -- Overall Structure of the app: it's a document
 
@@ -60,7 +61,6 @@ type Event =
     EventUrlRequest Browser.UrlRequest
     | EventUrlChange Url.Url
     | DisplayEvent Display.Event
-    | RulesEvent Rules.Event
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
@@ -80,6 +80,8 @@ type Event =
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
+    -- Rules
+    | ApplyRule {to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult Display.State}
 
 type LoadableFile =
     TopicFile
@@ -129,8 +131,6 @@ update event model = case event of
             query = Query.setEquations (Display.listEquations dModel) model.query
         in
             ({model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, Query.pushUrl query, updateMathJax ()])
-    RulesEvent e -> let (rModel, rCmd) = Rules.update e model.rules in
-        ({model | rules = rModel}, Cmd.map RulesEvent rCmd)
     TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
         ({model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
     NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
@@ -175,6 +175,7 @@ update event model = case event of
                 Ok rModel -> ({model | rules = rModel}, Cmd.none)
             )
         SaveFile -> (model, Cmd.none) -- TODO
+    ApplyRule _ -> (model, Cmd.none) -- TODO
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let (nModel, nCmd) = Notification.displayError str (model.notification, Cmd.none) in
@@ -221,9 +222,9 @@ view model =
                             ]
                         ]
                     ,   Tutorial.menu TutorialEvent model.tutorial
-                    ,   Rules.menuConstants RulesEvent model.rules
-                    ,   Rules.menuFunctions RulesEvent model.rules (inCreateMode_ model)
-                    ,   Rules.menuRules RulesEvent model.rules (Display.selectedNode model.display)
+                    ,   Rules.menuConstants model.rules
+                    ,   Rules.menuFunctions model.rules (inCreateMode_ model)
+                    ,   Rules.menuRules ApplyRule model.rules (Display.selectedNode model.display)
                     ]
                 ]
             ]
