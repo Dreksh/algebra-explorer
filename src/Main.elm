@@ -93,6 +93,7 @@ type Event =
     | FileLoaded LoadableFile String
     -- Rules
     | ApplyRule Parameters_
+    | ApplyParameters (Dict.Dict String String)
 
 type LoadableFile =
     TopicFile
@@ -189,7 +190,21 @@ update event model = case event of
         SaveFile -> (model, Cmd.none) -- TODO
     ApplyRule details -> if List.isEmpty details.parameters |> not
         then ({ model | parameters = Just details}, Cmd.none)
-        else (model, Cmd.none) -- TODO
+        else applyChange_ details model
+    ApplyParameters params -> case model.parameters of
+        Nothing -> (model, Cmd.none)
+        Just existing ->
+            let
+                result = Helper.resultDict (\k v r -> Math.parse v
+                    |> Result.map (\tree -> {r | extracted = Matcher.addMatch k tree r.extracted})
+                    ) existing params
+            in case result of
+                Err errStr -> submitNotification_ model errStr
+                Ok newParams -> applyChange_ newParams model
+
+-- TODO
+applyChange_: Parameters_ -> Model -> (Model, Cmd Event)
+applyChange_ params model = (model, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let (nModel, nCmd) = Notification.displayError str (model.notification, Cmd.none) in
@@ -298,23 +313,17 @@ parameterDiv_ params =
         decoder = tokens
             |> Set.foldl (\elem result -> Decode.map2
                 (\eq -> Dict.insert elem eq)
-                (Math.decoder |> Decode.field elem)
+                (Decode.string |> Decode.field "value" |> Decode.field elem)
                 result
             )
             (Decode.succeed Dict.empty)
-            |> Decode.map (\info ->
-                {   params
-                |   extracted = Dict.foldl Matcher.addMatch params.extracted info
-                ,   parameters = []
-                }
-            )
     in
         div []
         [   h2 [] [text params.title]
-        ,   form [id "params", HtmlEvent.onSubmitForm decoder ApplyRule]
+        ,   form [id "params", HtmlEvent.onSubmitForm decoder ApplyParameters]
             (   (   List.foldl (\param (result, toks) ->
                         Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
-                            then (nextResult ++ [label [for key] [input [type_ "text", name key] []]], Set.remove key nextToks)
+                            then (nextResult ++ [label [for key] [p [] [text (key ++ ":")], input [type_ "text", name key] []]], Set.remove key nextToks)
                             else (nextResult ++ [p [] [text "Refer to input of the same name above"]], nextToks)
                         )
                         ([], toks)

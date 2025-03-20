@@ -88,11 +88,9 @@ selectedSubtree ids eq = affectedSubtree_ ids eq.tracker.parent
 -- as they can't just be "set-aside"
 reducedNode_: Set.Set Int -> Math.Tree (State state) -> Math.Tree (State state)
 reducedNode_ selected root = case root of
-    Math.BinaryNode s -> Math.BinaryNode
-        {   s
-        | children = s.children
-            |> List.filter (\child -> Set.member (Math.getState child |> getID) selected)
-        }
+    Math.BinaryNode s -> let children = List.filter (\child -> Set.member (Math.getState child |> getID) selected) s.children in
+        if List.isEmpty children then root
+        else Math.BinaryNode { s | children = children }
     _ -> root
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)

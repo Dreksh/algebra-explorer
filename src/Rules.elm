@@ -5,6 +5,7 @@ module Rules exposing (Model, Topic, init,
 
 import Dict
 import Html exposing (a, h2, p, text)
+import Html.Attributes exposing (class)
 import Json.Decode as Dec
 import Set
 -- Ours
@@ -122,7 +123,7 @@ menuRules click model selectedNode =
         clickEvent result rule to =
             let
                 parameters = rule.parameters
-                    |> List.filter (\(exp, _) -> Dict.diff exp.tokens result.matches |> Dict.isEmpty)
+                    |> List.filter (\(exp, _) -> Dict.diff exp.tokens result.matches |> Dict.isEmpty |> not)
                     |> List.map (\(exp, description) -> {name = exp.name, description = description, tokens = Dict.keys exp.tokens |> Set.fromList})
             in
                 HtmlEvent.onClick (click {title = ruleName rule, to = to rule |> .root, parameters = parameters, extracted = result})
@@ -135,10 +136,10 @@ menuRules click model selectedNode =
                 ]
             ]
             |> Helper.maybeAppend (lMatcher
-                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .rhs] [text "Apply forwards"]])
+                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .rhs, class "clickable"] [text "Apply forwards"]])
             )
             |> Helper.maybeAppend (rMatcher
-                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .lhs] [text "Apply backwards"]])
+                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .lhs, class "clickable"] [text "Apply backwards"]])
             ))
     in
     Menu.Section "Rules" True
@@ -304,8 +305,16 @@ treeToMatcher_ functions constants root = case root of
         |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
     Math.BinaryNode s -> processChildren_ functions constants s.children
         |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
-    Math.GenericNode s -> processChildren_ functions constants s.children
-        |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
+    Math.GenericNode s -> case Dict.get s.name functions of
+        Nothing -> processChildren_ functions constants s.children
+            |> Result.map (\(children, tokens) ->
+                (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens)
+            )
+        Just prop -> if prop.associative || prop.commutative
+            then processChildren_ functions constants s.children
+                |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
+            else processChildren_ functions constants s.children
+                |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
 
 processChildren_: Dict.Dict String FunctionProperties_ -> Set.Set String -> List (Math.Tree ()) -> Result String (List Matcher.Matcher, Dict.Dict String Token_)
 processChildren_ functions constants = Helper.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child

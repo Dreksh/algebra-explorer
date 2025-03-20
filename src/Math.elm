@@ -1,11 +1,9 @@
-module Math exposing (Tree(..), Symbol(..), decoder, equal, getChildren, getState, notation, parse, symbolicate)
+module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, notation, parse, symbolicate)
 
-import Json.Decode as Decode
 import Parser exposing ((|.), (|=))
 import Set
 -- Ours
 import Backtrack
-import Helper
 
 type Tree s =
     RealNode {state: s, value: Float}
@@ -129,9 +127,6 @@ ab - a variable "a" multiplied by a variable "b"
 -- Parser implementation
 parse: String -> Result String (Tree ())
 parse input = Parser.run equation_ input |> Result.mapError (createErrorMessage_ input)
-
-decoder: Decode.Decoder (Tree ())
-decoder = Decode.string |> Decode.andThen (parse >> Helper.resultToDecoder)
 
 equation_: Parser.Parser (Tree ())
 equation_ = Parser.loop []
