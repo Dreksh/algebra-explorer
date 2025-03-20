@@ -4,7 +4,7 @@ module HtmlEvent exposing (..)
 
 import Html
 import Html.Events exposing(preventDefaultOn, stopPropagationOn)
-import Json.Decode exposing (field, map, string, succeed)
+import Json.Decode exposing (Decoder, field, map, string, succeed)
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
@@ -21,4 +21,11 @@ onSubmitField target event = preventDefaultOn "submit"
         <| field "target"
         <| field target
         <|  field "value" string
+    )
+
+onSubmitForm: Decoder form -> (form -> msg) -> Html.Attribute msg
+onSubmitForm target event = preventDefaultOn "submit"
+    (   map (\input -> (event input, True))
+        <| field "target"
+        <| target
     )

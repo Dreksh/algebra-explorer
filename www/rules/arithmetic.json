@@ -10,23 +10,21 @@
     "constants": [],
     "equations": [
         {
-            "title": "Associative Property of Addition",
-            "description": "Addition can be performed in a different order",
-            "lhs": "(a+b)+c",
-            "rhs": "a+(b+c)"
-        },
-        {
-            "title": "Commutative Property of Addition",
-            "description": "Numbers being added can be swapped",
-            "lhs": "a+b",
-            "rhs": "b+a"
+            "title": "Identity of Addition",
+            "description": "Adding 0 does not change the value",
+            "reversible": true,
+            "lhs": "a+0",
+            "rhs": "a"
         },
         {
             "title": "Inverse of Addition",
             "description": "Definition of negative numbers",
             "reversible": true,
             "lhs": "a-a",
-            "rhs": "0"
+            "rhs": "0",
+            "parameters": {
+                "a": "the expression to introduce"
+            }
         },
         {
             "title": "Double Inverse of Addition",
@@ -36,23 +34,28 @@
             "rhs": "a"
         },
         {
-            "title": "Associative Property of Multiplication",
-            "description": "Multiplication can be performed in a different order",
-            "lhs": "(a*b)*c",
-            "rhs": "a*(b*c)"
+            "title": "Distributive property of negation",
+            "description": "The negation of a sum is the sum of their negation",
+            "reversible": true,
+            "lhs": "-(a+b)",
+            "rhs": "-a-b"
         },
         {
-            "title": "Commutative Property of Multiplication",
-            "description": "Numbers being multiplied can be swapped",
-            "lhs": "a*b",
-            "rhs": "b*a"
+            "title": "Identity of Multiplication",
+            "description": "Multiplying by 1 does not change the value",
+            "reversible": true,
+            "lhs": "a*1",
+            "rhs": "a"
         },
         {
             "title": "Inverse of Multiplication",
             "description": "Definition of reciprocals",
             "reversible": true,
             "lhs": "a/a",
-            "rhs": "1"
+            "rhs": "1",
+            "parameters": {
+                "a": "the expression to introduce"
+            }
         },
         {
             "title": "Double Inverse of Multiplication",
@@ -62,7 +65,14 @@
             "rhs": "a*c/b"
         },
         {
-            "title": "Factorizing or Expanding Brackets",
+            "title": "Distributive property of reciprocal",
+            "description": "the reciprocal of a product is the product of their reciprocal",
+            "reversible": true,
+            "lhs": "a/(b*c)",
+            "rhs": "a/b/c"
+        },
+        {
+            "title": "Distributive property of multiplication",
             "description": "Multiplying m to a sum is equivalent to Adding the product of each term with m",
             "reversible": true,
             "lhs": "m(a+b)",

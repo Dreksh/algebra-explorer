@@ -8,7 +8,7 @@ import Dict
 import File
 import File.Select as FSelect
 import Json.Decode as Decode
-import Html exposing (Html, a, button, div, form, input, pre, text)
+import Html exposing (Html, a, button, div, form, h2, h3, input, p, pre, section, text)
 import Html.Attributes exposing (attribute, class, id, name, type_)
 import Http
 import Set
@@ -16,6 +16,7 @@ import Task
 import Url
 -- Our imports
 import Display
+import Helper
 import HtmlEvent
 import Icon
 import Matcher
@@ -25,6 +26,8 @@ import Notification
 import Query
 import Rules
 import Tutorial
+import Html exposing (label)
+import Html.Attributes exposing (for)
 
 -- Overall Structure of the app: it's a document
 
@@ -42,6 +45,13 @@ port updateMathJax: () -> Cmd msg
 
 -- Types
 
+type alias Parameters_ =
+    {   title: String
+    ,   to: Matcher.Matcher
+    ,   parameters: List {name: String, description: String, tokens: Set.Set String}
+    ,   extracted: Matcher.MatchResult Display.State
+    }
+
 type alias Model =
     {   display: Display.Model
     ,   rules: Rules.Model
@@ -55,6 +65,7 @@ type alias Model =
     ,   showHelp: Bool
     ,   showMenu: Bool
     ,   dialog: Maybe (String, String -> Event)
+    ,   parameters: Maybe Parameters_
     }
 
 type Event =
@@ -81,7 +92,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     -- Rules
-    | ApplyRule {to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult Display.State}
+    | ApplyRule Parameters_
 
 type LoadableFile =
     TopicFile
@@ -107,6 +118,7 @@ init _ url key =
         , showHelp = False
         , showMenu = if newScreen then True else False
         , dialog = Nothing
+        , parameters = Nothing
         }
     , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
     )
@@ -175,7 +187,9 @@ update event model = case event of
                 Ok rModel -> ({model | rules = rModel}, Cmd.none)
             )
         SaveFile -> (model, Cmd.none) -- TODO
-    ApplyRule _ -> (model, Cmd.none) -- TODO
+    ApplyRule details -> if List.isEmpty details.parameters |> not
+        then ({ model | parameters = Just details}, Cmd.none)
+        else (model, Cmd.none) -- TODO
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let (nModel, nCmd) = Notification.displayError str (model.notification, Cmd.none) in
@@ -199,8 +213,9 @@ view model =
         [   Display.view DisplayEvent [id "display"] model.display
         ,   div [id "inputPane"]
             [   div [id "leftPane"]
-                (   [  inputDiv model  ]
-                ++ if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else []
+                (  inputDiv model
+                :: (if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else [])
+                |> Helper.maybeAppend (Maybe.map parameterDiv_ model.parameters)
                 )
             ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                 [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
@@ -275,3 +290,51 @@ inCreateMode_: Model -> Bool
 inCreateMode_ model = case model.createMode of
     Nothing -> False
     Just _ -> True
+
+parameterDiv_: Parameters_ -> Html.Html Event
+parameterDiv_ params =
+    let
+        tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters
+        decoder = tokens
+            |> Set.foldl (\elem result -> Decode.map2
+                (\eq -> Dict.insert elem eq)
+                (Math.decoder |> Decode.field elem)
+                result
+            )
+            (Decode.succeed Dict.empty)
+            |> Decode.map (\info ->
+                {   params
+                |   extracted = Dict.foldl Matcher.addMatch params.extracted info
+                ,   parameters = []
+                }
+            )
+    in
+        div []
+        [   h2 [] [text params.title]
+        ,   form [id "params", HtmlEvent.onSubmitForm decoder ApplyRule]
+            (   (   List.foldl (\param (result, toks) ->
+                        Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
+                            then (nextResult ++ [label [for key] [input [type_ "text", name key] []]], Set.remove key nextToks)
+                            else (nextResult ++ [p [] [text "Refer to input of the same name above"]], nextToks)
+                        )
+                        ([], toks)
+                        param.tokens
+                        |> (\(finalList, finalTokens) ->
+                            (   result ++ [section []
+                                    (   [ h3 [] [text param.name]
+                                        , p [] [text param.description]
+                                        ]
+                                    ++ finalList
+                                    )
+                                ]
+                            ,   finalTokens
+                            )
+                        )
+                    )
+                    ([], tokens)
+                    params.parameters
+                    |> Tuple.first
+                )
+            ++ [button [type_ "submit"] [text "Apply"]]
+            )
+        ]

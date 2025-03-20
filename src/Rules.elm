@@ -8,7 +8,7 @@ import Html exposing (a, h2, p, text)
 import Json.Decode as Dec
 import Set
 -- Ours
-import Custom
+import Helper
 import Matcher
 import Math
 import Menu
@@ -115,29 +115,29 @@ deleteTopic name model = let id = String.toLower name in
                 ,   functions = newFunctions
                 }
 
-menuRules: ({to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult state} -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state)) -> Menu.Part msg
+menuRules: ({title: String, to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult state} -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state)) -> Menu.Part msg
 menuRules click model selectedNode =
     let
-        -- TODO: How to get missing?
+        ruleName rule = rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name
         clickEvent result rule to =
             let
                 parameters = rule.parameters
                     |> List.filter (\(exp, _) -> Dict.diff exp.tokens result.matches |> Dict.isEmpty)
                     |> List.map (\(exp, description) -> {name = exp.name, description = description, tokens = Dict.keys exp.tokens |> Set.fromList})
             in
-                HtmlEvent.onClick (click {to = to rule |> .root, parameters = parameters, extracted = result})
+                HtmlEvent.onClick (click {title = ruleName rule, to = to rule |> .root, parameters = parameters, extracted = result})
         individualRule display lMatcher rMatcher rule = Menu.Section
-            (rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name)
+            (ruleName rule)
             display
             ([  Menu.Content
                 [   h2 [] [text rule.title]
                 ,   p [] [text rule.description]
                 ]
             ]
-            |> Custom.maybeAppend (lMatcher
+            |> Helper.maybeAppend (lMatcher
                 |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .rhs] [text "Apply forwards"]])
             )
-            |> Custom.maybeAppend (rMatcher
+            |> Helper.maybeAppend (rMatcher
                 |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .lhs] [text "Apply backwards"]])
             ))
     in
@@ -216,15 +216,15 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
     (Dec.maybe (Dec.field "reversible" Dec.bool) |> Dec.map (Maybe.withDefault False))
-    (Dec.field "lhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> resultToParser_)))
-    (Dec.field "rhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> resultToParser_)))
+    (Dec.field "lhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> Helper.resultToDecoder)))
+    (Dec.field "rhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> Helper.resultToDecoder)))
     (Dec.maybe (Dec.field "parameters" (
         Dec.keyValuePairs Dec.string
         |>  Dec.andThen (
-            Custom.resultList (\(key, description) (others, dict) ->
+            Helper.resultList (\(key, description) (others, dict) ->
                 parseExpression_ functions constants key
                 |> Result.andThen (\exp ->
-                    Custom.resultDict (\name tok newDict -> case Dict.get name newDict of
+                    Helper.resultDict (\name tok newDict -> case Dict.get name newDict of
                         Nothing -> Ok (Dict.insert name tok newDict)
                         Just oldTok -> case (oldTok, tok) of
                             ((FunctionToken oArgs), (FunctionToken args)) ->
@@ -239,7 +239,7 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
                 )
             )
             ([], Dict.empty)
-            >> resultToParser_
+            >> Helper.resultToDecoder
         )))
         |> Dec.map (Maybe.withDefault ([], Dict.empty))
     )
@@ -249,7 +249,7 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
             extractUniqueTokens_ functions constants pDict originalRhs.tokens
             |> Result.andThen (\rhs ->
                 Set.union (Dict.keys lhs |> Set.fromList) (Dict.keys rhs |> Set.fromList)
-                |> Custom.resultSet
+                |> Helper.resultSet
                     (\name _ -> case (Dict.get name lhs, Dict.get name rhs) of
                         (Nothing, Nothing) -> Err ("Something went wrong, unable to find name '" ++ name ++ "'in lhs nor rhs")
                         (Nothing, Just _) -> Ok ()
@@ -264,11 +264,11 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
                 |> Result.map (\_ -> Rule_ title description reversible originalLhs originalRhs parameters)
             )
         )
-        |> resultToParser_
+        |> Helper.resultToDecoder
     )
 
 extractUniqueTokens_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dict.Dict String Token_ -> Dict.Dict String Token_ -> Result String (Dict.Dict String Token_)
-extractUniqueTokens_ functions constants parameters = Custom.resultDict
+extractUniqueTokens_ functions constants parameters = Helper.resultDict
     (\name token dict ->
         if Dict.member name functions
         then case token of
@@ -287,11 +287,6 @@ extractUniqueTokens_ functions constants parameters = Custom.resultDict
             _ -> Err ("Inconsistent usage of '" ++ name ++ "' between expression and parameter")
     )
     Dict.empty
-
-resultToParser_: Result String a -> Dec.Decoder a
-resultToParser_ res = case res of
-    Err str -> Dec.fail str
-    Ok b -> Dec.succeed b
 
 parseExpression_: Dict.Dict String FunctionProperties_ -> Set.Set String -> String -> Result String Expression_
 parseExpression_ functions constants str = case Math.parse str of
@@ -313,8 +308,8 @@ treeToMatcher_ functions constants root = case root of
         |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
 
 processChildren_: Dict.Dict String FunctionProperties_ -> Set.Set String -> List (Math.Tree ()) -> Result String (List Matcher.Matcher, Dict.Dict String Token_)
-processChildren_ functions constants = Custom.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child
-        |> Result.andThen (\(childMatcher, childToken) -> Custom.resultDict
+processChildren_ functions constants = Helper.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child
+        |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict
             (\k v total -> case Dict.get k total of
                 Nothing -> Ok (Dict.insert k v total)
                 Just other -> case (other, v) of

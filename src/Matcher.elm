@@ -1,5 +1,6 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
-    getID, matchNode, matchSubtree, parseEquation, selectedSubtree
+    getID, parseEquation, selectedSubtree,
+    addMatch, matchNode, matchSubtree
     )
 
 import Dict
@@ -10,15 +11,19 @@ import Backtrack
 
 type State state = State_ Int state
 
-type alias Equation state =
-    {   root: Math.Tree (State state)
-    ,   tracker: Tracker_ state
-    }
+getID: State state -> Int
+getID s = case s of
+    State_ rootID _ -> rootID
 
 type alias Tracker_ state =
     {   nextID: Int
     ,   parent: Dict.Dict Int Int
     ,   defaultState: state
+    }
+
+type alias Equation state =
+    {   root: Math.Tree (State state)
+    ,   tracker: Tracker_ state
     }
 
 -- Ignore only Associativity for now, given that we don't have any functions that follow that for now
@@ -28,9 +33,17 @@ type Matcher =
     | ExactMatcher {name: String, arguments: List Matcher} -- Known functions or variables, exact arguments
     | CommutativeMatcher {name: String, arguments: List Matcher }  -- Unordered (set-based)
 
-getID: State state -> Int
-getID s = case s of
-    State_ rootID _ -> rootID
+type alias MatchResult state =
+    {   nodes: Dict.Dict Int (Math.Tree (State state))
+    ,   matches: Dict.Dict String (Source_ state)
+    }
+
+type Source_ state =
+    Internal_ (Set.Set Int)
+    | External_ (Math.Tree ())
+
+addMatch: String -> Math.Tree () -> MatchResult state -> MatchResult state
+addMatch key value result = {result | matches = Dict.insert key (External_ value) result.matches}
 
 -- ## parserEquation: Also assigned ID
 parseEquation: state -> String -> Result String (Equation state)
@@ -166,11 +179,6 @@ matchSubtree matcher root =
     extractPattern_ matcher root (Backtrack.init {nodes = Dict.empty, matches = Dict.empty})
     |> Backtrack.toMaybe
 
-type alias MatchResult state =
-    {   nodes: Dict.Dict Int (Math.Tree (State state))
-    ,   matches: Dict.Dict String (Set.Set Int)
-    }
-
 extractPattern_: Matcher -> Math.Tree (State state) -> Backtrack.Continuation (MatchResult state) -> Backtrack.Continuation (MatchResult state)
 extractPattern_ from root token = case from of
     RealMatcher s -> case root of
@@ -179,19 +187,19 @@ extractPattern_ from root token = case from of
         _ -> Backtrack.fail
     AnyMatcher s -> let id = Math.getState root |> getID in
         Backtrack.return (\result -> case Dict.get s.name result.matches of
-            Nothing -> Just
-                {  result
-                |   nodes = Dict.insert id root result.nodes
-                ,   matches = Dict.insert s.name (Set.singleton id) result.matches
-                }
-            Just prevSet -> prevSet
+            Just (Internal_ prevSet) -> prevSet
                 |> Set.filter (\elem -> case Dict.get elem result.nodes of
                     Nothing -> False
                     Just n -> Math.equal n root
                 )
                 |> (\newSet -> if Set.isEmpty newSet then Nothing
-                    else Just {result | matches = Dict.insert s.name newSet result.matches}
+                    else Just {result | matches = Dict.insert s.name (Internal_ newSet) result.matches}
                 )
+            _ -> Just
+                {  result
+                |   nodes = Dict.insert id root result.nodes
+                ,   matches = Dict.insert s.name (Set.singleton id |> Internal_) result.matches
+                }
         ) token
     ExactMatcher s -> if List.isEmpty s.arguments
         then case root of

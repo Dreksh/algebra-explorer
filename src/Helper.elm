@@ -1,6 +1,7 @@
-module Custom exposing (..)
+module Helper exposing (..)
 
 import Dict
+import Json.Decode as Decode
 import Set
 
 maybeAppend: Maybe a -> List a -> List a
@@ -22,3 +23,8 @@ resultDict process start = Dict.foldl (\key value result -> Result.andThen (proc
 
 resultSet: (a -> b -> Result String b) -> b -> Set.Set a -> Result String b
 resultSet process start = Set.foldl (\elem res -> Result.andThen (process elem) res) (Ok start)
+
+resultToDecoder: Result String a -> Decode.Decoder a
+resultToDecoder res = case res of
+    Err str -> Decode.fail str
+    Ok b -> Decode.succeed b
