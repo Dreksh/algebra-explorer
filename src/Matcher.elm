@@ -32,6 +32,7 @@ type Matcher =
     | RealMatcher {value: Float} -- Numbers
     | ExactMatcher {name: String, arguments: List Matcher} -- Known functions or variables, exact arguments
     | CommutativeMatcher {name: String, arguments: List Matcher }  -- Unordered (set-based)
+    | CommutativeAssociativeMatcher {name: String, arguments: List Matcher } -- Unordered & group-able
 
 type alias MatchResult state =
     {   nodes: Dict.Dict Int (Math.Tree (State state))
@@ -71,6 +72,8 @@ processID_ parent tracker oldRoot =
             (finalEq, Math.BinaryNode {state = state, name = s.name, associative = s.associative, commutative = s.commutative, children = newChildren})
         Math.GenericNode s -> let (finalEq, newChildren) = processChildren id newTracker s.children in
             (finalEq, Math.GenericNode {state = state, name = s.name, children = newChildren})
+        Math.DeclarativeNode s -> let (finalEq, newChildren) = processChildren id newTracker s.children in
+            (finalEq, Math.DeclarativeNode {state = state, name = s.name, children = newChildren})
 
 addNode_: Int -> Tracker_ state -> (State state, Tracker_ state)
 addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent})
@@ -78,11 +81,11 @@ addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
 selectedSubtree: Set.Set Int -> Equation state -> Maybe (Math.Tree (State state))
 selectedSubtree ids eq = affectedSubtree_ ids eq.tracker.parent
-        |> Maybe.andThen (\(id, nodes) ->
-            processSubtree_ (searchPath_ eq.tracker.parent id) (\node -> (Just node, node)) eq.root
-            |> (\(root, _) -> Maybe.map (\r -> (r, nodes)) root)
-        )
-        |> Maybe.map (\(root, nodes) -> reducedNode_ nodes root)
+    |> Maybe.andThen (\(id, nodes) ->
+        processSubtree_ (searchPath_ eq.tracker.parent id) (\node -> (Just node, node)) eq.root
+        |> (\(root, _) -> Maybe.map (\r -> (r, nodes)) root)
+    )
+    |> Maybe.map (\(root, nodes) -> reducedNode_ nodes root)
 
 -- We only care about the root node's children, everything under those are included
 -- as they can't just be "set-aside"
@@ -91,6 +94,9 @@ reducedNode_ selected root = case root of
     Math.BinaryNode s -> let children = List.filter (\child -> Set.member (Math.getState child |> getID) selected) s.children in
         if List.isEmpty children then root
         else Math.BinaryNode { s | children = children }
+    Math.DeclarativeNode s -> let children = List.filter (\child -> Set.member (Math.getState child |> getID) selected) s.children in
+        if List.isEmpty children then root
+        else Math.DeclarativeNode { s | children = children }
     _ -> root
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)
@@ -161,14 +167,17 @@ processSubtree_ path processor node =
                                 children
                                 |> (\c -> (r, Math.BinaryNode {s | children = c}))
                 Math.GenericNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.GenericNode {s | children = children}))
+                Math.DeclarativeNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.DeclarativeNode {s | children = children}))
 
 matchNode: Matcher -> Math.Tree (State state) -> Bool
 matchNode matcher root = case (matcher, root) of
+    (AnyMatcher _, Math.DeclarativeNode _) -> False
     (AnyMatcher _, _) -> True
     (RealMatcher m, Math.RealNode n) -> m.value == n.value
     (ExactMatcher m, Math.VariableNode n) -> m.name == n.name && List.isEmpty m.arguments
     (ExactMatcher m, Math.GenericNode n) -> m.name == n.name && List.length m.arguments == List.length n.children
-    (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name
+    (CommutativeMatcher m, Math.DeclarativeNode n) -> m.name == n.name
+    (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name -- TODO: switch to CommutativeAssociativeMatcher
     _ -> False
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
@@ -184,21 +193,23 @@ extractPattern_ from root token = case from of
             else Backtrack.return Just token
         _ -> Backtrack.fail
     AnyMatcher s -> let id = Math.getState root |> getID in
-        Backtrack.return (\result -> case Dict.get s.name result.matches of
-            Just (Internal_ prevSet) -> prevSet
-                |> Set.filter (\elem -> case Dict.get elem result.nodes of
-                    Nothing -> False
-                    Just n -> Math.equal n root
-                )
-                |> (\newSet -> if Set.isEmpty newSet then Nothing
-                    else Just {result | matches = Dict.insert s.name (Internal_ newSet) result.matches}
-                )
-            _ -> Just
-                {  result
-                |   nodes = Dict.insert id root result.nodes
-                ,   matches = Dict.insert s.name (Set.singleton id |> Internal_) result.matches
-                }
-        ) token
+        case root of
+            Math.DeclarativeNode _ -> Backtrack.fail
+            _ -> Backtrack.return (\result -> case Dict.get s.name result.matches of
+                Just (Internal_ prevSet) -> prevSet
+                    |> Set.filter (\elem -> case Dict.get elem result.nodes of
+                        Nothing -> False
+                        Just n -> Math.equal n root
+                    )
+                    |> (\newSet -> if Set.isEmpty newSet then Nothing
+                        else Just {result | matches = Dict.insert s.name (Internal_ newSet) result.matches}
+                    )
+                _ -> Just
+                    {  result
+                    |   nodes = Dict.insert id root result.nodes
+                    ,   matches = Dict.insert s.name (Set.singleton id |> Internal_) result.matches
+                    }
+                ) token
     ExactMatcher s -> if List.isEmpty s.arguments
         then case root of
             Math.VariableNode n -> if n.name /= s.name then Backtrack.fail
@@ -208,11 +219,11 @@ extractPattern_ from root token = case from of
             Math.GenericNode n -> if n.name /= s.name then Backtrack.fail
                 else Backtrack.searchOrdered extractPattern_ s.arguments n.children token
             _ -> Backtrack.fail
-    -- TODO: Ensure all children are matched
     CommutativeMatcher s -> case root of
         Math.BinaryNode n -> if s.name /= n.name then Backtrack.fail
             else Backtrack.searchUnordered extractPattern_ s.arguments n.children token
         _ -> Backtrack.fail
+    CommutativeAssociativeMatcher _ -> Backtrack.fail -- TODO:
 
 -- Insertion in associative node:
 -- If 2 into 1, Take the lower index

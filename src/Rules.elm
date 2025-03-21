@@ -304,6 +304,8 @@ treeToMatcher_ functions constants root = case root of
     Math.UnaryNode s -> treeToMatcher_ functions constants s.child
         |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
     Math.BinaryNode s -> processChildren_ functions constants s.children
+        |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
+    Math.DeclarativeNode s -> processChildren_ functions constants s.children
         |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
     Math.GenericNode s -> case Dict.get s.name functions of
         Nothing -> processChildren_ functions constants s.children

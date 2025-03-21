@@ -1,4 +1,4 @@
-module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, notation, parse, symbolicate)
+module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, getName, notation, parse, symbolicate)
 
 import Parser exposing ((|.), (|=))
 import Set
@@ -11,6 +11,7 @@ type Tree s =
     | UnaryNode {state: s, name: String, child: Tree s}
     | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, children: List (Tree s)}
     | GenericNode {state: s, name: String, children: List (Tree s)} -- Order matters
+    | DeclarativeNode {state: s, name: String, children: List (Tree s)} -- Can be strung together, but cannot be nested
 
 getState: Tree state -> state
 getState node = case node of
@@ -19,6 +20,7 @@ getState node = case node of
     UnaryNode s -> s.state
     BinaryNode s -> s.state
     GenericNode s -> s.state
+    DeclarativeNode s -> s.state
 
 getChildren: Tree state -> List (Tree state)
 getChildren node = case node of
@@ -27,6 +29,16 @@ getChildren node = case node of
     UnaryNode s -> [s.child]
     BinaryNode s -> s.children
     GenericNode s -> s.children
+    DeclarativeNode s -> s.children
+
+getName: Tree state -> String
+getName root = case root of
+    RealNode n -> String.fromFloat n.value
+    VariableNode n -> n.name
+    UnaryNode n -> n.name
+    BinaryNode n -> n.name
+    GenericNode n -> n.name
+    DeclarativeNode n -> n.name
 
 equal: Tree a -> Tree b -> Bool
 equal left right = case (left, right) of
@@ -47,6 +59,9 @@ equal left right = case (left, right) of
     (GenericNode l, GenericNode r) -> l.name == r.name
         && List.length l.children == List.length r.children
         && (List.map2 equal l.children r.children |> List.foldl (&&) True)
+    (DeclarativeNode l, DeclarativeNode r) -> l.name == r.name
+        && List.length l.children == List.length r.children
+        && (List.map2 equal l.children r.children |> List.foldl (&&) True)
     _ -> False
 
 type Symbol s =
@@ -63,6 +78,7 @@ functionName_ node = case node of
     UnaryNode s -> s.name
     BinaryNode s -> s.name
     GenericNode s -> s.name
+    DeclarativeNode s -> s.name
 
 functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
 functionPrecedence_ node = case functionName_ node of
@@ -72,8 +88,6 @@ functionPrecedence_ node = case functionName_ node of
     -- additive
     "+" -> 1
     "-" -> 1
-    -- inequalities
-    "=" -> 0
     -- Others (variables, function calls)
     _ -> -1
 
@@ -102,14 +116,18 @@ symbolicateRecursive_ parent multiplicativeFirst root = (
             |> List.map (symbolicateRecursive_ (Just root) True)
             |> List.intersperse (Text ",")
             |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
+        DeclarativeNode s -> s.children
+            |> List.map (symbolicateRecursive_ (Just root) True)
+            |> List.intersperse (Text s.name)
     )
     |> (\tokens -> case (parent, root) of
         -- Ignore when top-level
         (Nothing, _) -> Node {state = getState root, children = tokens}
         -- Ignore if variable, number or the traditional way of expressing functions
-        (_, RealNode _) -> Node {state = getState root, children = tokens}
-        (_, VariableNode _) -> Node {state = getState root, children = tokens}
-        (_, GenericNode _) -> Node {state = getState root, children = tokens}
+        (_, RealNode s) -> Node {state = s.state, children = tokens}
+        (_, VariableNode s) -> Node {state = s.state, children = tokens}
+        (_, GenericNode s) -> Node {state = s.state, children = tokens}
+        (_, DeclarativeNode s) -> Node {state = s.state, children = tokens}
         (Just p, _) ->
             if (functionPrecedence_ p) > (functionPrecedence_ root)
             then Node {state = getState root, children= Text "("::tokens ++ [Text ")"]}
@@ -142,7 +160,7 @@ equation_ = Parser.loop []
     )
     |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> BinaryNode {state = (), name = "=", associative = True, commutative = True, children = children}
+        _ -> DeclarativeNode {state = (), name = "=", children = children}
     )
 
 expression_: Parser.Parser (Tree ())

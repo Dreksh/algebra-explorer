@@ -142,13 +142,7 @@ stackRecursive eq highlight width depth node =
                 ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
                 ,   HtmlEvent.onClick (Select eq id)
                 ]
-                [   text ( case node of
-                        Math.RealNode n -> String.fromFloat n.value
-                        Math.VariableNode n -> n.name
-                        Math.UnaryNode n -> n.name
-                        Math.BinaryNode n -> n.name
-                        Math.GenericNode n -> n.name
-                    )
+                [   text (Math.getName node)
                 ]
             ) :: childDivs
         )

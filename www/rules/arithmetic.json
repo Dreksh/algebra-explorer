@@ -1,7 +1,6 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "=": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
         "+": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
         "*": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
         "-": {"arguments": 1, "parameters": 0, "associative": false, "commutative": false},
