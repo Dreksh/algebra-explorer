@@ -11,7 +11,7 @@ type Tree s =
     | UnaryNode {state: s, name: String, child: Tree s}
     | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, children: List (Tree s)}
     | GenericNode {state: s, name: String, children: List (Tree s)} -- Order matters
-    | DeclarativeNode {state: s, name: String, children: List (Tree s)} -- Can be strung together, but cannot be nested
+    | DeclarativeNode {state: s, name: String, children: List (Tree s)} -- Can be strung together, but cannot be nested, assumed to be commutative for now
 
 getState: Tree state -> state
 getState node = case node of

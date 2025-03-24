@@ -116,7 +116,7 @@ init _ url key =
     )
 
 parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
-parseEquations_ elem (result, errs) = case Matcher.parseEquation {position = (0,0)} elem of
+parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createState Display.updateState elem of
     Result.Ok root -> (root :: result, errs)
     Result.Err err -> (result, err :: errs )
 
@@ -148,7 +148,7 @@ update event model = case event of
             _ -> (model, Cmd.none)
     EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_ "textInput")
     CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
-    SubmitEquation id str -> case Matcher.parseEquation {position= (0,0)} str of
+    SubmitEquation id str -> case Matcher.parseEquation Display.createState Display.updateState str of
         Result.Ok root -> (
             case id of
                 Nothing ->
@@ -222,8 +222,10 @@ update event model = case event of
     ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
 
 -- TODO
-applyChange_: {from: Matcher.MatchResult state, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
-applyChange_ params model = (model, Cmd.none)
+applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
+applyChange_ params model = case Display.transformEquation params.matcher params.from model.display of
+    Err errStr -> submitNotification_ model errStr
+    Ok newDisplay -> ({model | display = newDisplay, dialog = Nothing}, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let (nModel, nCmd) = Notification.displayError str (model.notification, Cmd.none) in
@@ -332,7 +334,7 @@ deleteTopicDialog_ =
     }
 
 parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
-parameterDialog_ params = let choiceRequired = List.length params.matches < 2 in
+parameterDialog_ params = let choiceRequired = List.length params.matches > 1 in
     let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
     {   title = "Set parameters for " ++ params.title
     ,   sections = Helper.listMapWithState
@@ -350,7 +352,7 @@ parameterDialog_ params = let choiceRequired = List.length params.matches < 2 in
             )
             tokens
             params.parameters
-            |> (\(sections, _) -> if choiceRequired then sections
+            |> (\(sections, _) -> if not choiceRequired then sections
                 else { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]

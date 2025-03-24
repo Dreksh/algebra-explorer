@@ -149,15 +149,21 @@ matchRule_ selected rule = case selected of
     Nothing -> (True, Nothing)
     Just (node, _) -> if List.any (\m -> Matcher.matchNode m.from.root node) rule.matches |> not
         then (False, Nothing)
-        else (  True
-            , Just {    title = rule.title
-                , parameters = List.map (\p -> {name = p.match.name, description = p.description, tokens = Dict.keys p.match.tokens |> Set.fromList}) rule.parameters
-                , matches = List.foldl (\m -> Matcher.matchSubtree m.from.root node
+        else
+            let
+                matches = List.foldl (\m -> Matcher.matchSubtree m.from.root node
                     |> Maybe.map (\result -> {from = result, name = m.to.name, matcher = m.to.root})
                     |> Helper.maybeAppend
                     ) [] rule.matches
-                }
-            )
+            in
+                if List.isEmpty matches then (True, Nothing)
+                else (  True
+                    , Just
+                        { title = rule.title
+                        , parameters = List.map (\p -> {name = p.match.name, description = p.description, tokens = Dict.keys p.match.tokens |> Set.fromList}) rule.parameters
+                        , matches = matches
+                        }
+                    )
 
 applyButton : (Event state -> msg) -> Maybe (Event state) -> Html.Html msg
 applyButton converter e = case e of

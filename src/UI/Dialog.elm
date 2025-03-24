@@ -54,9 +54,9 @@ listView_ = List.map (\input -> case input of
             |> List.indexedMap Tuple.pair
             |> List.concatMap (\(num, t) -> let n = String.fromInt num in
                 let id = r.name ++ n |> fieldID in
-                [   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n] []
+                [   Html.br [] []
+                ,   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n] []
                 ,   Html.label [Attr.for id] [text t]
-                ,   Html.br [] []
                 ]
             )
             |> span []

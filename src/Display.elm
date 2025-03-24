@@ -1,6 +1,7 @@
 module Display exposing (
     Model, Event(..), State, init, update, view,
-    addEquation, updateEquation, listEquations,
+    createState, updateState,
+    addEquation, updateEquation, transformEquation, listEquations,
     groupChildren, ungroupChildren,
     selectedNode
     )
@@ -10,7 +11,6 @@ import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (class, style)
 import Set
 -- Ours
-import Helper
 import Math
 import Matcher
 import UI.HtmlEvent
@@ -25,11 +25,16 @@ type alias Model =
 type Event =
     Select Int Int
     | Unselect
-    | DeleteTree Int Int -- Eq Num + Node Num
 
 type alias State =
-    {   position: (Float, Float)
+    {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
     }
+
+createState: Matcher.State () -> Int -> State
+createState _ num = { prevID = num }
+
+updateState: Matcher.State State -> Int -> State
+updateState s _ = {prevID = Matcher.getID s}
 
 init: List (Matcher.Equation State) -> Model
 init eqs =
@@ -74,6 +79,14 @@ ungroupChildren model = case model.selected of
         Just eq -> Matcher.ungroupSubtree ids eq
             |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
 
+transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
+transformEquation matcher result model = case model.selected of
+    Nothing -> Err "No nodes were selected"
+    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
+        Nothing -> Err "Equation is not found"
+        Just eq -> Matcher.replaceSubtree ids matcher result eq
+            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
+
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of
     Select eq node -> case model.selected of
@@ -86,7 +99,6 @@ update event model = case event of
                 else ({model | selected = Just (eq, newSet)}, Cmd.none)
             else ({model | selected = Just (eq, Set.insert node current)}, Cmd.none)
     Unselect -> ({model | selected = Nothing}, Cmd.none)
-    DeleteTree _ _ -> (model, Cmd.none) -- TODO: Implement this when we need it
 
 {-
 # View-related functions
