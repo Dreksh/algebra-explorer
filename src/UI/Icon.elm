@@ -1,4 +1,4 @@
-module Icon exposing (..)
+module UI.Icon exposing (..)
 
 import Html
 import Svg exposing (circle, defs, path, rect, svg, text, text_)

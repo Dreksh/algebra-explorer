@@ -1,13 +1,13 @@
-module Dialog exposing (Input(..), Model, Section, decoder, fieldID, view)
+module UI.Dialog exposing (Input(..), Model, Section, decoder, fieldID, view)
 
 import Dict
-import Html exposing (form, text, h1, h2, input, label, node, button, span, p)
+import Html exposing (form, text, h1, h2, input, label, node, button, p)
 import Html.Attributes as Attr
 import Json.Decode as Decode
 import Set
 -- Ours
-import HtmlEvent
-import Icon
+import UI.HtmlEvent
+import UI.Icon
 
 type alias Model msg =
     {   title: String
@@ -31,15 +31,15 @@ view: Model msg -> Html.Html msg
 view model =
     node "dialog" [Attr.attribute "open" "true"]
     [   h1 [] [text model.title]
-    ,   form [HtmlEvent.onSubmitForm model.success, Attr.attribute "method" "dialog"]
+    ,   form [UI.HtmlEvent.onSubmitForm model.success, Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
                 (   h2 [] [text section.subtitle]
                 ::  List.map inputView_ section.inputs
                 )
             )
             model.sections
-        ++  [   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick model.cancel]
-            ,   button [Attr.type_ "submit", Attr.class "noDefault"] [Icon.tick [Icon.class "clickable", Icon.class "submitable"]]
+        ++  [   UI.Icon.cancel [UI.Icon.class "clickable", UI.Icon.class "cancelable", UI.HtmlEvent.onClick model.cancel]
+            ,   button [Attr.type_ "submit", Attr.class "noDefault"] [UI.Icon.tick [UI.Icon.class "clickable", UI.Icon.class "submitable"]]
             ]
         )
     ]
@@ -53,7 +53,7 @@ inputView_ input = case input of
             )
         ++  [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []]
         )
-    Button m -> button [Attr.type_ "button", HtmlEvent.onClick m.event, Icon.class "clickable"] [text m.text]
+    Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
     Info i -> p [] [text i.text]
 
 decoder: (Dict.Dict String String -> msg) -> Set.Set String -> Decode.Decoder msg

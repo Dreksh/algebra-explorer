@@ -1,7 +1,8 @@
 module Tutorial exposing (Model, Event, init, menu, update, view)
 
 import Html exposing (Html, div)
-import Menu
+-- Ours
+import UI.Menu as Menu
 
 type alias Model =
     {   number: Int

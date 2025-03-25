@@ -11,7 +11,7 @@ import Set
 -- Ours
 import Math
 import Matcher
-import HtmlEvent
+import UI.HtmlEvent
 
 type alias Model =
     {   equations: Dict.Dict Int (Matcher.Equation State)
@@ -104,7 +104,7 @@ collapsedView_ eq highlight node = case node of
         s.children
         |> List.map (collapsedView_ eq highlight)
         |> div
-            (   [class "node", HtmlEvent.onClick (Select eq id)]
+            (   [class "node", UI.HtmlEvent.onClick (Select eq id)]
             ++  if Set.member id highlight then [class "selected"] else []
             )
 
@@ -140,7 +140,7 @@ stackRecursive eq highlight width depth node =
                 [   class "block"
                 ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
                 ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
-                ,   HtmlEvent.onClick (Select eq id)
+                ,   UI.HtmlEvent.onClick (Select eq id)
                 ]
                 [   text (Math.getName node)
                 ]

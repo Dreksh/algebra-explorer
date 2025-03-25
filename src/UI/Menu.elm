@@ -1,9 +1,10 @@
-module Menu exposing (Model, Event, Part(..), init, update, view)
+module UI.Menu exposing (Model, Event, Part(..), init, update, view)
 
 import Html exposing (h1, li, nav, ul, text)
 import Html.Attributes exposing (class, id)
 import Set
-import HtmlEvent
+-- Ours
+import UI.HtmlEvent
 
 type alias Model =
     {   shown: Set.Set String
@@ -33,6 +34,6 @@ partToHtml_ converter model part = case part of
     Content children -> li [] children
     Section name display children -> let shown = display && Set.member name model.shown in
         li (if display then [class "menuSection", class "shown"] else [class "menuSection"])
-        [   h1 ((if shown then [class "shown"] else []) ++ [class "menuTitle", HtmlEvent.onClick (Click name |> converter), class "clickable"]) [ text name ]
+        [   h1 ((if shown then [class "shown"] else []) ++ [class "menuTitle", UI.HtmlEvent.onClick (Click name |> converter), class "clickable"]) [ text name ]
         ,   ul (if shown then [class "subMenu", class "shown"] else [class "subMenu"]) (children |> List.map (partToHtml_ converter model))
         ]

@@ -12,8 +12,8 @@ import Set
 import Helper
 import Matcher
 import Math
-import Menu
-import HtmlEvent
+import UI.Menu as Menu
+import UI.HtmlEvent as HtmlEvent
 
 {-
 ## Modeling rules

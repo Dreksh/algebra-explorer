@@ -1,4 +1,4 @@
-module Notification exposing (
+module UI.Notification exposing (
     Model, Event, init, update, view,
     displayError
     )
@@ -10,8 +10,8 @@ import Html.Keyed exposing (node)
 import Process exposing (sleep)
 import Task
 -- Our modules
-import HtmlEvent
-import Icon
+import UI.HtmlEvent
+import UI.Icon as Icon
 
 type alias Model =
     {   nextID: Int
@@ -71,5 +71,5 @@ notificationAttr_ converter id deleting =
         ]
     else
         [   class "notificationMessage"
-        ,   HtmlEvent.onClick (ClearEvent id |> converter)
+        ,   UI.HtmlEvent.onClick (ClearEvent id |> converter)
         ]

@@ -1,4 +1,4 @@
-module HtmlEvent exposing (..)
+module UI.HtmlEvent exposing (..)
 
 -- Event is needed to block the js events from propagating upwards
 

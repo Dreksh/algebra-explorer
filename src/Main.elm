@@ -8,23 +8,23 @@ import Dict
 import File
 import File.Select as FSelect
 import Json.Decode as Decode
-import Html exposing (Html, a, button, div, form, h2, h3, input, label, p, pre, section, text)
-import Html.Attributes exposing (class, for, id, name, type_)
+import Html exposing (Html, a, button, div, form, input, pre, text)
+import Html.Attributes exposing (class, id, name, type_)
 import Http
 import Set
 import Task
 import Url
 -- Our imports
-import Dialog
 import Display
 import Helper
-import HtmlEvent
-import Icon
 import Matcher
 import Math
-import Menu
-import Notification
 import Query
+import UI.Dialog as Dialog
+import UI.HtmlEvent as HtmlEvent
+import UI.Icon as Icon
+import UI.Menu as Menu
+import UI.Notification as Notification
 import Rules
 import Tutorial
 
