@@ -1,6 +1,6 @@
-module Rules exposing (Model, Topic, init,
+module Rules exposing (ClickEvent, Model, Topic, init,
     addTopic, deleteTopic, topicDecoder,
-    menuConstants, menuFunctions, menuRules
+    menuTopics
     )
 
 import Dict
@@ -116,8 +116,10 @@ deleteTopic name model = let id = String.toLower name in
                 ,   functions = newFunctions
                 }
 
-menuRules: ({title: String, to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult state} -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state)) -> Menu.Part msg
-menuRules click model selectedNode =
+type alias ClickEvent state msg = {title: String, to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult state} -> msg
+
+menuTopics: ClickEvent state msg -> Model -> Maybe (Math.Tree (Matcher.State state)) -> List (Menu.Part msg)
+menuTopics click model selectedNode =
     let
         ruleName rule = rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name
         clickEvent result rule to =
@@ -142,8 +144,7 @@ menuRules click model selectedNode =
                 |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .lhs, class "clickable"] [text "Apply backwards"]])
             ))
     in
-    Menu.Section "Rules" True
-    (   Dict.values model.topics
+    Dict.values model.topics
     |> List.map (\topic -> Menu.Section topic.name True
         (   List.map (\rule -> case selectedNode of
                 Nothing -> individualRule True Nothing Nothing rule
@@ -160,35 +161,6 @@ menuRules click model selectedNode =
             )
             topic.rules
         )
-    )
-    )
-
--- TODO: Pass in the EventGenerator for adding a new function
-menuFunctions: Model -> Bool -> Menu.Part msg
-menuFunctions model createMode = Menu.Section "Functions" True
-    (   Dict.foldl (\name (props, _) result -> result ++
-            [   Menu.Section name True
-                ( Menu.Content
-                    [ p [] [text ("Arguments: " ++ String.fromInt props.arguments)]
-                    , p [] [text ("Associative: " ++ if props.associative then "Yes" else "No")]
-                    , p [] [text ("Commutative: " ++ if props.commutative then "Yes" else "No")]
-                    ]
-                :: if createMode then [Menu.Content [a [] [text "Add"]]] else []
-                )
-            ]
-        )
-        []
-        model.functions
-    )
-
--- TODO: Pass in the EventGenerator for adding a new constant
-menuConstants: Model -> Menu.Part msg
-menuConstants model = Menu.Section "Constants" True
-    (   Dict.foldl (\name _ result -> result ++
-            [Menu.Content [h2 [] [text name]]]
-        )
-        []
-        model.constants
     )
 
 {-

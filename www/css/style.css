@@ -31,6 +31,14 @@ body > div {
 body > div > * {
     pointer-events: auto;
 }
+button.noDefault {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    background: none;
+    box-shadow: none;
+}
 #inputPane {
     display: flex;
     flex-direction: row;
@@ -94,14 +102,6 @@ body > div > * {
 }
 #textbar > * {
     pointer-events: auto;
-}
-#textbar button {
-    border: 0;
-    padding: 0;
-    margin: 0;
-    overflow: visible;
-    background: none;
-    box-shadow: none;
 }
 #textbar svg {
     height: 2rem;
@@ -249,10 +249,16 @@ dialog {
     left: 50vw;
     margin: 0;
     transform: translateY(-50%) translateX(-50%);
+    overflow-y: scroll;
+    max-height: 90vh;
 }
 dialog > form {
     display: flex;
     flex-direction: column;
+}
+dialog svg {
+    height: 2rem;
+    margin: 0 0.5rem;
 }
 /* Display */
 #display {

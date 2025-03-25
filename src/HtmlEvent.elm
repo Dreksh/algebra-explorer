@@ -23,9 +23,9 @@ onSubmitField target event = preventDefaultOn "submit"
         <|  field "value" string
     )
 
-onSubmitForm: Decoder form -> (form -> msg) -> Html.Attribute msg
-onSubmitForm target event = preventDefaultOn "submit"
-    (   map (\input -> (event input, True))
+onSubmitForm: Decoder msg -> Html.Attribute msg
+onSubmitForm target = preventDefaultOn "submit"
+    (   map (\input -> (input, True))
         <| field "target"
         <| target
     )

@@ -8,13 +8,14 @@ import Dict
 import File
 import File.Select as FSelect
 import Json.Decode as Decode
-import Html exposing (Html, a, button, div, form, h2, h3, input, p, pre, section, text)
-import Html.Attributes exposing (attribute, class, id, name, type_)
+import Html exposing (Html, a, button, div, form, h2, h3, input, label, p, pre, section, text)
+import Html.Attributes exposing (class, for, id, name, type_)
 import Http
 import Set
 import Task
 import Url
 -- Our imports
+import Dialog
 import Display
 import Helper
 import HtmlEvent
@@ -26,8 +27,6 @@ import Notification
 import Query
 import Rules
 import Tutorial
-import Html exposing (label)
-import Html.Attributes exposing (for)
 
 -- Overall Structure of the app: it's a document
 
@@ -64,8 +63,7 @@ type alias Model =
     ,   createMode: Maybe (Maybe Int)
     ,   showHelp: Bool
     ,   showMenu: Bool
-    ,   dialog: Maybe (String, String -> Event)
-    ,   parameters: Maybe Parameters_
+    ,   dialog: Maybe (Dialog.Model Event, Maybe Parameters_)
     }
 
 type Event =
@@ -83,7 +81,7 @@ type Event =
     | SubmitEquation (Maybe Int) String
     | ToggleHelp
     | ToggleMenu
-    | OpenDialog String (String -> Event)
+    | OpenDialog (Dialog.Model Event)
     | CloseDialog
     | DeleteTopic String
     | DownloadTopic String
@@ -119,7 +117,6 @@ init _ url key =
         , showHelp = False
         , showMenu = if newScreen then True else False
         , dialog = Nothing
-        , parameters = Nothing
         }
     , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
     )
@@ -130,9 +127,9 @@ parseEquations_ elem (result, errs) = case Matcher.parseEquation {position = (0,
     Result.Err err -> (result, errs ++ [err])
 
 subscriptions: Model -> Sub Event
-subscriptions model = case model.createMode of
-    Just _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
-    Nothing -> Sub.none
+subscriptions model = case (model.createMode, model.dialog) of
+    (Nothing, Nothing) -> Sub.none
+    _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
 
 update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
@@ -150,7 +147,11 @@ update event model = case event of
         ({model | notification = nModel}, Cmd.map NotificationEvent nCmd)
     MenuEvent e -> ({model | menu = Menu.update e model.menu}, Cmd.none)
     NoOp -> (model, Cmd.none)
-    PressedKey str -> if str == "Escape" then ({model | createMode = Nothing, showHelp = False}, Cmd.none) else (model, Cmd.none)
+    PressedKey str -> if str /= "Escape" then (model, Cmd.none)
+        else case (model.dialog, model.createMode) of
+            (Just _, _) -> ({model | dialog = Nothing}, Cmd.none)
+            (_, Just _) -> ({model | createMode = Nothing, showHelp = False}, Cmd.none)
+            _ -> (model, Cmd.none)
     EnterCreateMode -> ({model | createMode = Just Nothing }, focusTextBar_ "textInput")
     CancelCreateMode -> ({model | createMode = Nothing, showHelp=False}, Cmd.none)
     SubmitEquation id str -> case Matcher.parseEquation {position= (0,0)} str of
@@ -168,7 +169,12 @@ update event model = case event of
         Result.Err err -> submitNotification_ model err
     ToggleHelp -> ({model | showHelp = not model.showHelp}, focusTextBar_ "textInput")
     ToggleMenu -> ({model | showMenu = not model.showMenu}, Cmd.none)
-    OpenDialog title generator -> ({model | dialog = Just (title, generator)}, focusTextBar_ "dialogAnswer")
+    OpenDialog d ->
+        (   {model | dialog = Just (d, Nothing)}
+        ,   case d.focus of
+            Nothing -> Cmd.none
+            Just name -> Dialog.fieldID name |> focusTextBar_
+        )
     CloseDialog -> ({model | dialog = Nothing}, Cmd.none)
     DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules, dialog = Nothing}, Cmd.none)
     DownloadTopic url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
@@ -178,7 +184,7 @@ update event model = case event of
             Err errStr -> submitNotification_ model errStr
             Ok rModel -> ({model | rules = rModel}, Cmd.none)
     FileSelect fileType -> (model, FSelect.file ["application/json"] (FileSelected fileType))
-    FileSelected fileType file -> (model, Task.perform (FileLoaded fileType) (File.toString file))
+    FileSelected fileType file -> ({model | dialog = Nothing}, Task.perform (FileLoaded fileType) (File.toString file))
     FileLoaded fileType str -> case fileType of
         TopicFile -> Decode.decodeString Rules.topicDecoder str
             |> Result.mapError Decode.errorToString
@@ -189,11 +195,10 @@ update event model = case event of
             )
         SaveFile -> (model, Cmd.none) -- TODO
     ApplyRule details -> if List.isEmpty details.parameters |> not
-        then ({ model | parameters = Just details}, Cmd.none)
+        then ({ model | dialog = Just (parameterDialog_ details, Just details)}, Cmd.none)
         else applyChange_ details model
-    ApplyParameters params -> case model.parameters of
-        Nothing -> (model, Cmd.none)
-        Just existing ->
+    ApplyParameters params -> case model.dialog of
+        Just (_, Just existing) ->
             let
                 result = Helper.resultDict (\k v r -> Math.parse v
                     |> Result.map (\tree -> {r | extracted = Matcher.addMatch k tree r.extracted})
@@ -201,6 +206,7 @@ update event model = case event of
             in case result of
                 Err errStr -> submitNotification_ model errStr
                 Ok newParams -> applyChange_ newParams model
+        _ -> ({ model | dialog = Nothing}, Cmd.none)
 
 -- TODO
 applyChange_: Parameters_ -> Model -> (Model, Cmd Event)
@@ -230,38 +236,34 @@ view model =
             [   div [id "leftPane"]
                 (  inputDiv model
                 :: (if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else [])
-                |> Helper.maybeAppend (Maybe.map parameterDiv_ model.parameters)
                 )
             ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                 [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
                 ,   Menu.view MenuEvent model.menu
                     [   Menu.Section "Settings" True
-                        [   Menu.Content [a [] [text "Load from Save File"]] -- TODO
-                        ,   Menu.Content [a [] [text "Save to Save File"]] -- TODO
-                        ,   Menu.Content [ a
-                                [HtmlEvent.onClick (OpenDialog "Enter the url for the topic" DownloadTopic), class "clickable"]
-                                [text "Add Topic From URL"]
-                            ]
-                        ,   Menu.Content [ a
-                                [HtmlEvent.onClick (FileSelect TopicFile), class "clickable"]
-                                [text "Add Topic From File"]
-                            ]
-                        ,   Menu.Content [ a
-                                [HtmlEvent.onClick (OpenDialog "Enter the topic to delete" DeleteTopic), class "clickable"]
-                                [text "Delete a Topic"]
-                            ]
+                        [   Menu.Content [a [] [text "Open"]] -- TODO
+                        ,   Menu.Content [a [] [text "Save"]] -- TODO
                         ]
                     ,   Tutorial.menu TutorialEvent model.tutorial
-                    ,   Rules.menuConstants model.rules
-                    ,   Rules.menuFunctions model.rules (inCreateMode_ model)
-                    ,   Rules.menuRules ApplyRule model.rules (Display.selectedNode model.display)
+                    ,   Menu.Section "Topics" True
+                        (   [   Menu.Content [ a
+                                    [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"]
+                                    [text "Add"]
+                                ]
+                            ,   Menu.Content [ a
+                                    [HtmlEvent.onClick (OpenDialog deleteTopicDialog_), class "clickable"]
+                                    [text "Delete"]
+                                ]
+                            ]
+                        ++  Rules.menuTopics ApplyRule model.rules (Display.selectedNode model.display)
+                        )
                     ]
                 ]
             ]
         ,   Tutorial.view TutorialEvent [] model.tutorial
         ,   Notification.view NotificationEvent [id "notification"] model.notification
         ]
-        ++ (dialogPane_ model.dialog)
+        |> Helper.maybeAppend (Maybe.map (Tuple.first >> Dialog.view) model.dialog)
     }
 
 inputDiv: Model -> Html Event
@@ -281,69 +283,62 @@ inputDiv model =
         ]
         []
     ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CancelCreateMode]
-    ,   button [type_ "submit"] [   case model.createMode of
+    ,   button [type_ "submit", Icon.class "noDefault"] [   case model.createMode of
             Nothing -> Icon.add [Icon.class "clickable", Icon.class "submitable"]
             Just _ -> Icon.tick [Icon.class "clickable", Icon.class "submitable"]
         ]
     ]
 
-dialogPane_: Maybe (String, String -> Event) -> List (Html.Html Event)
-dialogPane_ selection = case selection of
-    Nothing -> []
-    Just (prompt, event) -> [
-            Html.node "dialog" [attribute "open" "true"] [
-                form [HtmlEvent.onSubmitField "answer" event, attribute "method" "dialog"]
-                [   text (prompt ++ ":")
-                ,   input [type_ "text", name "answer", id "dialogAnswer"] []
-                ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CloseDialog]
-                ,   button [type_ "submit"] [Icon.tick [Icon.class "clickable", Icon.class "submitable"]]
-                ]
-            ]
+addTopicDialog_: Dialog.Model Event
+addTopicDialog_ =
+    {   title = "Add a new Topic"
+    ,   sections =
+        [   {   subtitle = "Load from a URL"
+            ,   inputs = [Dialog.Text {name = Nothing, id = "url"}]
+            }
+        ,   {   subtitle = "Load from a file"
+            ,   inputs = [Dialog.Button {text = "Select a file", event =(FileSelect TopicFile)}]
+            }
         ]
+    ,   success = Dialog.decoder (Dict.get "url" >> Maybe.withDefault "" >> DownloadTopic) (Set.singleton "url")
+    ,   cancel = CloseDialog
+    ,   focus = Just "url"
+    }
 
-inCreateMode_: Model -> Bool
-inCreateMode_ model = case model.createMode of
-    Nothing -> False
-    Just _ -> True
+deleteTopicDialog_: Dialog.Model Event
+deleteTopicDialog_ =
+    {   title = "Delete an existing Topic"
+    ,   sections =
+        [   {   subtitle = "Name of the topic:"
+            ,   inputs = [Dialog.Text {name = Nothing, id = "name"}]
+            }
+        ]
+    ,   success = Dialog.decoder (Dict.get "name" >> Maybe.withDefault "" >> DeleteTopic) (Set.singleton "name")
+    ,   cancel = CloseDialog
+    ,   focus = Just "name"
+    }
 
-parameterDiv_: Parameters_ -> Html.Html Event
-parameterDiv_ params =
-    let
-        tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters
-        decoder = tokens
-            |> Set.foldl (\elem result -> Decode.map2
-                (\eq -> Dict.insert elem eq)
-                (Decode.string |> Decode.field "value" |> Decode.field elem)
-                result
-            )
-            (Decode.succeed Dict.empty)
-    in
-        div []
-        [   h2 [] [text params.title]
-        ,   form [id "params", HtmlEvent.onSubmitForm decoder ApplyParameters]
-            (   (   List.foldl (\param (result, toks) ->
-                        Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
-                            then (nextResult ++ [label [for key] [p [] [text (key ++ ":")], input [type_ "text", name key] []]], Set.remove key nextToks)
-                            else (nextResult ++ [p [] [text "Refer to input of the same name above"]], nextToks)
-                        )
-                        ([], toks)
-                        param.tokens
-                        |> (\(finalList, finalTokens) ->
-                            (   result ++ [section []
-                                    (   [ h3 [] [text param.name]
-                                        , p [] [text param.description]
-                                        ]
-                                    ++ finalList
-                                    )
-                                ]
-                            ,   finalTokens
-                            )
-                        )
-                    )
-                    ([], tokens)
-                    params.parameters
-                    |> Tuple.first
+parameterDialog_: Parameters_ -> Dialog.Model Event
+parameterDialog_ params = let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
+    {   title = "Set parameters for " ++ params.title
+    ,   sections = List.foldl
+            (\param (result, toks) ->
+                Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
+                    then (nextResult ++ [Dialog.Text {name = Just key, id = key}], Set.remove key nextToks)
+                    else (nextResult ++ [Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"}], nextToks)
                 )
-            ++ [button [type_ "submit"] [text "Apply"]]
+                ([], toks)
+                param.tokens
+                |> (\(finalList, finalTokens) ->
+                    (   result ++ [{ subtitle = param.name {-, description = param.description -}, inputs = finalList }]
+                    ,   finalTokens
+                    )
+                )
             )
-        ]
+            ([], tokens)
+            params.parameters
+            |> Tuple.first
+    ,   success = Dialog.decoder ApplyParameters tokens
+    ,   cancel = CloseDialog
+    ,   focus = Nothing
+    }
