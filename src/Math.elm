@@ -1,4 +1,4 @@
-module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, getName, notation, parse, symbolicate)
+module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, getName, notation, parse, symbolicate, validVariable)
 
 import Parser exposing ((|.), (|=))
 import Set
@@ -40,28 +40,28 @@ getName root = case root of
     GenericNode n -> n.name
     DeclarativeNode n -> n.name
 
-equal: Tree a -> Tree b -> Bool
-equal left right = case (left, right) of
-    (RealNode l, RealNode r) -> l.value == r.value
-    (VariableNode l, VariableNode r) -> l.name == r.name
-    (UnaryNode l, UnaryNode r) -> l.name == r.name
-        && equal l.child r.child
-    (BinaryNode l, BinaryNode r) -> l.name == r.name
+equal: (a -> b -> Bool) -> Tree a -> Tree b -> Bool
+equal check left right = case (left, right) of
+    (RealNode l, RealNode r) -> check l.state r.state && l.value == r.value
+    (VariableNode l, VariableNode r) -> check l.state r.state && l.name == r.name
+    (UnaryNode l, UnaryNode r) -> check l.state r.state && l.name == r.name
+        && equal check l.child r.child
+    (BinaryNode l, BinaryNode r) -> check l.state r.state && l.name == r.name
         && l.associative == r.associative && l.commutative == r.commutative
         && List.length l.children == List.length r.children
         &&  (   Backtrack.searchUnordered
-                (\lhs rhs result -> if equal lhs rhs then Backtrack.return Just result else Backtrack.fail)
+                (\lhs rhs result -> if equal check lhs rhs then Backtrack.return Just result else Backtrack.fail)
                 l.children r.children
                 (Backtrack.init True)
             |> Backtrack.toMaybe
             |> Maybe.withDefault False
             )
-    (GenericNode l, GenericNode r) -> l.name == r.name
+    (GenericNode l, GenericNode r) -> check l.state r.state && l.name == r.name
         && List.length l.children == List.length r.children
-        && (List.map2 equal l.children r.children |> List.foldl (&&) True)
-    (DeclarativeNode l, DeclarativeNode r) -> l.name == r.name
+        && (List.map2 (equal check) l.children r.children |> List.foldl (&&) True)
+    (DeclarativeNode l, DeclarativeNode r) -> check l.state r.state && l.name == r.name
         && List.length l.children == List.length r.children
-        && (List.map2 equal l.children r.children |> List.foldl (&&) True)
+        && (List.map2 (equal check) l.children r.children |> List.foldl (&&) True)
     _ -> False
 
 type Symbol s =
@@ -71,17 +71,8 @@ type Symbol s =
 symbolicate: Tree state -> Symbol state
 symbolicate root = symbolicateRecursive_ Nothing True root
 
-functionName_: Tree state -> String
-functionName_ node = case node of
-    RealNode _ -> ""
-    VariableNode _ -> ""
-    UnaryNode s -> s.name
-    BinaryNode s -> s.name
-    GenericNode s -> s.name
-    DeclarativeNode s -> s.name
-
 functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
-functionPrecedence_ node = case functionName_ node of
+functionPrecedence_ node = case getName node of
     -- modifier
     "/" -> 3
     "-" -> 3
@@ -258,6 +249,12 @@ tokenDigit_ = Parser.variable
     ,   inner = Char.isDigit
     ,   reserved = Set.empty
     }
+
+validVariable: String -> Result String String
+validVariable str = Parser.run
+    (Parser.oneOf [Parser.succeed identity |. Parser.token "\\" |= tokenLongName_, tokenShortName_])
+    str
+    |> Result.mapError (\_ -> "Inavlid variable name")
 
 validVarStart_: Char -> Bool
 validVarStart_ char = not (String.contains (String.fromChar char) " ~+-=*/\\.()[],;%!:;<>0123456789^&|$↔→")

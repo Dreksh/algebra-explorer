@@ -51,7 +51,7 @@ type alias Topic =
 
 type alias Parameters state =
     {   title: String
-    ,   parameters: List {name: String, description: String, tokens: Set.Set String}
+    ,   parameters: List {name: String, description: String, root: String, args: Int}
     ,   matches: List {from: Matcher.MatchResult state, name: String, matcher: Matcher.Matcher}
     }
 
@@ -160,7 +160,9 @@ matchRule_ selected rule = case selected of
                 else (  True
                     , Just
                         { title = rule.title
-                        , parameters = List.map (\p -> {name = p.match.name, description = p.description, tokens = Dict.keys p.match.tokens |> Set.fromList}) rule.parameters
+                        , parameters = List.map (\p ->
+                            {name = p.match.name, description = p.description, root = Matcher.getName p.match.root, args = Matcher.countChildren p.match.root}
+                        ) rule.parameters
                         , matches = matches
                         }
                     )
@@ -245,7 +247,7 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
         Dec.keyValuePairs Dec.string
         |>  Dec.andThen (
             Helper.resultList (\(key, description) (others, dict) -> Math.parse key
-                |> Result.andThen (treeToMatcher_ functions constants)
+                |> Result.andThen (treeToMatcher_ True functions constants)
                 |> Result.andThen (\(matcher, tokens) ->
                     mergeTokens_ dict tokens
                     |> Result.map (\newDict -> (others ++ [{match= {name = key, root = matcher, tokens = tokens}, description = description}], newDict))
@@ -259,8 +261,8 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
     |> Dec.andThen (\((title, description, (parameters, pDict))) -> -- Validate that both lhs and rhs has symbols covered
         Dec.list (
             Dec.map2 Tuple.pair
-            (Dec.field "from" (expressionDecoder_ functions constants))
-            (Dec.field "to" (expressionDecoder_ functions constants))
+            (Dec.field "from" (expressionDecoder_ True functions constants))
+            (Dec.field "to" (expressionDecoder_ False functions constants))
             |> Dec.andThen (verifyMatch_ pDict)
         )
         |> Dec.field "matches"
@@ -288,19 +290,19 @@ mergeTokens_ parameters new = Helper.resultDict (\name tok dict -> case Dict.get
     parameters
     new
 
-expressionDecoder_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Expression_
-expressionDecoder_ functions constants =
+expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Expression_
+expressionDecoder_ from functions constants =
     Dec.andThen
-    (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ functions constants) of
+    (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ from functions constants) of
         Err errStr -> Dec.fail ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
         Ok (matcher, tokens) -> Dec.succeed {name = str, root = matcher, tokens = tokens}
     )
     Dec.string
 
-treeToMatcher_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
-treeToMatcher_ functions constants root =
+treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
+treeToMatcher_ from functions constants root =
     let
-        processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child
+        processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ from functions constants child
                 |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict
                     (\k v total -> case Dict.get k total of
                         Nothing -> Ok (Dict.insert k v total)
@@ -323,7 +325,7 @@ treeToMatcher_ functions constants root =
         Math.VariableNode s -> if Set.member s.name constants
             then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
             else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
-        Math.UnaryNode s -> treeToMatcher_ functions constants s.child
+        Math.UnaryNode s -> treeToMatcher_ from functions constants s.child
             |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
         Math.BinaryNode s -> processChildren s.children
             |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
@@ -331,8 +333,9 @@ treeToMatcher_ functions constants root =
             |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
         Math.GenericNode s -> case Dict.get s.name functions of
             Nothing -> processChildren s.children
-                |> Result.map (\(children, tokens) ->
-                    (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens)
+                |> Result.andThen (\(children, tokens) ->
+                    (if from then Matcher.variableArgsOnly children else Ok Dict.empty)
+                    |> Result.map (\_ -> (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens))
                 )
             Just prop -> if prop.associative || prop.commutative
                 then processChildren s.children

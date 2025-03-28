@@ -84,7 +84,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     -- Rules
-    | ApplyParameters (Dict.Dict String String)
+    | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution String String
 
 type LoadableFile =
@@ -203,14 +203,19 @@ update event model = case event of
         Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
     ApplyParameters params -> case model.dialog of
         Just (_, Just existing) -> (    case Dict.get "_method" params of
-                Nothing -> Helper.listIndex 0 existing.matches |> Result.fromMaybe "Unable to find the match"
-                Just v -> case String.toInt v of
-                    Nothing -> Err "Unable to identify which match to use"
-                    Just n -> Helper.listIndex n existing.matches |> Result.fromMaybe "Unable to find the match"
+                Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
+                _ -> Helper.listIndex 0 existing.matches
             )
+            |> Result.fromMaybe "Unable to find the match"
             |>  Result.andThen (\prev -> Helper.resultDict (\k v r -> if k == "_method" then Ok r
-                    else Math.parse v
-                        |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
+                    else case v of
+                        Dialog.TextValue val -> Math.parse val |> Result.map (\tree -> {r | from = Matcher.addMatch k Dict.empty tree r.from})
+                        Dialog.FunctionValue args val -> List.indexedMap Tuple.pair args
+                            |> Helper.resultList (\(i, name) dict -> Math.validVariable name |> Result.map (\n -> Dict.insert n i dict) ) Dict.empty
+                            |> Result.andThen (\argDict -> Math.parse val
+                                |> Result.map (\tree -> {r | from = Matcher.addMatch k argDict tree r.from})
+                            )
+                        _ -> Ok r
                     )
                 prev params
             )
@@ -315,7 +320,10 @@ addTopicDialog_ =
             ,   lines = [[Dialog.Button {text = "Select a file", event =(FileSelect TopicFile)}]]
             }
         ]
-    ,   success = Dialog.decoder (Dict.get "url" >> Maybe.withDefault "" >> DownloadTopic) (Set.singleton "url")
+    ,   success = (\val -> case Dict.get "url" val of
+            Just (Dialog.TextValue a) -> DownloadTopic a
+            _ -> NoOp
+        )
     ,   cancel = CloseDialog
     ,   focus = Just "url"
     }
@@ -328,31 +336,26 @@ deleteTopicDialog_ =
             ,   lines = [[Dialog.Text {id = "name"}]]
             }
         ]
-    ,   success = Dialog.decoder (Dict.get "name" >> Maybe.withDefault "" >> DeleteTopic) (Set.singleton "name")
+    ,   success = (\val -> case Dict.get "name" val of
+            Just (Dialog.TextValue a) -> DeleteTopic a
+            _ -> NoOp
+        )
     ,   cancel = CloseDialog
     ,   focus = Just "name"
     }
 
 parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
-parameterDialog_ params = let choiceRequired = List.length params.matches > 1 in
-    let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
+parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
-    ,   sections = Helper.listMapWithState
-            (\toks param -> Set.toList param.tokens
-                |> Helper.listMapWithState (\nextToks key -> if Set.member key nextToks
-                    then ([Dialog.Info {text = key ++ ": "}, Dialog.Text {id = key}], Set.remove key nextToks)
-                    else ([Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"}], nextToks)
-                )
-                toks
-                |> (\(finalList, finalTokens) ->
-                    (   { subtitle = param.name {-, description = param.description -}, lines = finalList }
-                    ,   finalTokens
+    ,   sections =
+            [{   subtitle = "Fill in the parameters"
+            ,   lines = params.parameters
+                    |> List.map (\param -> if param.args == 0
+                        then [Dialog.Info {text = param.name ++ "= "}, Dialog.Text {id = param.name}, Dialog.Info {text = param.description}]
+                        else [Dialog.Function {name = param.name, arguments = param.args}, Dialog.Info {text = param.description}]
                     )
-                )
-            )
-            tokens
-            params.parameters
-            |> (\(sections, _) -> if not choiceRequired then sections
+            }]
+            |> (\sections -> if List.length params.matches <= 1 then sections
                 else { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]
@@ -361,7 +364,7 @@ parameterDialog_ params = let choiceRequired = List.length params.matches > 1 in
                     }
                     :: sections
             )
-    ,   success = Dialog.decoder ApplyParameters (if choiceRequired then Set.insert "_method" tokens else tokens)
+    ,   success = ApplyParameters
     ,   cancel = CloseDialog
     ,   focus = Nothing
     }
@@ -373,10 +376,10 @@ substitutionDialog_ =
         [{  subtitle = "For each "
         ,   lines = [[Dialog.Text {id="var"}, Dialog.Info {text = "="}, Dialog.Text {id="formula"}]]
         }]
-    ,   success = Dialog.decoder (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
-            (Just a, Just b) -> ApplySubstitution a b
+    ,   success = (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
+            (Just (Dialog.TextValue a), Just (Dialog.TextValue b)) -> ApplySubstitution a b
             _ -> NoOp
-        ) (Set.fromList ["var","formula"])
+        )
     ,   cancel = CloseDialog
     ,   focus = Just "var"
     }

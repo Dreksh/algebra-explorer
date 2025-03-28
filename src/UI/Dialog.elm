@@ -1,10 +1,9 @@
-module UI.Dialog exposing (Input(..), Model, Section, decoder, fieldID, view)
+module UI.Dialog exposing (Extracted(..), Input(..), Model, Section, fieldID, view)
 
 import Dict
 import Html exposing (form, text, h1, h2, input, label, node, button, p, span)
 import Html.Attributes as Attr
 import Json.Decode as Decode
-import Set
 -- Ours
 import UI.HtmlEvent
 import UI.Icon
@@ -12,7 +11,7 @@ import UI.Icon
 type alias Model msg =
     {   title: String
     ,   sections: List (Section msg)
-    ,   success: Decode.Decoder msg
+    ,   success: (Dict.Dict String Extracted -> msg)
     ,   cancel: msg
     ,   focus: Maybe String -- id of the field
     }
@@ -27,12 +26,19 @@ type Input msg =
     | Button {text: String, event: msg}
     | Info {text: String}
     | Radio {name: String, options: List String}
+    | Function {name: String, arguments: Int}
+
+-- Autogenerate from Model
+type Extracted =
+    TextValue String
+    | IntValue Int
+    | FunctionValue (List String) String
 
 view: Model msg -> Html.Html msg
 view model =
     node "dialog" [Attr.attribute "open" "true"]
     [   h1 [] [text model.title]
-    ,   form [UI.HtmlEvent.onSubmitForm model.success, Attr.attribute "method" "dialog"]
+    ,   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
                 (   h2 [] [text section.subtitle]
                 ::  List.map listView_ section.lines
@@ -60,18 +66,46 @@ listView_ = List.map (\input -> case input of
                 ]
             )
             |> span []
+        Function f -> span []
+            (   text (f.name ++ "(")
+                :: ( List.map
+                    (\index -> let n = f.name ++ String.fromInt index in
+                        Html.label [Attr.for n] [Html.input [Attr.type_ "text", Attr.name n, Attr.id (fieldID n)] []]
+                    )
+                    (List.range 1 f.arguments)
+                    |> List.intersperse (text ",")
+                )
+                ++ [ text ") = ", Html.label [Attr.for f.name] [Html.input [Attr.type_ "text", Attr.name f.name, Attr.id (fieldID f.name)] []]]
+            )
     )
     >> span []
 
-decoder: (Dict.Dict String String -> msg) -> Set.Set String -> Decode.Decoder msg
-decoder map keys = Set.foldl (\key ->
-        Decode.map2
-        (\new -> Dict.insert key new)
-        (Decode.string |> Decode.field "value" |> Decode.field key)
+decoder_: Model msg -> Decode.Decoder msg
+decoder_ model = let valueDecoder name = Decode.field "value" Decode.string |> Decode.field name in
+    model.sections
+    |> List.foldl (\section d ->
+        List.foldl (\lines d1 ->
+            List.foldl (\input dict -> case input of
+                    Text s -> Decode.map2 (\val -> Dict.insert s.id (TextValue val)) (valueDecoder s.id) dict
+                    Radio s -> Decode.map2 Tuple.pair (valueDecoder s.name) dict
+                        |> Decode.andThen (\(val, map) -> case String.toInt val of
+                            Nothing -> Decode.fail "Selection was not a number"
+                            Just num -> Decode.succeed (Dict.insert s.name (IntValue num) map)
+                        )
+                    Function s -> List.range 1 s.arguments
+                        |> List.map (\num -> s.name ++ String.fromInt num)
+                        |> List.foldl (\name -> Decode.map2 (::) (valueDecoder name)) (Decode.succeed [])
+                        |> Decode.map3
+                            (\orig equal list -> Dict.insert s.name (FunctionValue list equal) orig)
+                            dict
+                            (valueDecoder s.name)
+                    _ -> dict
+            ) d1 lines
+        )
+        d section.lines
     )
     (Decode.succeed Dict.empty)
-    keys
-    |> Decode.map map
+    |> Decode.map model.success
 
 fieldID: String -> String
 fieldID = (++) "dialog_"

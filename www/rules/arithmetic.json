@@ -50,7 +50,7 @@
             "description": "Doubling inverses cancels itself out",
             "matches": [
                 {"from": "--a", "to": "a"},
-                {"from": "1/(1/a)", "to": "a"}
+                {"from": "b/(c/a)", "to": "a*b/c"}
             ]
         },
         {

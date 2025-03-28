@@ -30,8 +30,8 @@ type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
     }
 
-createState: Matcher.State () -> Int -> State
-createState _ num = { prevID = num }
+createState: Int -> State
+createState num = { prevID = num }
 
 updateState: Matcher.State State -> Int -> State
 updateState s _ = {prevID = Matcher.getID s}

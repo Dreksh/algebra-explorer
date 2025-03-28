@@ -1,5 +1,5 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
-    getID, parseEquation, selectedSubtree,
+    getID, getName, countChildren, parseEquation, selectedSubtree, variableArgsOnly,
     groupSubtree, ungroupSubtree,
     addMatch, matchNode, matchSubtree, replaceSubtree
     )
@@ -24,7 +24,7 @@ getState s = case s of
 type alias Tracker_ state =
     {   nextID: Int
     ,   parent: Dict.Dict Int Int
-    ,   newState: State () -> Int -> state
+    ,   newState: Int -> state
     ,   copyState: State state -> Int -> state
     }
 
@@ -42,21 +42,54 @@ type Matcher =
     | DeclarativeMatcher {name: String, arguments: List Matcher, commutative: Bool} -- Specifically for Declarative statements
     | CommutativeAssociativeMatcher {name: String, arguments: List Matcher } -- Unordered & group-able
 
+getName: Matcher -> String
+getName m = case m of
+    AnyMatcher s -> s.name
+    RealMatcher s -> String.fromFloat s.value
+    ExactMatcher s -> s.name
+    CommutativeMatcher s -> s.name
+    DeclarativeMatcher s -> s.name
+    CommutativeAssociativeMatcher s -> s.name
+
+countChildren: Matcher -> Int
+countChildren m = case m of
+    AnyMatcher s -> List.length s.arguments
+    RealMatcher s -> 0
+    ExactMatcher s -> List.length s.arguments
+    CommutativeMatcher s -> List.length s.arguments
+    DeclarativeMatcher s -> List.length s.arguments
+    CommutativeAssociativeMatcher s -> List.length s.arguments
+
 type alias MatchResult state =
     {   nodes: Dict.Dict Int (Math.Tree (State state))
-    ,   matches: Dict.Dict String (Source_ state)
+    ,   matches: Dict.Dict String (Value_ state)
     }
 
-type Source_ state =
-    Internal_ (List Int)
-    | Copy_ Int -- Copy the internal node, this is when Internal_ choices run out
-    | External_ (Math.Tree ())
+type alias ReplacementState_ state =
+    {   original: Maybe (State state)
+    ,   argument: Maybe Int
+    }
 
-addMatch: String -> Math.Tree () -> MatchResult state -> MatchResult state
-addMatch key value result = {result | matches = Dict.insert key (External_ value) result.matches}
+type alias Value_ state =
+    {   subtree: Math.Tree (ReplacementState_ state)
+    ,   example: List Int -- List is only useful if there are no arguments
+    }
+
+addMatch: String -> Dict.Dict String Int -> Math.Tree () -> MatchResult state -> MatchResult state
+addMatch key args value result = {result | matches = Dict.insert key {subtree = toValue_ (\_ -> Nothing) args value, example = []} result.matches}
+
+variableArgsOnly: List Matcher -> Result String (Dict.Dict String Int)
+variableArgsOnly = List.indexedMap Tuple.pair
+    >> Helper.resultList (\(index, elem) dict ->
+        case elem of
+            AnyMatcher s -> if List.isEmpty s.arguments then Ok (Dict.insert s.name index dict)
+                else Err "Composite functions not implemented yet"
+            _ -> Err "non-variables not allowed as function arguments"
+    )
+    Dict.empty
 
 -- ## parserEquation: Also assigned ID
-parseEquation: (State () -> Int -> state) -> (State state -> Int -> state) -> String -> Result String (Equation state)
+parseEquation: (Int -> state) -> (State state -> Int -> state) -> String -> Result String (Equation state)
 parseEquation newState copyState input = Math.parse input
     |> Result.map (
         processID_ -1 {nextID = 0, parent = Dict.empty, newState = newState, copyState = copyState}
@@ -67,7 +100,7 @@ processID_: Int -> Tracker_ state -> Math.Tree () -> (Math.Tree (State state), T
 processID_ parent tracker oldRoot =
     let
         id = tracker.nextID
-        (state, newTracker) = addNode_ tracker.newState (State_ 0 ()) parent tracker
+        (state, newTracker) = addNode_ Nothing parent tracker
         processChildren = Helper.listMapWithState (processID_ id)
     in
     case oldRoot of
@@ -82,11 +115,30 @@ processID_ parent tracker oldRoot =
         Math.DeclarativeNode s -> let (newChildren, finalT) = processChildren newTracker s.children in
             (Math.DeclarativeNode {state = state, name = s.name, children = newChildren}, finalT)
 
-addNode_: (old -> Int -> state) -> old -> Int -> Tracker_ state -> (State state, Tracker_ state)
-addNode_ converter previous parent tracker =
-    (   State_ tracker.nextID (converter previous tracker.nextID)
+addNode_: Maybe (State state) -> Int -> Tracker_ state -> (State state, Tracker_ state)
+addNode_ previous parent tracker =
+    (   State_ tracker.nextID (case previous of
+            Nothing -> tracker.newState tracker.nextID
+            Just prev -> tracker.copyState prev tracker.nextID
+        )
     ,   {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent}
     )
+
+toValue_: (orig -> Maybe (State state)) -> Dict.Dict String Int -> Math.Tree orig -> Math.Tree (ReplacementState_ state)
+toValue_ converter varDict =
+    let
+        convert node = case node of
+            Math.RealNode s -> Math.RealNode {state = {original = converter s.state, argument = Nothing}, value = s.value}
+            Math.VariableNode s -> case Dict.get s.name varDict of
+                Nothing -> Math.VariableNode {state = {original = converter s.state, argument = Nothing}, name = s.name}
+                Just n -> Math.VariableNode {state = {original = converter s.state, argument = Just n}, name = ""}
+            Math.UnaryNode s -> Math.UnaryNode {state = {original = converter s.state, argument = Nothing}, name = s.name, child = convert s.child}
+            Math.BinaryNode s -> Math.BinaryNode
+                {state = {original = converter s.state, argument = Nothing}, name = s.name, associative = s.associative, commutative = s.commutative, children = List.map convert s.children}
+            Math.GenericNode s -> Math.GenericNode {state = {original = converter s.state, argument = Nothing}, name = s.name, children = List.map convert s.children}
+            Math.DeclarativeNode s -> Math.DeclarativeNode {state = {original = converter s.state, argument = Nothing}, name = s.name, children = List.map convert s.children}
+    in
+        convert
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
 selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state), Int)
@@ -106,16 +158,6 @@ selectedSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
             )
             )
         )
-
-toStatelessTree_: Math.Tree s -> Math.Tree ()
-toStatelessTree_ root = case root of
-    Math.RealNode s -> Math.RealNode {state = (), value = s.value}
-    Math.VariableNode s -> Math.VariableNode {state = (), name = s.name}
-    Math.UnaryNode s -> Math.UnaryNode {state = (), name = s.name, child = toStatelessTree_ s.child}
-    Math.BinaryNode s -> Math.BinaryNode
-        {state = (), name = s.name, associative = s.associative, commutative = s.commutative, children = List.map toStatelessTree_ s.children}
-    Math.GenericNode s -> Math.GenericNode {state = (), name = s.name, children = List.map toStatelessTree_ s.children}
-    Math.DeclarativeNode s -> Math.DeclarativeNode {state = (), name = s.name, children = List.map toStatelessTree_ s.children}
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)
 affectedSubtree_ nodes parent = case Set.toList nodes of
@@ -201,7 +243,7 @@ groupSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
                 else let filtered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
                     let unfiltered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes |> not) n.children in
                     if List.isEmpty filtered || List.isEmpty unfiltered then Err "Grouping all or none does nothing"
-                    else let (newS, newT) = addNode_ subEq.tracker.newState (State_ 0 ()) (getID n.state) subEq.tracker in
+                    else let (newS, newT) = addNode_ Nothing (getID n.state) subEq.tracker in
                         let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent filtered in
                         Ok ((), {root = Math.BinaryNode {n | children = Math.BinaryNode {n | children = filtered, state = newS}::unfiltered}, tracker = {newT | parent = newP}})
             _ -> Err "Node is not associative"
@@ -255,18 +297,30 @@ extractPattern_ from root token = case from of
     AnyMatcher s -> let id = Math.getState root |> getID in
         case root of
             Math.DeclarativeNode _ -> Backtrack.fail
-            _ -> Backtrack.return (\result -> case Dict.get s.name result.matches of
-                Just (Internal_ (oldID::other)) ->
-                    Dict.get oldID result.nodes
-                    |> Maybe.andThen (\n ->
-                        if Math.equal n root |> not then Nothing
-                        else Just {result | matches = Dict.insert s.name (Internal_ (id::(oldID::other))) result.matches}
+            _ -> Backtrack.return (\result -> variableArgsOnly s.arguments
+                |> Result.toMaybe
+                |> Maybe.andThen (\varDict -> let newSubtree = toValue_ Just varDict root in
+                    case Dict.get s.name result.matches of
+                        Just existing ->
+                            if subtreeEqual_ newSubtree existing.subtree |> not then Nothing
+                            else if List.isEmpty s.arguments |> not then Just result
+                            else
+                                Just
+                                {  result
+                                |   nodes = Dict.insert id root result.nodes
+                                ,   matches = Dict.insert s.name {existing | example = id::existing.example} result.matches
+                                }
+                        _ ->
+                            if List.isEmpty s.arguments |> not then
+                                Just {  result
+                                | matches = Dict.insert s.name {subtree = newSubtree, example = []} result.matches
+                                }
+                            else Just
+                                {  result
+                                |   nodes = Dict.insert id root result.nodes
+                                ,   matches = Dict.insert s.name {subtree = newSubtree, example = [id]} result.matches
+                                }
                     )
-                _ -> Just
-                    {  result
-                    |   nodes = Dict.insert id root result.nodes
-                    ,   matches = Dict.insert s.name (Internal_ [id]) result.matches
-                    }
                 ) token
     ExactMatcher s -> if List.isEmpty s.arguments
         then case root of
@@ -292,78 +346,79 @@ extractPattern_ from root token = case from of
         _ -> Backtrack.fail
     CommutativeAssociativeMatcher _ -> Backtrack.fail -- TODO:
 
+subtreeEqual_: Math.Tree (ReplacementState_ state) -> Math.Tree (ReplacementState_ state) -> Bool
+subtreeEqual_ = Math.equal
+    (\l r -> case (l.argument,r.argument) of
+        (Nothing, Nothing) -> True
+        (Just a, Just b) -> a == b
+        _ -> False
+    )
+
 -- ## replaceSubtree
 replaceSubtree: Set.Set Int -> Matcher -> MatchResult state -> Equation state -> Result String (Equation state)
 replaceSubtree ids into with eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Unable to find selected nodes"
     Just (id, _) ->
         processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq ->
-            let (newRoot, newTracker, _) = constructFromSource_ into with subEq.tracker -1 in
-            let newID = Math.getState newRoot |> getID in
-            case Dict.get (Math.getState subEq.root |> getID) eq.tracker.parent of
-                Nothing -> Ok ((), {root = newRoot, tracker = {newTracker | parent = Dict.remove newID newTracker.parent}})
-                Just p -> Ok ((), {root = newRoot, tracker = {newTracker | parent = Dict.insert newID p newTracker.parent}})
+            let (newRoot, (newTracker, _)) = constructFromSource_ with subEq.tracker -1 into in
+            let parent = Dict.get (Math.getState subEq.root |> getID) subEq.tracker.parent in
+            Ok ((), {root = newRoot, tracker = setParent_ newRoot parent newTracker})
         )
         eq
         |> Result.map Tuple.second
 
-constructFromSource_: Matcher -> MatchResult state -> Tracker_ state -> Int -> (Math.Tree (State state), Tracker_ state, MatchResult state)
-constructFromSource_ matcher result tracker p =
+setParent_: Math.Tree (State state) -> Maybe Int -> Tracker_ state -> Tracker_ state
+setParent_ root parent tracker = let id = Math.getState root |> getID in
+    case parent of
+        Nothing -> {tracker | parent = Dict.remove id tracker.parent}
+        Just p -> {tracker | parent = Dict.insert id p tracker.parent}
+
+constructFromSource_: MatchResult state -> Tracker_ state -> Int -> Matcher -> (Math.Tree (State state), (Tracker_ state, MatchResult state))
+constructFromSource_ result tracker p matcher =
     let
-        (s, t) = addNode_ tracker.newState (State_ tracker.nextID ()) p tracker
-        constructChildren otherS otherT = let id = getID otherS in
-            List.foldl
-                (\match (list, oTracker, res) ->
-                    let (c, finalT, otherRes) = constructFromSource_ match res oTracker id in
-                    (list ++ [c], finalT, otherRes)
-                )
-                ([], otherT, result)
+        id = tracker.nextID
+        (s, t) = addNode_ Nothing p tracker
+        constructChildren otherT = Helper.listMapWithState (\(oTracker, res) -> constructFromSource_ res oTracker id) (otherT, result)
     in
         case matcher of
             AnyMatcher m -> case Dict.get m.name result.matches of
-                Just (Internal_ [id]) -> case Dict.get id result.nodes of
-                    Nothing ->  (Math.VariableNode {state = s, name = "FAIL"}, t, result) -- TODO:
-                    Just n -> (n, {tracker | parent = Dict.insert id p tracker.parent}, {result | matches = Dict.insert m.name (Copy_ id) result.matches})
-                Just (Internal_ (id::other)) -> case Dict.get id result.nodes of
-                    Nothing -> (Math.VariableNode {state = s, name = "FAIL"}, t, result) -- TODO:
-                    Just n -> (n, {tracker | parent = Dict.insert id p tracker.parent}, {result | matches = Dict.insert m.name (Internal_ other) result.matches})
-                Just (Copy_ id) -> case Dict.get id result.nodes of
-                    Nothing -> (Math.VariableNode {state = s, name = "FAIL"}, t, result) -- TODO:
-                    Just old -> copySubtree_ p old tracker
-                        |> (\(root, newT) -> (root, newT, result))
-                Just (External_ n) -> processID_ p tracker n
-                    |> (\(newRoot, newTracker) -> (newRoot, newTracker, result))
-                _ -> (Math.VariableNode {state = s, name = "FAIL"}, t, result) -- TODO:
-            RealMatcher m -> (Math.RealNode {state = s, value = m.value}, t, result)
+                Just existing -> case existing.example of
+                    (nodeID::other) -> case Dict.get nodeID result.nodes of
+                        Just n -> (n, (setParent_ n (Just p) tracker, {result | matches = Dict.insert m.name {existing | example = other} result.matches}))
+                        Nothing -> constructFromValue_ p result m.arguments existing.subtree tracker
+                    _ -> constructFromValue_ p result m.arguments existing.subtree tracker
+                _ -> (Math.VariableNode {state = s, name = "MISSING MATCH"}, (t, result)) -- TODO:
+            RealMatcher m -> (Math.RealNode {state = s, value = m.value}, (t, result))
             ExactMatcher m -> case m.arguments of
-                [] -> (Math.VariableNode {state = s, name = m.name}, t, result)
-                [child] -> constructFromSource_ child result t tracker.nextID
-                    |> (\(c, finalTracker, r) -> (Math.UnaryNode {state = s, name = m.name, child = c}, finalTracker, r))
-                _ -> constructChildren s t m.arguments
-                    |> (\(c, finalTracker, r) -> (Math.GenericNode {state = s, name = m.name, children = c}, finalTracker, r))
-            DeclarativeMatcher m -> constructChildren s t m.arguments
-                |> (\(c, finalTracker, r) -> (Math.DeclarativeNode {state = s, name = m.name, children = c}, finalTracker, r))
-            CommutativeMatcher m -> constructChildren s t m.arguments
-                |> (\(c, finalTracker, r) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, finalTracker, r))
-            CommutativeAssociativeMatcher _ -> (Math.VariableNode {state = s, name = "TODO"}, t, result) -- TODO:
+                [] -> (Math.VariableNode {state = s, name = m.name}, (t, result))
+                [child] -> constructFromSource_ result t id child
+                    |> (\(c, final) -> (Math.UnaryNode {state = s, name = m.name, child = c}, final))
+                _ -> constructChildren t m.arguments
+                    |> (\(c, final) -> (Math.GenericNode {state = s, name = m.name, children = c}, final))
+            DeclarativeMatcher m -> constructChildren t m.arguments
+                |> (\(c, final) -> (Math.DeclarativeNode {state = s, name = m.name, children = c}, final))
+            CommutativeMatcher m -> constructChildren t m.arguments
+                |> (\(c, final) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, final))
+            CommutativeAssociativeMatcher _ -> (Math.VariableNode {state = s, name = "TODO"}, (t, result)) -- TODO:
 
-copySubtree_: Int -> Math.Tree (State state) -> Tracker_ state -> (Math.Tree (State state), Tracker_ state)
-copySubtree_ parent old tracker =
+-- TODO: If the rules match f(x) on an existing node, we shuld try to reuse the existing node ids
+constructFromValue_: Int -> MatchResult state -> List Matcher -> Math.Tree (ReplacementState_ state) -> Tracker_ state -> (Math.Tree (State state), (Tracker_ state, MatchResult state))
+constructFromValue_ parent result args existing tracker =
     let
         id = tracker.nextID
-        (newS, newTracker) = addNode_ tracker.copyState (Math.getState old) parent tracker
-        processChildren p childTracker = List.foldl
-            (\elem (list, t) -> let (child, finalT) = copySubtree_ p elem t in (list ++ [child], finalT) )
-            ([], childTracker)
+        (newS, newTracker) = addNode_ (Math.getState existing |> .original) parent tracker
+        processChildren = Helper.listMapWithState (\(childTracker, r) matcher -> constructFromValue_ id r args matcher childTracker)
     in
-    case old of
-        Math.RealNode s -> (Math.RealNode {s | state = newS}, newTracker)
-        Math.VariableNode s -> (Math.VariableNode {s | state = newS}, newTracker)
-        Math.UnaryNode s -> let (newChild, finalTracker) = copySubtree_ id s.child newTracker in
-            (Math.UnaryNode {s | state = newS, child = newChild}, finalTracker)
-        Math.BinaryNode s -> let (newChildren, finalT) = processChildren id newTracker s.children in
-            (Math.BinaryNode {s | state = newS, children = newChildren}, finalT)
-        Math.GenericNode s -> let (newChildren, finalT) = processChildren id newTracker s.children in
-            (Math.GenericNode {s | state = newS, children = newChildren}, finalT)
-        Math.DeclarativeNode s -> let (newChildren, finalT) = processChildren id newTracker s.children in
-            (Math.DeclarativeNode {s | state = newS, children = newChildren}, finalT)
+    case existing of
+        Math.RealNode s -> (Math.RealNode {state = newS, value = s.value}, (newTracker, result))
+        Math.VariableNode s -> case Maybe.andThen (\n -> Helper.listIndex n args) s.state.argument of
+            Nothing -> (Math.VariableNode {state = newS, name = s.name}, (newTracker, result))
+            Just matcher -> constructFromSource_ result tracker parent matcher
+        Math.UnaryNode s -> let (newChild, final) = constructFromValue_ id result args s.child newTracker in
+            (Math.UnaryNode {state = newS, name = s.name, child = newChild}, final)
+        Math.BinaryNode s -> let (newChildren, final) = processChildren (newTracker, result) s.children in
+            (Math.BinaryNode {state = newS, children = newChildren, name = s.name, associative = s.associative, commutative = s.commutative}, final)
+        Math.GenericNode s -> let (newChildren, final) = processChildren (newTracker, result) s.children in
+            (Math.GenericNode {state = newS, name = s.name, children = newChildren}, final)
+        Math.DeclarativeNode s -> let (newChildren, final) = processChildren (newTracker, result) s.children in
+            (Math.DeclarativeNode {state = newS, name = s.name, children = newChildren}, final)
