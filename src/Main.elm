@@ -103,7 +103,7 @@ init: Decode.Value -> Url.Url -> Nav.Key -> (Model, Cmd Event)
 init _ url key =
     let
         query = Query.parseInit url key
-        (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations
+        (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations |> \(a, b) -> (List.reverse a, List.reverse b)
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
@@ -123,8 +123,8 @@ init _ url key =
 
 parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
 parseEquations_ elem (result, errs) = case Matcher.parseEquation {position = (0,0)} elem of
-    Result.Ok root -> (result ++ [root], errs)
-    Result.Err err -> (result, errs ++ [err])
+    Result.Ok root -> (root :: result, errs)
+    Result.Err err -> (result, err :: errs )
 
 subscriptions: Model -> Sub Event
 subscriptions model = case (model.createMode, model.dialog) of
@@ -324,13 +324,13 @@ parameterDialog_ params = let tokens = List.foldl (\elem -> Set.union elem.token
     ,   sections = List.foldl
             (\param (result, toks) ->
                 Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
-                    then (nextResult ++ [Dialog.Text {name = Just key, id = key}], Set.remove key nextToks)
-                    else (nextResult ++ [Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"}], nextToks)
+                    then (Dialog.Text {name = Just key, id = key} :: nextResult, Set.remove key nextToks)
+                    else (Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"} :: nextResult, nextToks)
                 )
                 ([], toks)
                 param.tokens
                 |> (\(finalList, finalTokens) ->
-                    (   result ++ [{ subtitle = param.name {-, description = param.description -}, inputs = finalList }]
+                    (   { subtitle = param.name {-, description = param.description -}, inputs = finalList } :: result |> List.reverse
                     ,   finalTokens
                     )
                 )

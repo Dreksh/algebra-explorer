@@ -9,6 +9,7 @@ import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (class, style)
 import Set
 -- Ours
+import Helper
 import Math
 import Matcher
 import UI.HtmlEvent
@@ -75,7 +76,7 @@ update event model = case event of
 -}
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
-view converter attr model = div (attr ++ [])
+view converter attr model = div attr
     (   Dict.foldl
         (\eqNum eq result ->
             let
@@ -124,15 +125,15 @@ stackRecursive eq highlight width depth node =
     let
         children = Math.getChildren node
         id = Math.getState node |> Matcher.getID
-        (maxWidth, maxDepth, childDivs) =
+        (childDivs, (maxWidth, maxDepth)) =
             if List.isEmpty children
-            then (width+1, depth, [])
+            then ([], (width+1, depth))
             else
                 children
-                |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
+                |>  Helper.listMapWithState (\(foldWidth, foldDepth) child ->
                     let (w, d, divs) = stackRecursive eq highlight foldWidth (depth+1) child
-                    in (w, max foldDepth d, foldDivs ++ divs)
-                ) (width, depth, [])
+                    in (divs, (w, max foldDepth d))
+                ) (width, depth)
     in
         (   maxWidth
         ,   maxDepth

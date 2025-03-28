@@ -72,24 +72,20 @@ init =
 addTopic: Topic -> Model -> Result String Model
 addTopic topic m = let id = String.toLower topic.name in
     let model = deleteTopic id m in -- Clear Existing topic
-    topic.functions |> Dict.foldl (\name props result -> case result of
-        Err _ -> result
-        Ok dict -> case Dict.get name dict of
-            Nothing -> Ok (Dict.insert name (props, 1) dict)
-            Just (p, count) -> if p.arguments == props.arguments && p.associative == props.associative && p.commutative == props.commutative
-                then Ok (Dict.insert name (p, count + 1) dict)
-                else Err ("'" ++ name ++ "' differs from existing definition from other topics")
+    topic.functions |> Helper.resultDict (\name props dict -> case Dict.get name dict of
+        Nothing -> Ok (Dict.insert name (props, 1) dict)
+        Just (p, count) -> if p.arguments == props.arguments && p.associative == props.associative && p.commutative == props.commutative
+            then Ok (Dict.insert name (p, count + 1) dict)
+            else Err ("'" ++ name ++ "' differs from existing definition from other topics")
     )
-    (Ok model.functions)
+    model.functions
     |> (\res -> case res of
         Err errStr -> Err errStr
-        Ok functions -> topic.constants |> Set.foldl (\name result -> case result of
-                Err _ -> result
-                Ok dict -> case Dict.get name dict of
-                    Nothing -> Ok (Dict.insert name 1 dict)
-                    Just count -> Ok (Dict.insert name (count + 1) dict)
+        Ok functions -> topic.constants |> Helper.resultSet (\name dict -> case Dict.get name dict of
+                Nothing -> Ok (Dict.insert name 1 dict)
+                Just count -> Ok (Dict.insert name (count + 1) dict)
             )
-            (Ok model.constants)
+            model.constants
             |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert id topic model.topics})
     )
 

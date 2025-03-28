@@ -67,4 +67,4 @@ decoder map keys = Set.foldl (\key ->
     |> Decode.map map
 
 fieldID: String -> String
-fieldID = (++) "dialog_"
+ieldID = (++) "dialog_"

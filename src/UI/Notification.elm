@@ -52,7 +52,7 @@ update e model = case e of
         ({ model | notifications = Dict.remove id model.notifications }, Cmd.none )
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
-view converter attrs model = node "div" (attrs ++ [])
+view converter attrs model = node "div" attrs
     (   Dict.foldl
         (  \id val result -> notificationDiv_ converter id val::result )
         []

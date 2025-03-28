@@ -8,6 +8,7 @@ import Math
 import Set
 -- Ours
 import Backtrack
+import Helper
 
 type State state = State_ Int state
 
@@ -54,26 +55,24 @@ parseEquation default input = Math.parse input
         >> (\(tracker, newRoot) -> {root = newRoot, tracker = {tracker | parent = Dict.remove 0 tracker.parent}})
     )
 
-processID_: Int -> Tracker_ state -> Math.Tree () -> (Tracker_ state, Math.Tree (State state))
+processID_: Int -> Tracker_ state -> Math.Tree () -> (Math.Tree (State state), Tracker_ state)
 processID_ parent tracker oldRoot =
     let
         id = tracker.nextID
         (state, newTracker) = addNode_ parent tracker
-        processChildren p childTracker = List.foldl
-            (\elem (nextEq, list) -> let (finalEq, child) = processID_ p nextEq elem in (finalEq, list ++ [child]) )
-            (childTracker, [])
+        processChildren = Helper.listMapWithState (processID_ id)
     in
     case oldRoot of
-        Math.RealNode s -> (newTracker, Math.RealNode {state = state, value = s.value})
-        Math.VariableNode s -> (newTracker, Math.VariableNode {state = state, name = s.name})
-        Math.UnaryNode s -> let (finalEq, newChild) = processID_ id newTracker s.child in
-            (finalEq, Math.UnaryNode {state = state, name = s.name, child = newChild})
-        Math.BinaryNode s -> let (finalEq, newChildren) = processChildren id newTracker s.children in
-            (finalEq, Math.BinaryNode {state = state, name = s.name, associative = s.associative, commutative = s.commutative, children = newChildren})
-        Math.GenericNode s -> let (finalEq, newChildren) = processChildren id newTracker s.children in
-            (finalEq, Math.GenericNode {state = state, name = s.name, children = newChildren})
-        Math.DeclarativeNode s -> let (finalEq, newChildren) = processChildren id newTracker s.children in
-            (finalEq, Math.DeclarativeNode {state = state, name = s.name, children = newChildren})
+        Math.RealNode s -> (Math.RealNode {state = state, value = s.value}, newTracker)
+        Math.VariableNode s -> (Math.VariableNode {state = state, name = s.name}, newTracker)
+        Math.UnaryNode s -> let (newChild, finalT) = processID_ id newTracker s.child in
+            (Math.UnaryNode {state = state, name = s.name, child = newChild}, finalT)
+        Math.BinaryNode s -> let (newChildren, finalT) = processChildren newTracker s.children in
+            (Math.BinaryNode {state = state, name = s.name, associative = s.associative, commutative = s.commutative, children = newChildren}, finalT)
+        Math.GenericNode s -> let (newChildren, finalT) = processChildren newTracker s.children in
+            (Math.GenericNode {state = state, name = s.name, children = newChildren}, finalT)
+        Math.DeclarativeNode s -> let (newChildren, finalT) = processChildren newTracker s.children in
+            (Math.DeclarativeNode {state = state, name = s.name, children = newChildren}, finalT)
 
 addNode_: Int -> Tracker_ state -> (State state, Tracker_ state)
 addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent})
@@ -131,9 +130,13 @@ affectedSubtree_ nodes parent = case Set.toList nodes of
         |> (\(root, newDict) -> Just (root, Dict.keys newDict |> Set.fromList))
 
 searchPath_: Dict.Dict Int Int -> Int -> List Int
-searchPath_ map id = case Dict.get id map of
-    Nothing -> [id]
-    Just a -> searchPath_ map a ++ [id]
+searchPath_ map id =
+    let
+        recursive input = case Dict.get input map of
+            Nothing -> [input]
+            Just a -> input :: recursive a
+    in
+    recursive id |> List.reverse
 
 processSubtree_: List Int -> (Math.Tree (State state) -> (Maybe result, Math.Tree (State state))) -> Math.Tree (State state) -> (Maybe result, Math.Tree (State state))
 processSubtree_ path processor node =
@@ -158,12 +161,11 @@ processSubtree_ path processor node =
                     case children of
                         [child] -> (r, child)
                         _ -> if not s.associative then (r, Math.BinaryNode {s | children = children})
-                            else List.foldl (\child list -> case child of
-                                    Math.BinaryNode childS -> if childS.name == s.name then list ++ childS.children
-                                        else list ++ [child]
-                                    _ -> list ++ [child]
+                            else List.concatMap (\child -> case child of
+                                    Math.BinaryNode childS -> if childS.name == s.name then childS.children
+                                        else [child]
+                                    _ -> [child]
                                 )
-                                []
                                 children
                                 |> (\c -> (r, Math.BinaryNode {s | children = c}))
                 Math.GenericNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.GenericNode {s | children = children}))

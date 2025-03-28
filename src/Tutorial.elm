@@ -19,7 +19,7 @@ update: Event -> Model -> (Model, Cmd Event)
 update _ model = (model, Cmd.none)
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
-view converter attrs model = div (attrs ++ []) []
+view converter attrs model = div attrs []
 
 menu: (Event -> msg) -> Model -> Menu.Part msg
 menu converter model = Menu.Section "Tutorials" True []

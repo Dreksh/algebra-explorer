@@ -106,12 +106,13 @@ symbolicateRecursive_ parent multiplicativeFirst root = (
                 then [symbolicateRecursive_ (Just root) True child]
                 else case child of
                     UnaryNode c -> case (s.name, c.name) of
-                        ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) True child]
-                        ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) (List.isEmpty result) child]
-                        _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
-                    _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
+                        ("+", "-") -> symbolicateRecursive_ (Just root) True child :: result
+                        ("*", "/") -> symbolicateRecursive_ (Just root) (List.isEmpty result) child :: result
+                        _ -> Text s.name :: (symbolicateRecursive_ (Just root) True child :: result)
+                    _ -> Text s.name :: ( symbolicateRecursive_ (Just root) True child :: result)
                 )
                 []
+            |> List.reverse
         GenericNode s -> s.children
             |> List.map (symbolicateRecursive_ (Just root) True)
             |> List.intersperse (Text ",")
