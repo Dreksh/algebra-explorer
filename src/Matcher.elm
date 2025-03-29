@@ -52,7 +52,7 @@ parseEquation: state -> String -> Result String (Equation state)
 parseEquation default input = Math.parse input
     |> Result.map (
         processID_ -1 {nextID = 0, parent = Dict.empty, defaultState = default}
-        >> (\(tracker, newRoot) -> {root = newRoot, tracker = {tracker | parent = Dict.remove 0 tracker.parent}})
+        >> (\(newRoot, tracker) -> {root = newRoot, tracker = {tracker | parent = Dict.remove 0 tracker.parent}})
     )
 
 processID_: Int -> Tracker_ state -> Math.Tree () -> (Math.Tree (State state), Tracker_ state)

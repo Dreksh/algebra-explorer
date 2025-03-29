@@ -125,15 +125,15 @@ stackRecursive eq highlight width depth node =
     let
         children = Math.getChildren node
         id = Math.getState node |> Matcher.getID
-        (childDivs, (maxWidth, maxDepth)) =
+        (maxWidth, maxDepth, childDivs) =
             if List.isEmpty children
-            then ([], (width+1, depth))
+            then (width+1, depth, [])
             else
                 children
-                |>  Helper.listMapWithState (\(foldWidth, foldDepth) child ->
+                |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
                     let (w, d, divs) = stackRecursive eq highlight foldWidth (depth+1) child
-                    in (divs, (w, max foldDepth d))
-                ) (width, depth)
+                    in (w, max foldDepth d, foldDivs ++ divs)
+                ) (width, depth, [])
     in
         (   maxWidth
         ,   maxDepth
