@@ -1,4 +1,4 @@
-module Rules exposing (ClickEvent, Model, Topic, init,
+module Rules exposing (Model, Event(..), Parameters, Topic, init,
     addTopic, deleteTopic, topicDecoder,
     menuTopics
     )
@@ -51,6 +51,13 @@ type alias Topic =
     ,   rules: List Rule_
     }
 
+type alias Parameters state =
+    {   title: String
+    ,   to: Matcher.Matcher
+    ,   parameters: List {name: String, description: String, tokens: Set.Set String}
+    ,   extracted: Matcher.MatchResult state
+    }
+
 {-
 ## Elm-y bits
 -}
@@ -60,6 +67,12 @@ type alias Model =
     ,   topics: Dict.Dict String Topic
     ,   createMode: Bool
     }
+
+type Event treeState =
+    Apply (Parameters treeState)
+    | Group
+    | Ungroup
+    | Substitute
 
 init: Model
 init =
@@ -112,10 +125,8 @@ deleteTopic name model = let id = String.toLower name in
                 ,   functions = newFunctions
                 }
 
-type alias ClickEvent state msg = {title: String, to: Matcher.Matcher, parameters: List {name: String, description: String, tokens: Set.Set String}, extracted: Matcher.MatchResult state} -> msg
-
-menuTopics: ClickEvent state msg -> Model -> Maybe (Math.Tree (Matcher.State state)) -> List (Menu.Part msg)
-menuTopics click model selectedNode =
+menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Int) -> List (Menu.Part msg)
+menuTopics converter model selectedNode =
     let
         ruleName rule = rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name
         clickEvent result rule to =
@@ -124,7 +135,7 @@ menuTopics click model selectedNode =
                     |> List.filter (\(exp, _) -> Dict.diff exp.tokens result.matches |> Dict.isEmpty |> not)
                     |> List.map (\(exp, description) -> {name = exp.name, description = description, tokens = Dict.keys exp.tokens |> Set.fromList})
             in
-                HtmlEvent.onClick (click {title = ruleName rule, to = to rule |> .root, parameters = parameters, extracted = result})
+                HtmlEvent.onClick (Apply {title = ruleName rule, to = to rule |> .root, parameters = parameters, extracted = result} |> converter)
         individualRule display lMatcher rMatcher rule = Menu.Section
             (ruleName rule)
             display
@@ -144,7 +155,7 @@ menuTopics click model selectedNode =
     |> List.map (\topic -> Menu.Section topic.name True
         (   List.map (\rule -> case selectedNode of
                 Nothing -> individualRule True Nothing Nothing rule
-                Just node ->
+                Just (node, _) ->
                     let
                         display = Matcher.matchNode rule.lhs.root node || (rule.reversible && Matcher.matchNode rule.rhs.root node)
                         lhs = Matcher.matchSubtree rule.lhs.root node
@@ -158,6 +169,57 @@ menuTopics click model selectedNode =
             topic.rules
         )
     )
+    |> (::) (coreTopic_ converter selectedNode)
+
+-- TODO: Maybe having information about which nodes are highlighted will be useful
+coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
+coreTopic_ converter root =
+    let
+        applyButton e = Menu.Content [a [HtmlEvent.onClick (converter e), class "clickable"] [text "apply"]]
+        (subApply, groupApply, ungroupApply) = case root of
+            Nothing -> (Nothing, Nothing, Nothing)
+            Just (Math.BinaryNode n, childCount) -> if not n.associative then (Just (applyButton Substitute), Nothing, Nothing)
+                else
+                    let
+                        sameBinaryNode = List.any
+                            (\child -> case child of
+                                Math.BinaryNode m -> n.name == m.name
+                                _ -> False
+                            )
+                            n.children
+                    in
+                    (   Just (applyButton Substitute)
+                    ,   if List.length n.children == childCount || childCount < 2 then Nothing else Just (applyButton Group) -- grouping everything is a noop
+                    ,   if sameBinaryNode then Just (applyButton Ungroup) else Nothing
+                    )
+            _ -> (Just (applyButton Substitute), Nothing, Nothing)
+    in
+        Menu.Section "Core" True
+        [   Menu.Section "Substitute" True
+            (   [   Menu.Content
+                    [   h2 [] [text "Given x=y, f(x)=f(y)"]
+                    ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
+                    ]
+                ]
+            |> Helper.maybeAppend subApply
+            )
+        ,   Menu.Section "Group" True
+            (   [   Menu.Content
+                    [   h2 [] [text "Focus on a specific part"]
+                    ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
+                    ]
+                ]
+            |> Helper.maybeAppend groupApply
+            )
+        ,   Menu.Section "Ungroup" True
+            (   [   Menu.Content
+                    [   h2 [] [text "Return the group with the rest"]
+                    ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
+                    ]
+                ]
+            |> Helper.maybeAppend ungroupApply
+            )
+        ]
 
 {-
 ## Parser

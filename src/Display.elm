@@ -1,6 +1,7 @@
 module Display exposing (
     Model, Event(..), State, init, update, view,
     addEquation, updateEquation, listEquations,
+    groupChildren, ungroupChildren,
     selectedNode
     )
 
@@ -51,11 +52,27 @@ updateEquation id eq model = {model | equations = Dict.insert id eq model.equati
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations
 
-selectedNode: Model -> Maybe (Math.Tree (Matcher.State State))
+selectedNode: Model -> Maybe (Math.Tree (Matcher.State State), Int)
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
         |> Maybe.andThen (Matcher.selectedSubtree ids >> Result.toMaybe)
     )
+
+groupChildren: Model -> Result String Model
+groupChildren model = case model.selected of
+    Nothing -> Err "Nothing was selected"
+    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
+        Nothing -> Err "Equation not found"
+        Just eq -> Matcher.groupSubtree ids eq
+            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
+
+ungroupChildren: Model -> Result String Model -- only ungroups one, and can be an unselected node
+ungroupChildren model = case model.selected of
+    Nothing -> Err "Nothing was selected"
+    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
+        Nothing -> Err "Equation not found"
+        Just eq -> Matcher.ungroupSubtree ids eq
+            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
 
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of

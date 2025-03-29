@@ -1,7 +1,7 @@
 module UI.Dialog exposing (Input(..), Model, Section, decoder, fieldID, view)
 
 import Dict
-import Html exposing (form, text, h1, h2, input, label, node, button, p)
+import Html exposing (form, text, h1, h2, input, label, node, button, p, span)
 import Html.Attributes as Attr
 import Json.Decode as Decode
 import Set
@@ -19,11 +19,11 @@ type alias Model msg =
 
 type alias Section msg =
     {   subtitle: String
-    ,   inputs: List (Input msg)
+    ,   lines: List (List (Input msg))
     }
 
 type Input msg =
-    Text {name: Maybe String, id: String} -- ":" will be appended to the title, if present
+    Text {id: String}
     | Button {text: String, event: msg}
     | Info {text: String}
 
@@ -34,7 +34,7 @@ view model =
     ,   form [UI.HtmlEvent.onSubmitForm model.success, Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
                 (   h2 [] [text section.subtitle]
-                ::  List.map inputView_ section.inputs
+                ::  List.map listView_ section.lines
                 )
             )
             model.sections
@@ -44,17 +44,13 @@ view model =
         )
     ]
 
-inputView_: Input msg -> Html.Html msg
-inputView_ input = case input of
-    Text t -> label [Attr.for t.id]
-        (   (case t.name of
-                Nothing -> []
-                Just n -> [text (n ++ ":")]
-            )
-        ++  [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []]
-        )
-    Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
-    Info i -> p [] [text i.text]
+listView_: List (Input msg) -> Html.Html msg
+listView_ = List.map (\input -> case input of
+        Text t -> label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []]
+        Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
+        Info i -> text i.text
+    )
+    >> span []
 
 decoder: (Dict.Dict String String -> msg) -> Set.Set String -> Decode.Decoder msg
 decoder map keys = Set.foldl (\key ->

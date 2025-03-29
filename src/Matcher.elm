@@ -1,5 +1,6 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
     getID, parseEquation, selectedSubtree,
+    groupSubtree, ungroupSubtree,
     addMatch, matchNode, matchSubtree
     )
 
@@ -78,24 +79,33 @@ addNode_: Int -> Tracker_ state -> (State state, Tracker_ state)
 addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent})
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
-selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state))
+selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state), Int)
 selectedSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
-    Nothing -> Err "blah"
+    Nothing -> Err "Nodes not found"
     Just (id, nodes) ->
         processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> Ok (subEq.root, subEq)) eq
-        |> Result.map (\(root, _) -> reducedNode_ nodes root)
+        |> Result.map (\(root, _) ->
+            (   root
+            ,   (   case root of
+                Math.RealNode _ -> 0
+                Math.VariableNode _ -> 0
+                Math.UnaryNode _ -> 1
+                Math.BinaryNode s -> s.children |> List.filter (\n -> Set.member (Math.getState n |> getID) nodes) |> List.length
+                Math.GenericNode s -> s.children |> List.filter (\n -> Set.member (Math.getState n |> getID) nodes) |> List.length
+                Math.DeclarativeNode s -> s.children |> List.filter (\n -> Set.member (Math.getState n |> getID) nodes) |> List.length
+            )
+            )
+        )
 
--- We only care about the root node's children, everything under those are included
--- as they can't just be "set-aside"
-reducedNode_: Set.Set Int -> Math.Tree (State state) -> Math.Tree (State state)
-reducedNode_ selected root = case root of
-    Math.BinaryNode s -> let children = List.filter (\child -> Set.member (Math.getState child |> getID) selected) s.children in
-        if List.isEmpty children then root
-        else Math.BinaryNode { s | children = children }
-    Math.DeclarativeNode s -> let children = List.filter (\child -> Set.member (Math.getState child |> getID) selected) s.children in
-        if List.isEmpty children then root
-        else Math.DeclarativeNode { s | children = children }
-    _ -> root
+toStatelessTree_: Math.Tree s -> Math.Tree ()
+toStatelessTree_ root = case root of
+    Math.RealNode s -> Math.RealNode {state = (), value = s.value}
+    Math.VariableNode s -> Math.VariableNode {state = (), name = s.name}
+    Math.UnaryNode s -> Math.UnaryNode {state = (), name = s.name, child = toStatelessTree_ s.child}
+    Math.BinaryNode s -> Math.BinaryNode
+        {state = (), name = s.name, associative = s.associative, commutative = s.commutative, children = List.map toStatelessTree_ s.children}
+    Math.GenericNode s -> Math.GenericNode {state = (), name = s.name, children = List.map toStatelessTree_ s.children}
+    Math.DeclarativeNode s -> Math.DeclarativeNode {state = (), name = s.name, children = List.map toStatelessTree_ s.children}
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)
 affectedSubtree_ nodes parent = case Set.toList nodes of
@@ -170,6 +180,55 @@ matchNode matcher root = case (matcher, root) of
     (CommutativeMatcher m, Math.DeclarativeNode n) -> m.name == n.name
     (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name -- TODO: switch to CommutativeAssociativeMatcher
     _ -> False
+
+-- ## groupSubtree: make children go one more step down
+groupSubtree: Set.Set Int -> Equation state -> Result String (Equation state)
+groupSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
+    Nothing -> Err "Nodes not found"
+    Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
+            Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
+                else if not n.commutative then Err "Not implemented for non-commutative"
+                else let filtered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
+                    let unfiltered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes |> not) n.children in
+                    if List.isEmpty filtered || List.isEmpty unfiltered then Err "Grouping all or none does nothing"
+                    else let (newS, newT) = addNode_ (getID n.state) subEq.tracker in
+                        let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent filtered in
+                        Ok ((), {root = Math.BinaryNode {n | children = Math.BinaryNode {n | children = filtered, state = newS}::unfiltered}, tracker = {newT | parent = newP}})
+            _ -> Err "Node is not associative"
+        )
+        eq
+        |> Result.map Tuple.second
+
+ungroupSubtree: Set.Set Int -> Equation state -> Result String (Equation state)
+ungroupSubtree ids eq = let tracker = eq.tracker in
+    case affectedSubtree_ ids tracker.parent of
+        Nothing -> Err "Nodes not found"
+        Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
+                Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
+                    else
+                        let
+                            updateParent s =
+                                List.foldl
+                                (\c -> Dict.insert (Math.getState c |> getID) id)
+                                (Dict.remove (getID s.state) tracker.parent)
+                                s.children
+                            processChildren found children = case children of
+                                [] -> Err "All children are ungrouped"
+                                (c::other) -> case c of
+                                    Math.BinaryNode m -> if m.name /= n.name then processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                                        else if Set.member (getID m.state) nodes then Ok (m.children ++ other, {tracker | parent = updateParent m})
+                                        else case processChildren found other of
+                                            Ok (list, t) -> Ok (c::list, t)
+                                            Err errStr -> if found then Err errStr
+                                                else Ok (m.children ++ other, {tracker | parent = updateParent m})
+                                    _ -> processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                        in
+                            processChildren False n.children
+                            |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
+                _ -> Err "Node is not associative"
+                )
+                eq
+            |> Result.map Tuple.second
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)

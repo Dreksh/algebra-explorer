@@ -44,13 +44,6 @@ port updateMathJax: () -> Cmd msg
 
 -- Types
 
-type alias Parameters_ =
-    {   title: String
-    ,   to: Matcher.Matcher
-    ,   parameters: List {name: String, description: String, tokens: Set.Set String}
-    ,   extracted: Matcher.MatchResult Display.State
-    }
-
 type alias Model =
     {   display: Display.Model
     ,   rules: Rules.Model
@@ -63,13 +56,14 @@ type alias Model =
     ,   createMode: Maybe (Maybe Int)
     ,   showHelp: Bool
     ,   showMenu: Bool
-    ,   dialog: Maybe (Dialog.Model Event, Maybe Parameters_)
+    ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Display.State))
     }
 
 type Event =
     EventUrlRequest Browser.UrlRequest
     | EventUrlChange Url.Url
     | DisplayEvent Display.Event
+    | RuleEvent (Rules.Event Display.State)
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
@@ -90,8 +84,8 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     -- Rules
-    | ApplyRule Parameters_
     | ApplyParameters (Dict.Dict String String)
+    | ApplySubstitution String String
 
 type LoadableFile =
     TopicFile
@@ -112,7 +106,7 @@ init _ url key =
         , tutorial = Tutorial.init
         , notification = nModel
         , query = query
-        , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Constants", "Functions", "Rules"])
+        , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Topics", "Core"])
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
@@ -194,9 +188,17 @@ update event model = case event of
                 Ok rModel -> ({model | rules = rModel}, Cmd.none)
             )
         SaveFile -> (model, Cmd.none) -- TODO
-    ApplyRule details -> if List.isEmpty details.parameters |> not
-        then ({ model | dialog = Just (parameterDialog_ details, Just details)}, Cmd.none)
-        else applyChange_ details model
+    RuleEvent e -> case e of
+        Rules.Apply p -> if List.isEmpty p.parameters |> not
+            then ({ model | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
+            else applyChange_ p model
+        Rules.Group -> case Display.groupChildren model.display of
+            Err errStr -> submitNotification_ model errStr
+            Ok dModel -> ({model | display = dModel}, Cmd.none)
+        Rules.Ungroup -> case Display.ungroupChildren model.display of
+            Err errStr -> submitNotification_ model errStr
+            Ok dModel -> ({model | display = dModel}, Cmd.none)
+        Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
     ApplyParameters params -> case model.dialog of
         Just (_, Just existing) ->
             let
@@ -207,9 +209,10 @@ update event model = case event of
                 Err errStr -> submitNotification_ model errStr
                 Ok newParams -> applyChange_ newParams model
         _ -> ({ model | dialog = Nothing}, Cmd.none)
+    ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
 
 -- TODO
-applyChange_: Parameters_ -> Model -> (Model, Cmd Event)
+applyChange_: Rules.Parameters Display.State -> Model -> (Model, Cmd Event)
 applyChange_ params model = (model, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
@@ -255,7 +258,7 @@ view model =
                                     [text "Delete"]
                                 ]
                             ]
-                        ++  Rules.menuTopics ApplyRule model.rules (Display.selectedNode model.display)
+                        ++  Rules.menuTopics RuleEvent model.rules (Display.selectedNode model.display)
                         )
                     ]
                 ]
@@ -294,10 +297,10 @@ addTopicDialog_ =
     {   title = "Add a new Topic"
     ,   sections =
         [   {   subtitle = "Load from a URL"
-            ,   inputs = [Dialog.Text {name = Nothing, id = "url"}]
+            ,   lines = [[Dialog.Text {id = "url"}]]
             }
         ,   {   subtitle = "Load from a file"
-            ,   inputs = [Dialog.Button {text = "Select a file", event =(FileSelect TopicFile)}]
+            ,   lines = [[Dialog.Button {text = "Select a file", event =(FileSelect TopicFile)}]]
             }
         ]
     ,   success = Dialog.decoder (Dict.get "url" >> Maybe.withDefault "" >> DownloadTopic) (Set.singleton "url")
@@ -310,7 +313,7 @@ deleteTopicDialog_ =
     {   title = "Delete an existing Topic"
     ,   sections =
         [   {   subtitle = "Name of the topic:"
-            ,   inputs = [Dialog.Text {name = Nothing, id = "name"}]
+            ,   lines = [[Dialog.Text {id = "name"}]]
             }
         ]
     ,   success = Dialog.decoder (Dict.get "name" >> Maybe.withDefault "" >> DeleteTopic) (Set.singleton "name")
@@ -318,27 +321,41 @@ deleteTopicDialog_ =
     ,   focus = Just "name"
     }
 
-parameterDialog_: Parameters_ -> Dialog.Model Event
+parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
 parameterDialog_ params = let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
     {   title = "Set parameters for " ++ params.title
-    ,   sections = List.foldl
-            (\param (result, toks) ->
-                Set.foldl (\key (nextResult, nextToks) -> if Set.member key nextToks
-                    then (Dialog.Text {name = Just key, id = key} :: nextResult, Set.remove key nextToks)
-                    else (Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"} :: nextResult, nextToks)
+    ,   sections = Helper.listMapWithState
+            (\toks param -> Set.toList param.tokens
+                |> Helper.listMapWithState (\nextToks key -> if Set.member key nextToks
+                    then ([Dialog.Info {text = key ++ ": "}, Dialog.Text {id = key}], Set.remove key nextToks)
+                    else ([Dialog.Info {text = key ++ ": Refer to input '" ++ key ++ "' above"}], nextToks)
                 )
-                ([], toks)
-                param.tokens
+                toks
                 |> (\(finalList, finalTokens) ->
-                    (   { subtitle = param.name {-, description = param.description -}, inputs = finalList } :: result |> List.reverse
+                    (   { subtitle = param.name {-, description = param.description -}, lines = finalList }
                     ,   finalTokens
                     )
                 )
             )
-            ([], tokens)
+            tokens
             params.parameters
             |> Tuple.first
     ,   success = Dialog.decoder ApplyParameters tokens
     ,   cancel = CloseDialog
     ,   focus = Nothing
+    }
+
+substitutionDialog_: Dialog.Model Event
+substitutionDialog_ =
+    {   title = "Substitute a variable for a formula"
+    ,   sections =
+        [{  subtitle = "For each "
+        ,   lines = [[Dialog.Text {id="var"}, Dialog.Info {text = "="}, Dialog.Text {id="formula"}]]
+        }]
+    ,   success = Dialog.decoder (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
+            (Just a, Just b) -> ApplySubstitution a b
+            _ -> NoOp
+        ) (Set.fromList ["var","formula"])
+    ,   cancel = CloseDialog
+    ,   focus = Just "var"
     }
