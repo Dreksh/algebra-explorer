@@ -78,13 +78,12 @@ addNode_: Int -> Tracker_ state -> (State state, Tracker_ state)
 addNode_ parent tracker = (State_ tracker.nextID tracker.defaultState, {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent})
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
-selectedSubtree: Set.Set Int -> Equation state -> Maybe (Math.Tree (State state))
-selectedSubtree ids eq = affectedSubtree_ ids eq.tracker.parent
-    |> Maybe.andThen (\(id, nodes) ->
-        processSubtree_ (searchPath_ eq.tracker.parent id) (\node -> (Just node, node)) eq.root
-        |> (\(root, _) -> Maybe.map (\r -> (r, nodes)) root)
-    )
-    |> Maybe.map (\(root, nodes) -> reducedNode_ nodes root)
+selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state))
+selectedSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
+    Nothing -> Err "blah"
+    Just (id, nodes) ->
+        processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> Ok (subEq.root, subEq)) eq
+        |> Result.map (\(root, _) -> reducedNode_ nodes root)
 
 -- We only care about the root node's children, everything under those are included
 -- as they can't just be "set-aside"
@@ -138,38 +137,28 @@ searchPath_ map id =
     in
     recursive id |> List.reverse
 
-processSubtree_: List Int -> (Math.Tree (State state) -> (Maybe result, Math.Tree (State state))) -> Math.Tree (State state) -> (Maybe result, Math.Tree (State state))
-processSubtree_ path processor node =
+processSubtree_: List Int -> (Equation state -> Result String (result, Equation state)) -> Equation state -> Result String (result, Equation state)
+processSubtree_ path processor eq =
     let
         processChildren p children = case children of
-            [] -> (Nothing, [])
-            (current::others) -> case processSubtree_ p processor current of
-                (Nothing, _) -> processChildren p others |> (\(r, newChildren) -> (r, current::newChildren))
-                (Just a, newNode) -> (Just a, newNode::others)
-        id = Math.getState node |> getID
+            [] -> Err "blah"
+            (current::others) -> case processSubtree_ p processor {eq | root = current} of
+                Err _ -> processChildren p others |> Result.map (\(r, newChildren, t) -> (r, current::newChildren, t))
+                Ok (a, newEq) -> Ok (a, newEq.root::others, newEq.tracker)
+        id = Math.getState eq.root |> getID
     in
     case path of
-        [] -> (Nothing, node)
-        [expected] -> if expected /= id then (Nothing, node)
-            else processor node
-        (expected::next) -> if expected /= id then (Nothing, node)
-            else case node of
-                Math.RealNode _ -> (Nothing, node)
-                Math.VariableNode _ -> (Nothing, node)
-                Math.UnaryNode s -> processSubtree_ next processor s.child |> (\(r, child) -> (r, Math.UnaryNode {s | child = child}))
-                Math.BinaryNode s -> let (r, children) = processChildren next s.children in
-                    case children of
-                        [child] -> (r, child)
-                        _ -> if not s.associative then (r, Math.BinaryNode {s | children = children})
-                            else List.concatMap (\child -> case child of
-                                    Math.BinaryNode childS -> if childS.name == s.name then childS.children
-                                        else [child]
-                                    _ -> [child]
-                                )
-                                children
-                                |> (\c -> (r, Math.BinaryNode {s | children = c}))
-                Math.GenericNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.GenericNode {s | children = children}))
-                Math.DeclarativeNode s -> processChildren next s.children |> (\(r, children) -> (r, Math.DeclarativeNode {s | children = children}))
+        [] -> Err "blah"
+        [expected] -> if expected /= id then Err "blah"
+            else processor eq
+        (expected::next) -> if expected /= id then Err "blah"
+            else case eq.root of
+                Math.RealNode _ -> Err "blah"
+                Math.VariableNode _ -> Err "blah"
+                Math.UnaryNode s -> processSubtree_ next processor {eq | root = s.child} |> Result.map (\(r, newEq) -> (r, {newEq | root = Math.UnaryNode {s | child = newEq.root}}))
+                Math.BinaryNode s -> processChildren next s.children |> Result.map (\(r, children, t) -> (r, {root = Math.BinaryNode {s | children = children}, tracker = t}))
+                Math.GenericNode s -> processChildren next s.children |> Result.map (\(r, children, t) -> (r, {root = Math.GenericNode {s | children = children}, tracker = t}))
+                Math.DeclarativeNode s -> processChildren next s.children |> Result.map (\(r, children, t) -> (r, {root = Math.DeclarativeNode {s | children = children}, tracker = t}))
 
 matchNode: Matcher -> Math.Tree (State state) -> Bool
 matchNode matcher root = case (matcher, root) of

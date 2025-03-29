@@ -54,7 +54,7 @@ listEquations model = model.equations
 selectedNode: Model -> Maybe (Math.Tree (Matcher.State State))
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
-        |> Maybe.andThen (Matcher.selectedSubtree ids)
+        |> Maybe.andThen (Matcher.selectedSubtree ids >> Result.toMaybe)
     )
 
 update: Event -> Model -> (Model, Cmd Event)
