@@ -82,12 +82,13 @@ functionName_ node = case node of
 
 functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
 functionPrecedence_ node = case functionName_ node of
+    -- modifier
+    "/" -> 3
+    "-" -> 3
     -- multiplicative
     "*" -> 2
-    "/" -> 2
     -- additive
     "+" -> 1
-    "-" -> 1
     -- Others (variables, function calls)
     _ -> -1
 
@@ -129,7 +130,7 @@ symbolicateRecursive_ parent multiplicativeFirst root = (
         (_, GenericNode s) -> Node {state = s.state, children = tokens}
         (_, DeclarativeNode s) -> Node {state = s.state, children = tokens}
         (Just p, _) ->
-            if (functionPrecedence_ p) > (functionPrecedence_ root)
+            if (functionPrecedence_ p) >= (functionPrecedence_ root)
             then Node {state = getState root, children= Text "("::tokens ++ [Text ")"]}
             else Node {state = getState root, children = tokens}
     )
