@@ -1,99 +1,83 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "+": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
-        "*": {"arguments": 2, "parameters": 0, "associative": true, "commutative": true},
-        "-": {"arguments": 1, "parameters": 0, "associative": false, "commutative": false},
-        "/": {"arguments": 1, "parameters": 0, "associative": false, "commutative": false}
+        "+": {"arguments": 2, "associative": true, "commutative": true},
+        "*": {"arguments": 2, "associative": true, "commutative": true},
+        "-": {"arguments": 1},
+        "/": {"arguments": 1}
     },
     "constants": [],
-    "equations": [
+    "actions": [
         {
-            "title": "Identity of Addition",
-            "description": "Adding 0 does not change the value",
-            "reversible": true,
-            "lhs": "a+0",
-            "rhs": "a"
+            "title": "Cancel out",
+            "description": "Combining with their inverse, values can be cancelled out",
+            "matches": [
+                {"from": "a-a", "to": "0"},
+                {"from": "a/a", "to": "1"}
+            ]
         },
         {
-            "title": "Inverse of Addition",
-            "description": "Definition of negative numbers",
-            "reversible": true,
-            "lhs": "a-a",
-            "rhs": "0",
+            "title": "<name>",
+            "description": "<descr>",
             "parameters": {
-                "a": "the expression to introduce"
-            }
+                "a": "The value to introduce"
+            },
+            "matches": [
+                {"from": "0", "to": "a-a"},
+                {"from": "1", "to": "a/a"}
+            ]
         },
         {
-            "title": "Double Inverse of Addition",
-            "description": "Definition of negating a number",
-            "reversible": true,
-            "lhs": "--a",
-            "rhs": "a"
+            "title": "Apply identity",
+            "description": "Combining with the identity does not affect the value",
+            "matches": [
+                {"from": "a", "to": "a+0"},
+                {"from": "a", "to": "a*1"}
+            ]
         },
         {
-            "title": "Distributive property of negation",
-            "description": "The negation of a sum is the sum of their negation",
-            "reversible": true,
-            "lhs": "-(a+b)",
-            "rhs": "-a-b"
+            "title": "Remove identity",
+            "description": "Removing the identity does not affect the value",
+            "matches": [
+                {"from": "a+0", "to": "a"},
+                {"from": "a-0", "to": "a"},
+                {"from": "a*1", "to": "a"},
+                {"from": "a/1", "to": "a"}
+            ]
         },
         {
-            "title": "Identity of Multiplication",
-            "description": "Multiplying by 1 does not change the value",
-            "reversible": true,
-            "lhs": "a*1",
-            "rhs": "a"
+            "title": "Cancel inverses",
+            "description": "Doubling inverses cancels itself out",
+            "matches": [
+                {"from": "--a", "to": "a"},
+                {"from": "1/(1/a)", "to": "a"}
+            ]
         },
         {
-            "title": "Inverse of Multiplication",
-            "description": "Definition of reciprocals",
-            "reversible": true,
-            "lhs": "a/a",
-            "rhs": "1",
+            "title": "Expand brackets",
+            "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
+            "matches": [
+                {"from": "-(a+b)", "to": "-a-b"},
+                {"from": "m(a+b)", "to": "ma+mb"}
+            ]
+        },
+        {
+            "title": "Factorise",
+            "description": "Terms with the same factor in a sum can be grouped",
+            "matches": [
+                {"from": "-a-b", "to": "-(a+b)"},
+                {"from": "ma+mb", "to": "m(a+b)"}
+            ]
+        },
+        {
+            "title": "Operate on both sides",
+            "description": "Modifying the values in the same way on both sides retain the equality",
             "parameters": {
-                "a": "the expression to introduce"
-            }
-        },
-        {
-            "title": "Double Inverse of Multiplication",
-            "description": "Definition of reciprocating a number",
-            "reversible": true,
-            "lhs": "a/(b/c)",
-            "rhs": "a*c/b"
-        },
-        {
-            "title": "Distributive property of reciprocal",
-            "description": "the reciprocal of a product is the product of their reciprocal",
-            "reversible": true,
-            "lhs": "a/(b*c)",
-            "rhs": "a/b/c"
-        },
-        {
-            "title": "Distributive property of multiplication",
-            "description": "Multiplying m to a sum is equivalent to Adding the product of each term with m",
-            "reversible": true,
-            "lhs": "m(a+b)",
-            "rhs": "ma+mb"
-        },
-        {
-            "title": "Operating on both sides of the equation",
-            "description": "Applying the same steps to both sides",
-            "lhs": "x=y",
-            "rhs": "\\f(x)=\\f(y)",
-            "parameters": {
-                "\\f(a)": "The function to apply on both sides"
-            }
-        },
-        {
-            "title": "Substitution",
-            "description": "Replace a variable with an equal identity",
-            "lhs": "\\f(x)",
-            "rhs": "\\f(y)",
-            "parameters": {
-                "x=y": "All occurances of x will be replaced by y"
-            }
+                "f(x)": "The function to apply on both sides of the equation"
+            },
+            "matches": [
+                {"from": "a=b", "to": "f(a)=f(b)"}
+            ]
         }
     ]
 }

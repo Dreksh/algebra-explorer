@@ -4,8 +4,8 @@ module Rules exposing (Model, Event(..), Parameters, Topic, init,
     )
 
 import Dict
-import Html exposing (a, h2, p, text)
-import Html.Attributes exposing (class)
+import Html exposing (a, h2, h3, p, text)
+import Html.Attributes exposing (class, title)
 import Json.Decode as Dec
 import Set
 -- Ours
@@ -38,10 +38,8 @@ type alias Expression_ =
 type alias Rule_ =
     {   title: String
     ,   description: String
-    ,   reversible: Bool
-    ,   lhs: Expression_
-    ,   rhs: Expression_
-    ,   parameters: List (Expression_, String)
+    ,   parameters: List {match: Expression_, description: String}
+    ,   matches: List {from: Expression_, to: Expression_}
     }
 
 type alias Topic =
@@ -53,9 +51,8 @@ type alias Topic =
 
 type alias Parameters state =
     {   title: String
-    ,   to: Matcher.Matcher
     ,   parameters: List {name: String, description: String, tokens: Set.Set String}
-    ,   extracted: Matcher.MatchResult state
+    ,   matches: List {from: Matcher.MatchResult state, name: String, matcher: Matcher.Matcher}
     }
 
 {-
@@ -128,57 +125,52 @@ deleteTopic name model = let id = String.toLower name in
 menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Int) -> List (Menu.Part msg)
 menuTopics converter model selectedNode =
     let
-        ruleName rule = rule.lhs.name ++ (if rule.reversible then "↔" else "→") ++ rule.rhs.name
-        clickEvent result rule to =
-            let
-                parameters = rule.parameters
-                    |> List.filter (\(exp, _) -> Dict.diff exp.tokens result.matches |> Dict.isEmpty |> not)
-                    |> List.map (\(exp, description) -> {name = exp.name, description = description, tokens = Dict.keys exp.tokens |> Set.fromList})
-            in
-                HtmlEvent.onClick (Apply {title = ruleName rule, to = to rule |> .root, parameters = parameters, extracted = result} |> converter)
-        individualRule display lMatcher rMatcher rule = Menu.Section
-            (ruleName rule)
-            display
-            ([  Menu.Content
-                [   h2 [] [text rule.title]
-                ,   p [] [text rule.description]
-                ]
+        individualRule rule = let (display, params) = matchRule_ selectedNode rule in
+            Menu.Section rule.title display
+            [  Menu.Content
+                (   [   applyButton converter (Maybe.map Apply params)
+                    ,   h3 [] [text "Rules"]
+                    ]
+                    ++ List.map (\match -> p [] [text (match.from.name ++"→"++ match.to.name)]) rule.matches
+                    ++ [   h3 [] [text "Description"]
+                    ,   p [] [text rule.description]
+                    ]
+                )
             ]
-            |> Helper.maybeAppend (lMatcher
-                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .rhs, class "clickable"] [text "Apply forwards"]])
-            )
-            |> Helper.maybeAppend (rMatcher
-                |> Maybe.map (\result -> Menu.Content [a [clickEvent result rule .lhs, class "clickable"] [text "Apply backwards"]])
-            ))
     in
     Dict.values model.topics
     |> List.map (\topic -> Menu.Section topic.name True
-        (   List.map (\rule -> case selectedNode of
-                Nothing -> individualRule True Nothing Nothing rule
-                Just (node, _) ->
-                    let
-                        display = Matcher.matchNode rule.lhs.root node || (rule.reversible && Matcher.matchNode rule.rhs.root node)
-                        lhs = Matcher.matchSubtree rule.lhs.root node
-                        rhs = if rule.reversible then Matcher.matchSubtree rule.rhs.root node else Nothing
-                    in
-                        -- TODO: Also display if the root function matches, but no apply button
-                        case (lhs, rhs) of
-                            (Nothing, Nothing) -> individualRule display Nothing Nothing rule
-                            _ -> individualRule True lhs rhs rule
-            )
-            topic.rules
-        )
+        ( List.map individualRule topic.rules )
     )
     |> (::) (coreTopic_ converter selectedNode)
+
+matchRule_: Maybe (Math.Tree (Matcher.State state), Int) -> Rule_ -> (Bool, Maybe (Parameters state))
+matchRule_ selected rule = case selected of
+    Nothing -> (True, Nothing)
+    Just (node, _) -> if List.any (\m -> Matcher.matchNode m.from.root node) rule.matches |> not
+        then (False, Nothing)
+        else (  True
+            , Just {    title = rule.title
+                , parameters = List.map (\p -> {name = p.match.name, description = p.description, tokens = Dict.keys p.match.tokens |> Set.fromList}) rule.parameters
+                , matches = List.foldl (\m -> Matcher.matchSubtree m.from.root node
+                    |> Maybe.map (\result -> {from = result, name = m.to.name, matcher = m.to.root})
+                    |> Helper.maybeAppend
+                    ) [] rule.matches
+                }
+            )
+
+applyButton : (Event state -> msg) -> Maybe (Event state) -> Html.Html msg
+applyButton converter e = case e of
+    Nothing -> a [title "Cannot be applied"] [text "apply"]
+    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "apply"]
 
 -- TODO: Maybe having information about which nodes are highlighted will be useful
 coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
 coreTopic_ converter root =
     let
-        applyButton e = Menu.Content [a [HtmlEvent.onClick (converter e), class "clickable"] [text "apply"]]
         (subApply, groupApply, ungroupApply) = case root of
             Nothing -> (Nothing, Nothing, Nothing)
-            Just (Math.BinaryNode n, childCount) -> if not n.associative then (Just (applyButton Substitute), Nothing, Nothing)
+            Just (Math.BinaryNode n, childCount) -> if not n.associative then (Just Substitute, Nothing, Nothing)
                 else
                     let
                         sameBinaryNode = List.any
@@ -188,37 +180,34 @@ coreTopic_ converter root =
                             )
                             n.children
                     in
-                    (   Just (applyButton Substitute)
-                    ,   if List.length n.children == childCount || childCount < 2 then Nothing else Just (applyButton Group) -- grouping everything is a noop
-                    ,   if sameBinaryNode then Just (applyButton Ungroup) else Nothing
+                    (   Just Substitute
+                    ,   if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
+                    ,   if sameBinaryNode then Just Ungroup else Nothing
                     )
-            _ -> (Just (applyButton Substitute), Nothing, Nothing)
+            _ -> (Just Substitute, Nothing, Nothing)
     in
         Menu.Section "Core" True
         [   Menu.Section "Substitute" True
-            (   [   Menu.Content
-                    [   h2 [] [text "Given x=y, f(x)=f(y)"]
-                    ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
-                    ]
+            [   Menu.Content
+                [  applyButton converter subApply
+                ,   h2 [] [text "Given x=y, f(x)=f(y)"]
+                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
                 ]
-            |> Helper.maybeAppend subApply
-            )
+            ]
         ,   Menu.Section "Group" True
-            (   [   Menu.Content
-                    [   h2 [] [text "Focus on a specific part"]
-                    ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
-                    ]
+            [   Menu.Content
+                [   applyButton converter groupApply
+                ,   h2 [] [text "Focus on a specific part"]
+                ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
                 ]
-            |> Helper.maybeAppend groupApply
-            )
+            ]
         ,   Menu.Section "Ungroup" True
-            (   [   Menu.Content
-                    [   h2 [] [text "Return the group with the rest"]
-                    ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
-                    ]
+            [   Menu.Content
+                [   applyButton converter ungroupApply
+                ,   h2 [] [text "Return the group with the rest"]
+                ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
                 ]
-            |> Helper.maybeAppend ungroupApply
-            )
+            ]
         ]
 
 {-
@@ -231,7 +220,7 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "functions" functionDecoder_)
     (Dec.field "constants" (Dec.list Dec.string))
     |> Dec.andThen ( \(name, functions, variables) -> let vars = Set.fromList variables in
-        Dec.field "equations" (Dec.list (ruleDecoder_ functions vars))
+        Dec.field "actions" (Dec.list (ruleDecoder_ functions vars))
         |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
@@ -239,34 +228,21 @@ functionDecoder_: Dec.Decoder (Dict.Dict String FunctionProperties_)
 functionDecoder_ = Dec.dict
     <| Dec.map3 FunctionProperties_
         (Dec.field "arguments" Dec.int)
-        (Dec.field "associative" Dec.bool)
-        (Dec.field "commutative" Dec.bool)
+        (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
+        (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
 
 ruleDecoder_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Rule_
-ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
+ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
-    (Dec.maybe (Dec.field "reversible" Dec.bool) |> Dec.map (Maybe.withDefault False))
-    (Dec.field "lhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> Helper.resultToDecoder)))
-    (Dec.field "rhs" (Dec.string |> Dec.andThen (parseExpression_ functions constants >> Helper.resultToDecoder)))
     (Dec.maybe (Dec.field "parameters" (
         Dec.keyValuePairs Dec.string
         |>  Dec.andThen (
-            Helper.resultList (\(key, description) (others, dict) ->
-                parseExpression_ functions constants key
-                |> Result.andThen (\exp ->
-                    Helper.resultDict (\name tok newDict -> case Dict.get name newDict of
-                        Nothing -> Ok (Dict.insert name tok newDict)
-                        Just oldTok -> case (oldTok, tok) of
-                            ((FunctionToken oArgs), (FunctionToken args)) ->
-                                if oArgs == args then Ok newDict
-                                else Err ("Different function signature for '" ++ name ++ "' detected within parameters")
-                            (AnyToken, AnyToken) -> Ok newDict
-                            _ -> Err ("Different usages of '" ++ name ++ "' detected within parameters")
-                    )
-                    dict
-                    exp.tokens
-                    |> Result.map (\newDict -> (others ++ [(exp, description)], newDict))
+            Helper.resultList (\(key, description) (others, dict) -> Math.parse key
+                |> Result.andThen (treeToMatcher_ functions constants)
+                |> Result.andThen (\(matcher, tokens) ->
+                    mergeTokens_ dict tokens
+                    |> Result.map (\newDict -> (others ++ [{match= {name = key, root = matcher, tokens = tokens}, description = description}], newDict))
                 )
             )
             ([], Dict.empty)
@@ -274,95 +250,86 @@ ruleDecoder_ functions constants = Dec.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
         )))
         |> Dec.map (Maybe.withDefault ([], Dict.empty))
     )
-    |> Dec.andThen (\((title, description, reversible), (originalLhs, originalRhs, (parameters, pDict))) -> -- Validate that both lhs and rhs has symbols covered
-        extractUniqueTokens_ functions constants pDict originalLhs.tokens
-        |> Result.andThen (\lhs ->
-            extractUniqueTokens_ functions constants pDict originalRhs.tokens
-            |> Result.andThen (\rhs ->
-                Set.union (Dict.keys lhs |> Set.fromList) (Dict.keys rhs |> Set.fromList)
-                |> Helper.resultSet
-                    (\name _ -> case (Dict.get name lhs, Dict.get name rhs) of
-                        (Nothing, Nothing) -> Err ("Something went wrong, unable to find name '" ++ name ++ "'in lhs nor rhs")
-                        (Nothing, Just _) -> Ok ()
-                        (Just _, Nothing) -> Ok ()
-                        (Just AnyToken, Just AnyToken) -> Ok ()
-                        (Just (FunctionToken lArgs), Just (FunctionToken rArgs)) ->
-                            if lArgs == rArgs then Ok ()
-                            else Err ("inconsistent function signature for '" ++ name ++ "' in lhs and rhs")
-                        _ -> Err ("lhs and rhs are treating '" ++ name ++ "' differently")
-                    )
-                    ()
-                |> Result.map (\_ -> Rule_ title description reversible originalLhs originalRhs parameters)
-            )
+    |> Dec.andThen (\((title, description, (parameters, pDict))) -> -- Validate that both lhs and rhs has symbols covered
+        Dec.list (
+            Dec.map2 Tuple.pair
+            (Dec.field "from" (expressionDecoder_ functions constants))
+            (Dec.field "to" (expressionDecoder_ functions constants))
+            |> Dec.andThen (verifyMatch_ pDict)
         )
-        |> Helper.resultToDecoder
+        |> Dec.field "matches"
+        |> Dec.map (Rule_ title description parameters)
     )
 
-extractUniqueTokens_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dict.Dict String Token_ -> Dict.Dict String Token_ -> Result String (Dict.Dict String Token_)
-extractUniqueTokens_ functions constants parameters = Helper.resultDict
-    (\name token dict ->
-        if Dict.member name functions
-        then case token of
-            AnyToken -> Err ("'" ++ name ++ "' is use as a variable, even though it is defined as a function")
-            FunctionToken _ -> Ok dict  -- This was verified in parse expression
-        else if Set.member name constants
-        then case token of
-            FunctionToken _ -> Err ("'" ++ name ++ "' is used as a function, even though it is defined as a constant")
-            AnyToken -> Ok dict
-        else case (Dict.get name parameters, token) of
-            (Nothing, _) -> Ok (Dict.insert name token dict)
-            (Just (AnyToken), AnyToken) -> Ok dict
-            (Just (FunctionToken tArgs), FunctionToken args) -> if tArgs == args
-                then Ok dict
-                else Err ("Inconsistent function signature '" ++ name ++ "' between expression and parameter")
-            _ -> Err ("Inconsistent usage of '" ++ name ++ "' between expression and parameter")
+verifyMatch_: Dict.Dict String Token_ -> (Expression_, Expression_) -> Dec.Decoder {from: Expression_, to: Expression_}
+verifyMatch_ paramDict (from, to) = mergeTokens_ paramDict from.tokens
+    |> Result.andThen (\fromDict ->
+        if Dict.diff to.tokens fromDict |> Dict.isEmpty then Ok {from = from, to = to}
+        else Err "Not enough information for the transformation"
     )
-    Dict.empty
+    |> Helper.resultToDecoder
 
-parseExpression_: Dict.Dict String FunctionProperties_ -> Set.Set String -> String -> Result String Expression_
-parseExpression_ functions constants str = case Math.parse str of
-    Err errStr -> Err ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
-    Ok root -> treeToMatcher_ functions constants root
-        |> Result.map (\(matcher, tokens) -> {name = str, root = matcher, tokens = tokens})
+mergeTokens_: Dict.Dict String Token_ -> Dict.Dict String Token_ -> Result String (Dict.Dict String Token_)
+mergeTokens_ parameters new = Helper.resultDict (\name tok dict -> case Dict.get name dict of
+        Nothing -> Ok (Dict.insert name tok dict)
+        Just oldTok -> case (oldTok, tok) of
+            ((FunctionToken oArgs), (FunctionToken args)) ->
+                if oArgs == args then Ok dict
+                else Err ("Different function signature for '" ++ name ++ "' detected within parameters")
+            (AnyToken, AnyToken) -> Ok dict
+            _ -> Err ("Different usages of '" ++ name ++ "' detected within parameters")
+    )
+    parameters
+    new
+
+expressionDecoder_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Expression_
+expressionDecoder_ functions constants =
+    Dec.andThen
+    (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ functions constants) of
+        Err errStr -> Dec.fail ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
+        Ok (matcher, tokens) -> Dec.succeed {name = str, root = matcher, tokens = tokens}
+    )
+    Dec.string
 
 treeToMatcher_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
-treeToMatcher_ functions constants root = case root of
-    Math.RealNode s -> Ok (Matcher.RealMatcher {value = s.value}, Dict.empty)
-    Math.VariableNode s -> if Set.member s.name constants
-        then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
-        else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
-    Math.UnaryNode s -> treeToMatcher_ functions constants s.child
-        |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
-    Math.BinaryNode s -> processChildren_ functions constants s.children
-        |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
-    Math.DeclarativeNode s -> processChildren_ functions constants s.children
-        |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
-    Math.GenericNode s -> case Dict.get s.name functions of
-        Nothing -> processChildren_ functions constants s.children
-            |> Result.map (\(children, tokens) ->
-                (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens)
+treeToMatcher_ functions constants root =
+    let
+        processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child
+                |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict
+                    (\k v total -> case Dict.get k total of
+                        Nothing -> Ok (Dict.insert k v total)
+                        Just other -> case (other, v) of
+                            (AnyToken, AnyToken) -> Ok total
+                            (FunctionToken lArgs, FunctionToken rArgs) -> if lArgs == rArgs
+                                then Ok total
+                                else Err ("'" ++ k ++ "' has different number of arguments")
+                            _ -> Err ("'" ++ k ++ "' is used as a variable and a function")
+                    )
+                    tokens
+                    childToken
+                    |> Result.map (\newToken -> (list ++ [childMatcher], newToken))
+                )
             )
-        Just prop -> if prop.associative || prop.commutative
-            then processChildren_ functions constants s.children
-                |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
-            else processChildren_ functions constants s.children
-                |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
-
-processChildren_: Dict.Dict String FunctionProperties_ -> Set.Set String -> List (Math.Tree ()) -> Result String (List Matcher.Matcher, Dict.Dict String Token_)
-processChildren_ functions constants = Helper.resultList (\child (list, tokens) -> treeToMatcher_ functions constants child
-        |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict
-            (\k v total -> case Dict.get k total of
-                Nothing -> Ok (Dict.insert k v total)
-                Just other -> case (other, v) of
-                    (AnyToken, AnyToken) -> Ok total
-                    (FunctionToken lArgs, FunctionToken rArgs) -> if lArgs == rArgs
-                        then Ok total
-                        else Err ("'" ++ k ++ "' has different number of arguments")
-                    _ -> Err ("'" ++ k ++ "' is used as a variable and a function")
-            )
-            tokens
-            childToken
-            |> Result.map (\newToken -> (list ++ [childMatcher], newToken))
-        )
-    )
-    ([], Dict.empty)
+            ([], Dict.empty)
+    in
+    case root of
+        Math.RealNode s -> Ok (Matcher.RealMatcher {value = s.value}, Dict.empty)
+        Math.VariableNode s -> if Set.member s.name constants
+            then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
+            else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
+        Math.UnaryNode s -> treeToMatcher_ functions constants s.child
+            |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
+        Math.BinaryNode s -> processChildren s.children
+            |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
+        Math.DeclarativeNode s -> processChildren s.children
+            |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
+        Math.GenericNode s -> case Dict.get s.name functions of
+            Nothing -> processChildren s.children
+                |> Result.map (\(children, tokens) ->
+                    (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens)
+                )
+            Just prop -> if prop.associative || prop.commutative
+                then processChildren s.children
+                    |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
+                else processChildren s.children
+                    |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))

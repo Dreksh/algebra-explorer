@@ -26,6 +26,7 @@ type Input msg =
     Text {id: String}
     | Button {text: String, event: msg}
     | Info {text: String}
+    | Radio {name: String, options: List String}
 
 view: Model msg -> Html.Html msg
 view model =
@@ -49,6 +50,16 @@ listView_ = List.map (\input -> case input of
         Text t -> label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []]
         Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
         Info i -> text i.text
+        Radio r -> r.options
+            |> List.indexedMap Tuple.pair
+            |> List.concatMap (\(num, t) -> let n = String.fromInt num in
+                let id = r.name ++ n |> fieldID in
+                [   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n] []
+                ,   Html.label [Attr.for id] [text t]
+                ,   Html.br [] []
+                ]
+            )
+            |> span []
     )
     >> span []
 

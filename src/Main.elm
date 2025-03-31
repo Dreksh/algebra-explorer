@@ -189,9 +189,11 @@ update event model = case event of
             )
         SaveFile -> (model, Cmd.none) -- TODO
     RuleEvent e -> case e of
-        Rules.Apply p -> if List.isEmpty p.parameters |> not
-            then ({ model | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            else applyChange_ p model
+        Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
+            then case Helper.listIndex 0 p.matches of
+                Nothing -> submitNotification_ model "Unable to extract the match"
+                Just m -> applyChange_ m model
+            else ({ model | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
         Rules.Group -> case Display.groupChildren model.display of
             Err errStr -> submitNotification_ model errStr
             Ok dModel -> ({model | display = dModel}, Cmd.none)
@@ -200,19 +202,27 @@ update event model = case event of
             Ok dModel -> ({model | display = dModel}, Cmd.none)
         Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
     ApplyParameters params -> case model.dialog of
-        Just (_, Just existing) ->
-            let
-                result = Helper.resultDict (\k v r -> Math.parse v
-                    |> Result.map (\tree -> {r | extracted = Matcher.addMatch k tree r.extracted})
-                    ) existing params
-            in case result of
+        Just (_, Just existing) -> (    case Dict.get "_method" params of
+                Nothing -> Helper.listIndex 0 existing.matches |> Result.fromMaybe "Unable to find the match"
+                Just v -> case String.toInt v of
+                    Nothing -> Err "Unable to identify which match to use"
+                    Just n -> Helper.listIndex n existing.matches |> Result.fromMaybe "Unable to find the match"
+            )
+            |>  Result.andThen (\prev -> Helper.resultDict (\k v r -> if k == "_method" then Ok r
+                    else Math.parse v
+                        |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
+                    )
+                prev params
+            )
+            |> (\result -> case result of
                 Err errStr -> submitNotification_ model errStr
                 Ok newParams -> applyChange_ newParams model
+            )
         _ -> ({ model | dialog = Nothing}, Cmd.none)
     ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
 
 -- TODO
-applyChange_: Rules.Parameters Display.State -> Model -> (Model, Cmd Event)
+applyChange_: {from: Matcher.MatchResult state, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
 applyChange_ params model = (model, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
@@ -322,7 +332,8 @@ deleteTopicDialog_ =
     }
 
 parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
-parameterDialog_ params = let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
+parameterDialog_ params = let choiceRequired = List.length params.matches < 2 in
+    let tokens = List.foldl (\elem -> Set.union elem.tokens) Set.empty params.parameters in
     {   title = "Set parameters for " ++ params.title
     ,   sections = Helper.listMapWithState
             (\toks param -> Set.toList param.tokens
@@ -339,8 +350,16 @@ parameterDialog_ params = let tokens = List.foldl (\elem -> Set.union elem.token
             )
             tokens
             params.parameters
-            |> Tuple.first
-    ,   success = Dialog.decoder ApplyParameters tokens
+            |> (\(sections, _) -> if choiceRequired then sections
+                else { subtitle = ""
+                    , lines =
+                        [   [Dialog.Info {text = "Select the pattern"}]
+                        ,   [Dialog.Radio {name = "_method", options = List.map (\m -> m.name) params.matches}]
+                        ]
+                    }
+                    :: sections
+            )
+    ,   success = Dialog.decoder ApplyParameters (if choiceRequired then Set.insert "_method" tokens else tokens)
     ,   cancel = CloseDialog
     ,   focus = Nothing
     }

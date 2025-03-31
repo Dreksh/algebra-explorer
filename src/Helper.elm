@@ -15,6 +15,12 @@ listMapWithState process initial = List.foldl
     ([], initial)
     >> (\(l, s) -> (List.reverse l, s))
 
+listIndex: Int -> List a -> Maybe a
+listIndex num list = case list of
+    [] -> Nothing
+    (x::other) -> if num == 0 then Just x
+        else listIndex (num - 1) other
+
 maybeList: (a -> b -> Maybe b) -> b -> List a -> Maybe b
 maybeList process start = List.foldl (\elem res -> Maybe.andThen (process elem) res) (Just start)
 
