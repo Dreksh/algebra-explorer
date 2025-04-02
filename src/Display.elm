@@ -167,11 +167,14 @@ stackRecursive eq highlight width depth node =
         (   maxWidth
         ,   maxDepth
         ,   (   button
-                [   class "block"
-                ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
-                ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
-                ,   UI.HtmlEvent.onClick (Select eq id)
-                ]
+                (
+                    [   class "block"
+                    ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
+                    ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
+                    ,   UI.HtmlEvent.onClick (Select eq id)
+                    ]
+                    ++  ( if (Set.member id highlight) then [class "selected"] else [] )
+                )
                 [   text (Math.getName node)
                 ]
             ) :: childDivs

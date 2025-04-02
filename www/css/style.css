@@ -286,3 +286,6 @@ dialog svg {
 .block {
     text-align: center
 }
+.block.selected {
+    background-color: var(--color-selected);
+}
