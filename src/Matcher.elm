@@ -252,35 +252,42 @@ groupSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
         |> Result.map Tuple.second
 
 ungroupSubtree: Set.Set Int -> Equation state -> Result String (Equation state)
-ungroupSubtree ids eq = let tracker = eq.tracker in
+ungroupSubtree ids eq =
+    let
+        tracker = eq.tracker
+    in
     case affectedSubtree_ ids tracker.parent of
         Nothing -> Err "Nodes not found"
-        Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
-                Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
-                    else
-                        let
-                            updateParent s =
-                                List.foldl
-                                (\c -> Dict.insert (Math.getState c |> getID) id)
-                                (Dict.remove (getID s.state) tracker.parent)
-                                s.children
-                            processChildren found children = case children of
-                                [] -> Err "All children are ungrouped"
-                                (c::other) -> case c of
-                                    Math.BinaryNode m -> if m.name /= n.name then processChildren found other |> Result.map (\(list, t) -> (c::list, t))
-                                        else if Set.member (getID m.state) nodes then Ok (m.children ++ other, {tracker | parent = updateParent m})
-                                        else case processChildren found other of
-                                            Ok (list, t) -> Ok (c::list, t)
-                                            Err errStr -> if found then Err errStr
-                                                else Ok (m.children ++ other, {tracker | parent = updateParent m})
-                                    _ -> processChildren found other |> Result.map (\(list, t) -> (c::list, t))
-                        in
-                            processChildren False n.children
-                            |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
-                _ -> Err "Node is not associative"
-                )
-                eq
+        Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (foo tracker id nodes) eq
             |> Result.map Tuple.second
+
+foo: Tracker_ state -> Int -> Set.Set Int -> Equation state -> Result String ((), Equation state)
+foo tracker id nodes subEq =
+    case subEq.root of
+        Math.BinaryNode n ->
+            if not n.associative then Err "Node is not associative"
+            else
+                let
+                    updateParent s =
+                        List.foldl
+                        (\c -> Dict.insert (Math.getState c |> getID) id)
+                        (Dict.remove (getID s.state) tracker.parent)
+                        s.children
+                    processChildren found children = case children of
+                        [] -> Err "All children are ungrouped"
+                        (c::other) -> case c of
+                            Math.BinaryNode m -> if m.name /= n.name then processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                                else if Set.member (getID m.state) nodes then Ok (m.children ++ other, {tracker | parent = updateParent m})
+                                else case processChildren found other of
+                                    Ok (list, t) -> Ok (c::list, t)
+                                    Err errStr -> if found then Err errStr
+                                        else Ok (m.children ++ other, {tracker | parent = updateParent m})
+                            _ -> processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                in
+                    processChildren False n.children
+                    |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
+        _ -> Err "Node is not associative"
+
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
