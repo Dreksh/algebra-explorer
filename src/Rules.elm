@@ -1,5 +1,6 @@
 module Rules exposing (Model, Event(..), Parameters, Topic, init,
     addTopic, deleteTopic, topicDecoder,
+    replaceGlobalVar, evaluate,
     menuTopics
     )
 
@@ -69,6 +70,7 @@ type Event treeState =
     Apply (Parameters treeState)
     | Group
     | Ungroup
+    | NumericalSubstitution Float
     | Substitute
 
 init: Model
@@ -78,6 +80,10 @@ init =
     ,   topics = Dict.empty
     ,   createMode = False
     }
+
+{-
+## Topics
+-}
 
 addTopic: Topic -> Model -> Result String Model
 addTopic topic m = let id = String.toLower topic.name in
@@ -121,6 +127,48 @@ deleteTopic name model = let id = String.toLower name in
                 ,   constants = newConstants
                 ,   functions = newFunctions
                 }
+
+{-
+## Verification
+-}
+
+replaceGlobalVar: Model -> Math.Tree state -> Result String (Math.Tree state)
+replaceGlobalVar model root =
+    let
+        processChildren = Helper.resultList (\child list -> replaceGlobalVar model child |> Result.map (\c -> c::list)) []
+            >> Result.map List.reverse
+    in
+    case root of
+        Math.UnaryNode s -> replaceGlobalVar model s.child |> Result.map (\child -> Math.UnaryNode {s | child = child})
+        Math.BinaryNode s -> processChildren s.children |> Result.map (\children -> Math.BinaryNode {s | children = children})
+        Math.DeclarativeNode s -> processChildren s.children |> Result.map (\children -> Math.DeclarativeNode {s | children = children})
+        Math.GenericNode s -> processChildren s.children |> Result.andThen (\children -> case Dict.get s.name model.functions of
+            Nothing -> Ok (Math.GenericNode {s | children = children})
+            Just (f, _) -> if f.arguments == 2 && (f.associative || f.commutative)
+                then Ok (Math.BinaryNode {state = s.state, name = s.name, associative = f.associative, commutative = f.commutative, children = children})
+                else if List.length s.children /= f.arguments then Err ("Unexpected number of arguments in " ++ s.name)
+                else case children of
+                    [child] -> Ok (Math.UnaryNode {state = s.state, name = s.name, child = child})
+                    _ -> Ok (Math.GenericNode {s | children = children})
+            )
+        _ -> Ok root
+
+evaluate: Model -> Math.Tree s -> Result String Float
+evaluate model root = case root of
+    Math.RealNode s -> Ok s.value
+    Math.VariableNode s -> case Dict.get s.name model.constants of
+        Nothing -> Err "Unable to evaluate an unknown variable"
+        Just _ -> Ok 1 -- TODO: Somehow have people define the values they use
+    Math.UnaryNode s -> Ok 1 -- TODO: Somehow have poeple define how to resolve the function
+    Math.BinaryNode s -> Ok 1 -- TODO: somehow have people define how to resolve the function (we can make the lowest assumption, and evaluate 2-by-2 in order)
+    Math.DeclarativeNode _ -> Err "Cannot evaluate a declaration"
+    Math.GenericNode s -> case Dict.get s.name model.functions of
+        Nothing -> Err "Unable to evaluate an unknown function"
+        Just (f, _) -> Ok 1-- TODO: Somehow have poeple define how to resolve the function
+
+{-
+## UI
+-}
 
 menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Int) -> List (Menu.Part msg)
 menuTopics converter model selectedNode =
@@ -172,13 +220,17 @@ applyButton converter e = case e of
     Nothing -> a [title "Cannot be applied"] [text "apply"]
     Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "apply"]
 
--- TODO: Maybe having information about which nodes are highlighted will be useful
 coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
 coreTopic_ converter root =
     let
-        (subApply, groupApply, ungroupApply) = case root of
-            Nothing -> (Nothing, Nothing, Nothing)
-            Just (Math.BinaryNode n, childCount) -> if not n.associative then (Just Substitute, Nothing, Nothing)
+        shouldDisplay a conv = a.empty || ( case conv a of
+                Just _ -> True
+                Nothing -> False
+            )
+        apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False} in
+            case root of
+            Nothing -> {applies | empty = True}
+            Just (Math.BinaryNode n, childCount) -> if not n.associative then {applies | subApply = (Just Substitute)}
                 else
                     let
                         sameBinaryNode = List.any
@@ -188,31 +240,40 @@ coreTopic_ converter root =
                             )
                             n.children
                     in
-                    (   Just Substitute
-                    ,   if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
-                    ,   if sameBinaryNode then Just Ungroup else Nothing
-                    )
-            _ -> (Just Substitute, Nothing, Nothing)
+                    {   applies
+                    |   subApply = Just Substitute
+                    ,   groupApply = if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
+                    ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
+                    }
+            Just (Math.RealNode n, _ ) -> {applies | numApply = Just (NumericalSubstitution n.value)}
+            _ -> {applies | subApply = Just Substitute}
     in
         Menu.Section "Core" True
-        [   Menu.Section "Substitute" True
+        [   Menu.Section "Number Substitution" (shouldDisplay apply .numApply)
             [   Menu.Content
-                [  applyButton converter subApply
-                ,   h2 [] [text "Given x=y, f(x)=f(y)"]
+                [  applyButton converter apply.numApply
+                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
+                ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
+                ]
+            ]
+        ,   Menu.Section "Substitute" (shouldDisplay apply .subApply)
+            [   Menu.Content
+                [  applyButton converter apply.subApply
+                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
                 ]
             ]
-        ,   Menu.Section "Group" True
+        ,   Menu.Section "Group" (shouldDisplay apply .groupApply)
             [   Menu.Content
-                [   applyButton converter groupApply
-                ,   h2 [] [text "Focus on a specific part"]
+                [   applyButton converter apply.groupApply
+                ,   h3 [] [text "Focus on a specific part"]
                 ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
                 ]
             ]
-        ,   Menu.Section "Ungroup" True
+        ,   Menu.Section "Ungroup" (shouldDisplay apply .ungroupApply)
             [   Menu.Content
-                [   applyButton converter ungroupApply
-                ,   h2 [] [text "Return the group with the rest"]
+                [   applyButton converter apply.ungroupApply
+                ,   h3 [] [text "Return the group with the rest"]
                 ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
                 ]
             ]

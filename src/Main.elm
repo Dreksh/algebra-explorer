@@ -86,6 +86,7 @@ type Event =
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution String String
+    | ApplyNumSub Float String
 
 type LoadableFile =
     TopicFile
@@ -201,6 +202,7 @@ update event model = case event of
             Err errStr -> submitNotification_ model errStr
             Ok dModel -> ({model | display = dModel}, Cmd.none)
         Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
+        Rules.NumericalSubstitution target -> ({ model | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
     ApplyParameters params -> case model.dialog of
         Just (_, Just existing) -> (    case Dict.get "_method" params of
                 Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -225,6 +227,15 @@ update event model = case event of
             )
         _ -> ({ model | dialog = Nothing}, Cmd.none)
     ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
+    ApplyNumSub target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
+        Err errStr -> submitNotification_ model errStr
+        Ok newTree -> case Rules.evaluate model.rules newTree of
+            Err errStr -> submitNotification_ model errStr
+            Ok val -> if target /= val
+                then submitNotification_ model ("Expression evaluates to: " ++ String.fromFloat val ++ ", but expecting: " ++ String.fromFloat target)
+                else case Display.replaceNumber model.display newTree of
+                    Err errStr -> submitNotification_ model errStr
+                    Ok dModel -> ({model | display = dModel, dialog = Nothing}, Cmd.none)
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
@@ -373,7 +384,8 @@ substitutionDialog_: Dialog.Model Event
 substitutionDialog_ =
     {   title = "Substitute a variable for a formula"
     ,   sections =
-        [{  subtitle = "For each "
+        -- TODO: Make this into a dropdown for selecting the equation to pick
+        [{  subtitle = "For each instance of the specified variable, replace it with the formula"
         ,   lines = [[Dialog.Text {id="var"}, Dialog.Info {text = "="}, Dialog.Text {id="formula"}]]
         }]
     ,   success = (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
@@ -382,4 +394,19 @@ substitutionDialog_ =
         )
     ,   cancel = CloseDialog
     ,   focus = Just "var"
+    }
+
+numSubDialog_: Float -> Dialog.Model Event
+numSubDialog_ target =
+    {   title = "Substitute a number for an expression"
+    ,   sections =
+        [{  subtitle = "The expression to replace " ++ String.fromFloat target
+        ,   lines = [[Dialog.Text {id="expr"}]]
+        }]
+    ,   success = (\dict -> case Dict.get "expr" dict of
+            Just (Dialog.TextValue val) -> ApplyNumSub target val
+            _ -> NoOp
+        )
+    ,   cancel = CloseDialog
+    ,   focus = Just "expr"
     }

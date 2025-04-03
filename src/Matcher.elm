@@ -1,7 +1,7 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
     getID, getName, countChildren, parseEquation, selectedSubtree, variableArgsOnly,
     groupSubtree, ungroupSubtree,
-    addMatch, matchNode, matchSubtree, replaceSubtree
+    addMatch, matchNode, matchSubtree, replaceSubtree, replaceRealNode
     )
 
 import Dict
@@ -281,6 +281,23 @@ ungroupSubtree ids eq = let tracker = eq.tracker in
                 )
                 eq
             |> Result.map Tuple.second
+
+replaceRealNode: Set.Set Int -> Math.Tree () -> Equation state -> Result String (Equation state)
+replaceRealNode ids subtree eq = case affectedSubtree_ ids eq.tracker.parent of
+    Nothing -> Err "Nodes not found"
+    Just (id, _) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
+            Math.RealNode n -> processID_ -1 subEq.tracker subtree
+                |> (\(root, tracker) ->
+                    let
+                        parent = Dict.get id tracker.parent
+                        nextTracker = {tracker | parent = Dict.remove (getID n.state) tracker.parent}
+                    in
+                        Ok ((), {root = root, tracker = setParent_ root parent nextTracker})
+                )
+            _ -> Err "Node is not a number"
+        )
+        eq
+        |> Result.map Tuple.second
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
