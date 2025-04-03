@@ -352,7 +352,7 @@ parameterDialog_ params =
             ,   lines = params.parameters
                     |> List.map (\param -> if param.args == 0
                         then [Dialog.Info {text = param.name ++ "= "}, Dialog.Text {id = param.name}, Dialog.Info {text = param.description}]
-                        else [Dialog.Function {name = param.name, arguments = param.args}, Dialog.Info {text = param.description}]
+                        else [Dialog.Function {name = param.root, arguments = param.args}, Dialog.Info {text = param.description}]
                     )
             }]
             |> (\sections -> if List.length params.matches <= 1 then sections

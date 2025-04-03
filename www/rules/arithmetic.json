@@ -73,10 +73,10 @@
             "title": "Operate on both sides",
             "description": "Modifying the values in the same way on both sides retain the equality",
             "parameters": {
-                "f(x)": "The function to apply on both sides of the equation"
+                "\\f(x)": "The function to apply on both sides of the equation"
             },
             "matches": [
-                {"from": "a=b", "to": "f(a)=f(b)"}
+                {"from": "a=b", "to": "\\f(a)=\\f(b)"}
             ]
         }
     ]

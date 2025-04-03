@@ -248,6 +248,10 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
         |>  Dec.andThen (
             Helper.resultList (\(key, description) (others, dict) -> Math.parse key
                 |> Result.andThen (treeToMatcher_ True functions constants)
+                |> Result.andThen (\(matcher, tokens) -> case matcher of
+                    Matcher.AnyMatcher _ -> Ok (matcher, tokens)
+                    _ -> Err "Parameters can only be variables or functions"
+                )
                 |> Result.andThen (\(matcher, tokens) ->
                     mergeTokens_ dict tokens
                     |> Result.map (\newDict -> (others ++ [{match= {name = key, root = matcher, tokens = tokens}, description = description}], newDict))
@@ -330,7 +334,7 @@ treeToMatcher_ from functions constants root =
         Math.BinaryNode s -> processChildren s.children
             |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
         Math.DeclarativeNode s -> processChildren s.children
-            |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
+            |> Result.map (\(children, tokens) -> (Matcher.DeclarativeMatcher {name = s.name, commutative = True, arguments = children}, tokens)) -- TODO: Not all of them are commutative (like <)
         Math.GenericNode s -> case Dict.get s.name functions of
             Nothing -> processChildren s.children
                 |> Result.andThen (\(children, tokens) ->
