@@ -276,6 +276,10 @@ extractPattern_ from root token = case from of
         else case root of
             Math.GenericNode n -> if n.name /= s.name then Backtrack.fail
                 else Backtrack.searchOrdered extractPattern_ s.arguments n.children token
+            Math.UnaryNode n -> if n.name /= s.name then Backtrack.fail
+                else case s.arguments of
+                    [arg] -> extractPattern_ arg n.child token
+                    _ -> Backtrack.fail
             _ -> Backtrack.fail
     CommutativeMatcher s -> case root of
         Math.BinaryNode n -> if s.name /= n.name then Backtrack.fail

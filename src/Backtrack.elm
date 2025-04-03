@@ -62,9 +62,9 @@ unordered_: (slot -> choice -> Continuation state -> Continuation state) -> List
 unordered_ func slots prechoice choices initial =
     let
         checkNext prev nextSlot currentChoice nextChoice result = case toMaybe result |> Maybe.map (\s -> unordered_ func nextSlot [] (prechoice ++ nextChoice) (Start_ {initial = s})) of
-            Nothing -> Done_
+            Nothing -> unordered_ func slots (prechoice ++ [currentChoice]) nextChoice (Start_ {initial = prev})
             Just (Unordered_ newS) -> Unordered_ {newS | children = (List.length prechoice, result)::newS.children, initial = prev }
-            _ -> unordered_ func slots (prechoice ++ [currentChoice]) nextChoice (Start_ {initial = prev})
+            _ -> Done_
     in
         case initial of
             Start_ s -> case (slots, choices) of
