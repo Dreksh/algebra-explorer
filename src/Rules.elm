@@ -1,13 +1,15 @@
 module Rules exposing (Model, Event(..), Parameters, Topic, init,
     addTopic, deleteTopic, addSources, topicDecoder,
     replaceGlobalVar, evaluateStr,
-    menuTopics
+    menuTopics,
+    encode, decoder, encodeParameters, parameterDecoder
     )
 
 import Dict
 import Html exposing (a, h3, p, text)
 import Html.Attributes exposing (class, title)
 import Json.Decode as Dec
+import Json.Encode as Enc
 -- Ours
 import Helper
 import Matcher
@@ -68,7 +70,6 @@ type alias Model =
     {   functions: Dict.Dict String (FunctionProperties_, Int) -- Properties + Number of topics that contain this function
     ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
     ,   topics: Dict.Dict String (LoadState_ Topic)
-    ,   createMode: Bool
     }
 
 type LoadState_ obj =
@@ -88,7 +89,6 @@ init =
     {   functions = Dict.empty
     ,   constants = Dict.empty
     ,   topics = Dict.empty
-    ,   createMode = False
     }
 
 {-
@@ -340,7 +340,7 @@ coreTopic_ converter root =
 topicDecoder: Dec.Decoder Topic
 topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
-    (Dec.field "functions" functionDecoder_)
+    (Dec.field "functions" (Dec.dict functionDecoder_))
     (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str -> if String.left 5 str /= "Math."
         then Dec.fail "Only constants from Math are allowed"
         else if String.dropLeft 5 str |> String.all Char.isAlphaNum then Dec.succeed str
@@ -351,13 +351,12 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
         |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
-functionDecoder_: Dec.Decoder (Dict.Dict String FunctionProperties_)
-functionDecoder_ = Dec.dict
-    <| Dec.map4 FunctionProperties_
-        (Dec.field "arguments" Dec.int)
-        (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
-        (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
-        (Dec.field "javascript" javascriptDecoder_)
+functionDecoder_: Dec.Decoder FunctionProperties_
+functionDecoder_ = Dec.map4 FunctionProperties_
+    (Dec.field "arguments" Dec.int)
+    (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
+    (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
+    (Dec.field "javascript" javascriptDecoder_)
 
 javascriptDecoder_: Dec.Decoder Javascript_
 javascriptDecoder_ = Dec.map2 Tuple.pair
@@ -481,3 +480,94 @@ treeToMatcher_ from functions constants root =
                     |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
                 else processChildren s.children
                     |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
+
+{-
+## Encoding and Decoding
+-}
+
+encode: Model -> Enc.Value
+encode model = Enc.object
+    [   ("functions", Enc.dict identity (\(prop, count) -> Enc.object [("properties", encodeFProp_ prop), ("count", Enc.int count)] ) model.functions)
+    ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", Enc.string name), ("count", Enc.int count)]) model.constants)
+    ,   ("topics", Enc.dict identity (\loadState -> case loadState of
+            NotInstalled_ url -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string url)]
+            Installed_ url topic -> Enc.object
+                (   [   ("type", Enc.string "installed")
+                    ,   ("topic", encodeTopic_ topic)
+                    ]
+                |> Helper.maybeAppend (Maybe.map (\str -> ("url", Enc.string str)) url)
+                )
+            ) model.topics
+        )
+    ]
+
+encodeFProp_: FunctionProperties_ -> Enc.Value
+encodeFProp_ prop = Enc.object
+    [   ("arguments", Enc.int prop.arguments)
+    ,   ("associative", Enc.bool prop.associative)
+    ,   ("commutative", Enc.bool prop.commutative)
+    ,   ("javascript", case prop.javascript of
+            InfixOp js -> Enc.object [("type", Enc.string "infix"),("symbol",Enc.string js)]
+            PrefixOp js ->Enc.object [("type", Enc.string "prefix"),("symbol",Enc.string js)]
+            FuncOp js ->Enc.object [("type", Enc.string "function"),("symbol",Enc.string js)]
+        )
+    ]
+
+encodeTopic_: Topic -> Enc.Value
+encodeTopic_ topic = Enc.object
+    [   ("name", Enc.string topic.name)
+    ,   ("constants", Enc.dict identity Enc.string topic.constants)
+    ,   ("functions", Enc.dict identity encodeFProp_ topic.functions)
+    ,   ("actions", Enc.list encodeRule_ topic.rules)
+    ]
+
+-- WARNING: This does not print out all of the inner state, especailly for expressions (only the name/string form is returned)
+encodeRule_: Rule_ -> Enc.Value
+encodeRule_ rule = Enc.object
+    [   ("title", Enc.string rule.title)
+    ,   ("description", Enc.string rule.description)
+    ,   ("parameters", Enc.object (List.map (\param -> (param.match.name, Enc.string param.description)) rule.parameters))
+    ,   ("matches", Enc.list (\match -> Enc.object [("from", Enc.string match.from.name), ("to", Enc.string match.to.name)]) rule.matches)
+    ]
+
+decoder: Dec.Decoder Model
+decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
+    (Dec.field "functions" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
+    (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
+    (Dec.field "topics" <| Dec.dict <| Dec.andThen (\s -> case s of
+        "notInstalled" -> Dec.map NotInstalled_ (Dec.field "url" Dec.string)
+        "installed" -> Dec.map2 Installed_ (Dec.maybe <| Dec.field "url" Dec.string) (Dec.field "topic" topicDecoder)
+        _ -> Dec.fail ("Unknown loadState: " ++ s)
+    ) <| Dec.field "type" Dec.string
+    )
+
+encodeParameters: (state -> Enc.Value) -> Parameters state -> Enc.Value
+encodeParameters convert param = Enc.object
+    [   ("title", Enc.string param.title)
+    ,   ("parameters", Enc.list (\p -> Enc.object
+            [("name", Enc.string p.name),("description", Enc.string p.description),("root",Enc.string p.root),("args",Enc.int p.args)]
+        ) param.parameters)
+    ,   ("matches", Enc.list (\m -> Enc.object
+            [   ("from", Matcher.encodeMatchResult convert m.from)
+            ,   ("name", Enc.string m.name)
+            ,   ("matcher", Matcher.encodeMatcher m.matcher)
+            ]
+            )
+            param.matches
+        )
+    ]
+
+parameterDecoder: Dec.Decoder state -> Dec.Decoder (Parameters state)
+parameterDecoder innerDec = Dec.map3 (\t p m -> {title = t, parameters = p, matches = m})
+    (Dec.field "title" <| Dec.string)
+    (Dec.field "paramters" <| Dec.list <| Dec.map4 (\n d r a -> {name = n, description = d, root = r, args = a})
+        (Dec.field "name" Dec.string)
+        (Dec.field "description" Dec.string)
+        (Dec.field "root" Dec.string)
+        (Dec.field "args" Dec.int)
+    )
+    (Dec.field "matches" <| Dec.list <| Dec.map3 (\f n matcher -> {from = f, name = n, matcher = matcher})
+        (Dec.field "from" <| Matcher.matchResultDecoder innerDec)
+        (Dec.field "name" Dec.string)
+        (Dec.field "matcher" Matcher.matcherDecoder)
+    )

@@ -1,10 +1,14 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
     getID, getName, countChildren, parseEquation, selectedSubtree, variableArgsOnly,
     groupSubtree, ungroupSubtree,
-    addMatch, matchNode, matchSubtree, replaceSubtree, replaceRealNode
+    addMatch, matchNode, matchSubtree, replaceSubtree, replaceRealNode,
+    encodeEquation, encodeMatcher, encodeMatchResult,
+    equationDecoder, matcherDecoder, matchResultDecoder
     )
 
 import Dict
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Math
 import Set
 -- Ours
@@ -440,3 +444,97 @@ constructFromValue_ parent result args existing tracker =
             (Math.GenericNode {state = newS, name = s.name, children = newChildren}, final)
         Math.DeclarativeNode s -> let (newChildren, final) = processChildren (newTracker, result) s.children in
             (Math.DeclarativeNode {state = newS, name = s.name, children = newChildren}, final)
+
+{-
+## Encoding and Decoding
+-}
+
+encodeEquation: (state -> Encode.Value) -> Equation state -> Encode.Value
+encodeEquation convert eq = Encode.object
+    [   ("root", Math.encode (encodeState_ convert) eq.root)
+    ,   ("tracker", Encode.object
+        [   ("nextID", Encode.int eq.tracker.nextID)
+        ,   ("parent", Encode.dict String.fromInt Encode.int eq.tracker.parent)
+        ]
+        )
+    ]
+
+encodeState_: (state -> Encode.Value) -> State state -> Encode.Value
+encodeState_ convert s = case s of
+    State_ id innerState -> Encode.object [("id", Encode.int id), ("state", convert innerState)]
+
+stateDecoder_: Decode.Decoder state -> Decode.Decoder (State state)
+stateDecoder_ innerDec = Decode.map2 State_ (Decode.field "id" Decode.int) (Decode.field "state" innerDec)
+
+equationDecoder: (Int -> state) -> (State state -> Int -> state) -> Decode.Decoder state -> Decode.Decoder (Equation state)
+equationDecoder newState copyState innerDec = Decode.map2 (\root tracker -> {root = root, tracker = tracker})
+    (Decode.field "root" <| Math.decoder <| stateDecoder_ innerDec)
+    (   Decode.field "tracker"
+        <| Decode.map2 (\id p -> {nextID = id, parent = p, newState = newState, copyState = copyState})
+            (Decode.field "nextID" Decode.int)
+            (Decode.field "parent" <| Helper.intDictDecoder Decode.int)
+    )
+
+encodeMatcher: Matcher -> Encode.Value
+encodeMatcher matcher = case matcher of
+    AnyMatcher s -> Encode.object
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "any")]
+    RealMatcher s -> Encode.object
+        [("value", Encode.float s.value), ("type", Encode.string "real")]
+    ExactMatcher s -> Encode.object
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "exact")]
+    CommutativeMatcher s -> Encode.object
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "commutative")]
+    DeclarativeMatcher s -> Encode.object
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments)
+        ,("commutative", Encode.bool s.commutative), ("type", Encode.string "declarative")]
+    CommutativeAssociativeMatcher s -> Encode.object
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "commutativeAssociative")]
+
+matcherDecoder: Decode.Decoder Matcher
+matcherDecoder = Decode.field "type" Decode.string
+    |> Decode.andThen (\t -> case t of
+        "any" -> Decode.map2 (\n a -> AnyMatcher {name = n, arguments = a})
+            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+        "real" -> Decode.map (\v -> RealMatcher {value = v}) (Decode.field "value" Decode.float)
+        "exact" -> Decode.map2 (\n a -> ExactMatcher {name = n, arguments = a})
+            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+        "commutative" ->Decode.map2 (\n a -> CommutativeMatcher {name = n, arguments = a})
+            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+        "declarative" ->Decode.map3 (\n a c -> DeclarativeMatcher {name = n, arguments = a, commutative = c})
+            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+            (Decode.field "commutative" <| Decode.oneOf [Decode.bool, Decode.succeed False])
+        "commutativeAssociative" ->Decode.map2 (\n a -> CommutativeAssociativeMatcher {name = n, arguments = a})
+            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+        _ -> Decode.fail ("Unknown type of matcher: " ++ t)
+    )
+
+encodeMatchResult: (state -> Encode.Value) -> MatchResult state -> Encode.Value
+encodeMatchResult convert result = Encode.object
+    [   ("nodes", Encode.dict String.fromInt (Math.encode (encodeState_ convert)) result.nodes)
+    ,   ("matches", Encode.dict identity (encodeValue_ convert) result.matches)
+    ]
+
+encodeValue_: (state -> Encode.Value) -> Value_ state -> Encode.Value
+encodeValue_ convert v = Encode.object
+    [   ("subtree", Math.encode (\s -> Encode.object
+            [ ("original", Maybe.map (encodeState_ convert) s.original |> Maybe.withDefault Encode.null)
+            , ("argument", Maybe.map Encode.int s.argument |> Maybe.withDefault Encode.null)
+            ]
+        ) v.subtree)
+    ,   ("example", Encode.list Encode.int v.example)
+    ]
+
+matchResultDecoder: Decode.Decoder state -> Decode.Decoder (MatchResult state)
+matchResultDecoder innerDec = Decode.map2 (\n m -> {nodes = n, matches = m})
+    (Decode.field "nodes" <| Helper.intDictDecoder (Math.decoder (stateDecoder_ innerDec)))
+    (Decode.field "matches" <| Decode.dict (valueDecoder_ innerDec))
+
+valueDecoder_: Decode.Decoder state -> Decode.Decoder (Value_ state)
+valueDecoder_ innerDec = Decode.map2 (\s e -> {subtree = s, example = e})
+    (Decode.field "subtree" <| Math.decoder (
+        Decode.map2 (\o a -> {original = o, argument = a})
+        (Decode.maybe <| Decode.field "original" <| stateDecoder_ innerDec)
+        (Decode.maybe <| Decode.field "argument" <| Decode.int)
+    ))
+    (Decode.field "example" <| Decode.list Decode.int)

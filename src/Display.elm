@@ -3,14 +3,18 @@ module Display exposing (
     createState, updateState,
     addEquation, updateEquation, transformEquation, listEquations,
     groupChildren, ungroupChildren, replaceNumber,
-    selectedNode
+    selectedNode,
+    encode, decoder, encodeState, stateDecoder
     )
 
 import Dict
 import Html exposing (Html, button, div, text)
 import Html.Attributes exposing (class, style)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Set
 -- Ours
+import Helper
 import Math
 import Matcher
 import UI.HtmlEvent
@@ -187,3 +191,42 @@ stackRecursive eq highlight width depth node =
                 ]
             ) :: childDivs
         )
+
+encode: Model -> Encode.Value
+encode model = Encode.object
+    [   ("equations", Encode.dict String.fromInt (Matcher.encodeEquation (\s -> Encode.object [("prevID", Encode.int s.prevID)])) model.equations)
+    ,   ("nextEquationNum", Encode.int model.nextEquationNum)
+    ,   (   "selected"
+        ,   case model.selected of
+            Nothing -> Encode.null
+            Just (eq, nodes) -> Encode.object
+                [   ("eq", Encode.int eq)
+                ,   ("nodes", Encode.set Encode.int nodes)
+                ]
+        )
+    ,   (   "createModeForEquation"
+        ,   case model.createModeForEquation of
+            Nothing -> Encode.null
+            Just n -> Encode.int n
+        )
+    ]
+
+
+decoder: Decode.Decoder Model
+decoder = Decode.map4 (\eq next sel create -> {equations = eq, nextEquationNum = next, selected = sel, createModeForEquation = create})
+    (   Decode.field "equations"
+        <| Helper.intDictDecoder (Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
+    )
+    (Decode.field "nextEquationNum" Decode.int)
+    (   Decode.field "selected"
+        <| Decode.maybe <| Decode.map2 Tuple.pair (Decode.field "eq" Decode.int) (Decode.field "nodes" <| Decode.map Set.fromList <| Decode.list Decode.int)
+    )
+    (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
+
+stateDecoder: Decode.Decoder State
+stateDecoder = Decode.map (\n -> {prevID = n})
+    (Decode.field "prevID" Decode.int)
+
+encodeState: State -> Encode.Value
+encodeState s = Encode.object
+    [("prevID", Encode.int s.prevID)]

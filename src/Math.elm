@@ -1,5 +1,12 @@
-module Math exposing (Tree(..), Symbol(..), equal, getChildren, getState, getName, notation, parse, symbolicate, validVariable)
+module Math exposing (Tree(..), Symbol(..),
+    equal, validVariable,
+    getChildren, getState, getName,
+    notation, parse, symbolicate,
+    encode, decoder
+    )
 
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Parser exposing ((|.), (|=))
 import Set
 -- Ours
@@ -298,3 +305,42 @@ deadEndToString_ = List.map
         |> (\str -> str ++ ", at position: " ++ String.fromInt deadEnd.col)
     )
     >> String.join "\n"
+
+encode: (state -> Encode.Value) -> Tree state -> Encode.Value
+encode converter root = case root of
+    RealNode s -> Encode.object
+        [("state", converter s.state),("value", Encode.float s.value),("type", Encode.string "real")]
+    VariableNode s -> Encode.object
+        [("state", converter s.state),("name", Encode.string s.name),("type", Encode.string "variable")]
+    UnaryNode s -> Encode.object
+        [("state", converter s.state),("name", Encode.string s.name),("child", encode converter s.child),("type", Encode.string "unary")]
+    GenericNode s -> Encode.object
+        [("state", converter s.state),("name", Encode.string s.name),("children", Encode.list (encode converter) s.children),("type", Encode.string "generic")]
+    DeclarativeNode s -> Encode.object
+        [("state", converter s.state),("name", Encode.string s.name),("children", Encode.list (encode converter) s.children),("type", Encode.string "declarative")]
+    BinaryNode s -> Encode.object
+        [   ("state", converter s.state)
+        ,   ("name", Encode.string s.name)
+        ,   ("associative", Encode.bool s.associative)
+        ,   ("commutative", Encode.bool s.commutative)
+        ,   ("children", Encode.list (encode converter) s.children)
+        ,   ("type", Encode.string "binary")
+        ]
+
+decoder: Decode.Decoder state -> Decode.Decoder (Tree state)
+decoder stateDecoder = Decode.field "type" Decode.string
+    |> Decode.andThen (\t -> let sDec = Decode.field "state" stateDecoder in
+        case t of
+            "real" -> Decode.map2 (\s v -> RealNode {state = s, value = v}) sDec (Decode.field "value" Decode.float)
+            "variable" -> Decode.map2 (\s n -> VariableNode {state = s, name = n}) sDec (Decode.field "name" Decode.string)
+            "unary" -> Decode.map3 (\s n c -> UnaryNode {state = s, name = n, child = c})
+                sDec (Decode.field "name" Decode.string) (Decode.field "child" <| Decode.lazy (\_ -> decoder stateDecoder))
+            "binary" -> Decode.map5 (\s n a c children -> BinaryNode {state = s, name = n, associative = a, commutative = c, children = children})
+                sDec (Decode.field "name" Decode.string) (Decode.field "associative" Decode.bool)
+                (Decode.field "commutative" Decode.bool) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
+            "generic" -> Decode.map3 (\s n c -> GenericNode {state = s, name = n, children = c} )
+                sDec (Decode.field "name" Decode.string) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
+            "declarative" -> Decode.map3 (\s n c -> DeclarativeNode {state = s, name = n, children = c} )
+                sDec (Decode.field "name" Decode.string) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
+            _ -> Decode.fail ("Unexpected type of node: " ++ t)
+    )

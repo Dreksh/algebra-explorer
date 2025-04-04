@@ -40,3 +40,14 @@ resultToDecoder: Result String a -> Decode.Decoder a
 resultToDecoder res = case res of
     Err str -> Decode.fail str
     Ok b -> Decode.succeed b
+
+intDictDecoder: Decode.Decoder a -> Decode.Decoder (Dict.Dict Int a)
+intDictDecoder valDecoder = Decode.dict valDecoder
+    |> Decode.andThen (
+        resultDict (\k v dict -> case String.toInt k of
+            Nothing -> Err "index is not an integer"
+            Just n -> Ok (Dict.insert n v dict)
+        )
+        Dict.empty
+        >> resultToDecoder
+    )

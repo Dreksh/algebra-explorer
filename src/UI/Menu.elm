@@ -1,7 +1,12 @@
-module UI.Menu exposing (Model, Event, Part(..), init, update, view)
+module UI.Menu exposing (Model, Event, Part(..),
+    init, update, view,
+    encode, decoder
+    )
 
 import Html exposing (h1, li, nav, ul, text)
 import Html.Attributes exposing (class, id)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Set
 -- Ours
 import UI.HtmlEvent
@@ -37,3 +42,9 @@ partToHtml_ converter model part = case part of
         [   h1 ((if shown then [class "shown"] else []) ++ [class "menuTitle", UI.HtmlEvent.onClick (Click name |> converter), class "clickable"]) [ text name ]
         ,   ul (if shown then [class "subMenu", class "shown"] else [class "subMenu"]) (children |> List.map (partToHtml_ converter model))
         ]
+
+encode: Model -> Encode.Value
+encode model = Encode.set Encode.string model.shown
+
+decoder: Decode.Decoder Model
+decoder = Decode.list Decode.string |> Decode.map (\s -> {shown = Set.fromList s})

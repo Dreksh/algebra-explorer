@@ -1,15 +1,19 @@
 module UI.Notification exposing (
     Model, Event, init, update, view,
-    displayError
+    displayError,
+    encode, decoder
     )
 
 import Dict
 import Html exposing (Html, div, pre, text)
 import Html.Attributes exposing (class)
 import Html.Keyed exposing (node)
+import Json.Encode as Encode
+import Json.Decode as Decode
 import Process exposing (sleep)
 import Task
 -- Our modules
+import Helper
 import UI.HtmlEvent
 import UI.Icon as Icon
 
@@ -73,3 +77,14 @@ notificationAttr_ converter id deleting =
         [   class "notificationMessage"
         ,   UI.HtmlEvent.onClick (ClearEvent id |> converter)
         ]
+
+encode: Model -> Encode.Value
+encode model = Encode.object
+    [   ("nextID", Encode.int model.nextID)
+    ,   ("notifications", Encode.dict String.fromInt (\(b, s) -> Encode.object [("deleting", Encode.bool b),("message", Encode.string s)]) model.notifications )
+    ]
+
+decoder: Decode.Decoder Model
+decoder = Decode.map2 (\id n -> {nextID = id, notifications = n})
+    (Decode.field "nextID" Decode.int)
+    (Decode.field "notifications" <| Helper.intDictDecoder <| Decode.map2 Tuple.pair (Decode.field "deleting" Decode.bool) (Decode.field "message" Decode.string) )
