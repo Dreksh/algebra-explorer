@@ -16,6 +16,7 @@ import Task
 import Url
 -- Our imports
 import Display
+import Evaluate
 import Helper
 import Matcher
 import Math
@@ -41,6 +42,8 @@ main = Browser.application
     }
 
 port updateMathJax: () -> Cmd msg
+port evaluateString: {id: Int, str: String} -> Cmd msg
+port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 
 -- Types
 
@@ -51,6 +54,7 @@ type alias Model =
     ,   notification: Notification.Model
     ,   query: Query.Model
     ,   menu: Menu.Model
+    ,   evaluator: Evaluate.Model (Float, Math.Tree ()) Event
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
@@ -86,7 +90,8 @@ type Event =
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution String String
-    | ApplyNumSub Float String
+    | ConvertSubString Float String
+    | ApplyNumSub {id: Int, value: Float}
 
 type LoadableFile =
     TopicFile
@@ -108,6 +113,7 @@ init _ url key =
         , notification = nModel
         , query = query
         , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Topics", "Core"])
+        , evaluator = Evaluate.init evaluateString
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
@@ -122,9 +128,12 @@ parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createS
     Result.Err err -> (result, err :: errs )
 
 subscriptions: Model -> Sub Event
-subscriptions model = case (model.createMode, model.dialog) of
-    (Nothing, Nothing) -> Sub.none
-    _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+subscriptions model = Sub.batch
+    [   case (model.createMode, model.dialog) of
+            (Nothing, Nothing) -> Sub.none
+            _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+    ,   evaluateResult ApplyNumSub
+    ]
 
 update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
@@ -227,15 +236,21 @@ update event model = case event of
             )
         _ -> ({ model | dialog = Nothing}, Cmd.none)
     ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
-    ApplyNumSub target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
+    ConvertSubString target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
         Err errStr -> submitNotification_ model errStr
-        Ok newTree -> case Rules.evaluate model.rules newTree of
+        Ok newTree -> case Rules.evaluateStr model.rules newTree of
             Err errStr -> submitNotification_ model errStr
-            Ok val -> if target /= val
-                then submitNotification_ model ("Expression evaluates to: " ++ String.fromFloat val ++ ", but expecting: " ++ String.fromFloat target)
-                else case Display.replaceNumber model.display newTree of
-                    Err errStr -> submitNotification_ model errStr
-                    Ok dModel -> ({model | display = dModel, dialog = Nothing}, Cmd.none)
+            Ok evalStr -> let (eModel, cmd) = Evaluate.send (target, newTree) evalStr model.evaluator in
+                ({model | evaluator = eModel}, cmd)
+    ApplyNumSub reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
+        let newModel = {model | evaluator = eModel } in
+        case c of
+            Nothing -> submitNotification_ newModel "Unable to evaluate a string"
+            Just (target, tree) -> if target /= reply.value
+                then submitNotification_ newModel ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
+                else case Display.replaceNumber newModel.display target tree of
+                    Err errStr -> submitNotification_ newModel errStr
+                    Ok dModel -> ({newModel | display = dModel, dialog = Nothing}, Cmd.none)
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
@@ -404,7 +419,7 @@ numSubDialog_ target =
         ,   lines = [[Dialog.Text {id="expr"}]]
         }]
     ,   success = (\dict -> case Dict.get "expr" dict of
-            Just (Dialog.TextValue val) -> ApplyNumSub target val
+            Just (Dialog.TextValue val) -> ConvertSubString target val
             _ -> NoOp
         )
     ,   cancel = CloseDialog

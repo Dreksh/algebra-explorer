@@ -282,11 +282,12 @@ ungroupSubtree ids eq = let tracker = eq.tracker in
                 eq
             |> Result.map Tuple.second
 
-replaceRealNode: Set.Set Int -> Math.Tree () -> Equation state -> Result String (Equation state)
-replaceRealNode ids subtree eq = case affectedSubtree_ ids eq.tracker.parent of
+replaceRealNode: Set.Set Int -> Float -> Math.Tree () -> Equation state -> Result String (Equation state)
+replaceRealNode ids target subtree eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Nodes not found"
     Just (id, _) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
-            Math.RealNode n -> processID_ -1 subEq.tracker subtree
+            Math.RealNode n -> if target /= n.value then Err "Expression does not equal to the node's value"
+                else processID_ -1 subEq.tracker subtree
                 |> (\(root, tracker) ->
                     let
                         parent = Dict.get id tracker.parent

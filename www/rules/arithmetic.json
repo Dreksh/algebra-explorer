@@ -1,12 +1,12 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "+": {"arguments": 2, "associative": true, "commutative": true},
-        "*": {"arguments": 2, "associative": true, "commutative": true},
-        "-": {"arguments": 1},
-        "/": {"arguments": 1}
+        "+": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "+"}},
+        "*": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "*"}},
+        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}},
+        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}}
     },
-    "constants": [],
+    "constants": {},
     "actions": [
         {
             "title": "Cancel out",

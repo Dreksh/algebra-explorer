@@ -79,12 +79,12 @@ ungroupChildren model = case model.selected of
         Just eq -> Matcher.ungroupSubtree ids eq
             |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
 
-replaceNumber: Model -> Math.Tree () -> Result String Model
-replaceNumber model subtree = case model.selected of
+replaceNumber: Model -> Float -> Math.Tree () -> Result String Model
+replaceNumber model target subtree = case model.selected of
     Nothing -> Err "Nothing was selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation not found"
-        Just eq -> Matcher.replaceRealNode ids subtree eq
+        Just eq -> Matcher.replaceRealNode ids target subtree eq
             |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
 
 transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model

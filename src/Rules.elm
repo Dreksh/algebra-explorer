@@ -1,14 +1,13 @@
 module Rules exposing (Model, Event(..), Parameters, Topic, init,
     addTopic, deleteTopic, topicDecoder,
-    replaceGlobalVar, evaluate,
+    replaceGlobalVar, evaluateStr,
     menuTopics
     )
 
 import Dict
-import Html exposing (a, h2, h3, p, text)
+import Html exposing (a, h3, p, text)
 import Html.Attributes exposing (class, title)
 import Json.Decode as Dec
-import Set
 -- Ours
 import Helper
 import Matcher
@@ -24,7 +23,13 @@ type alias FunctionProperties_ =
     {   arguments: Int -- Number of arguments it takes
     ,   associative: Bool -- Allows processing in different order
     ,   commutative: Bool -- Allows swapping argument ordering
+    ,   javascript: Javascript_
     }
+
+type Javascript_ =
+    InfixOp String
+    | PrefixOp String
+    | FuncOp String
 
 type Token_ =
     FunctionToken Int -- Number of arguments
@@ -45,7 +50,7 @@ type alias Rule_ =
 
 type alias Topic =
     {   name: String
-    ,   constants: Set.Set String
+    ,   constants: Dict.Dict String String
     ,   functions: Dict.Dict String FunctionProperties_
     ,   rules: List Rule_
     }
@@ -61,7 +66,7 @@ type alias Parameters state =
 -}
 type alias Model =
     {   functions: Dict.Dict String (FunctionProperties_, Int) -- Properties + Number of topics that contain this function
-    ,   constants: Dict.Dict String Int -- Number of topics that rely on the constant
+    ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
     ,   topics: Dict.Dict String Topic
     ,   createMode: Bool
     }
@@ -97,9 +102,10 @@ addTopic topic m = let id = String.toLower topic.name in
     model.functions
     |> (\res -> case res of
         Err errStr -> Err errStr
-        Ok functions -> topic.constants |> Helper.resultSet (\name dict -> case Dict.get name dict of
-                Nothing -> Ok (Dict.insert name 1 dict)
-                Just count -> Ok (Dict.insert name (count + 1) dict)
+        Ok functions -> topic.constants |> Helper.resultDict (\name js dict -> case Dict.get name dict of
+                Nothing -> Ok (Dict.insert name (js, 1) dict)
+                Just (prev, count) -> if prev /= js then Err (name ++ " has different javascript values")
+                    else Ok (Dict.insert name (prev, count + 1) dict)
             )
             model.constants
             |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert id topic model.topics})
@@ -116,9 +122,9 @@ deleteTopic name model = let id = String.toLower name in
                         Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
                     )
                     model.functions
-                newConstants = topic.constants |> Set.foldl (\n newSet -> case Dict.get n newSet of
+                newConstants = topic.constants |> Dict.foldl (\n _ newSet -> case Dict.get n newSet of
                         Nothing -> newSet
-                        Just i -> if i < 2 then Dict.remove n newSet else Dict.insert n (i - 1) newSet
+                        Just (js, i) -> if i < 2 then Dict.remove n newSet else Dict.insert n (js, i - 1) newSet
                     )
                     model.constants
             in
@@ -153,18 +159,29 @@ replaceGlobalVar model root =
             )
         _ -> Ok root
 
-evaluate: Model -> Math.Tree s -> Result String Float
-evaluate model root = case root of
-    Math.RealNode s -> Ok s.value
-    Math.VariableNode s -> case Dict.get s.name model.constants of
-        Nothing -> Err "Unable to evaluate an unknown variable"
-        Just _ -> Ok 1 -- TODO: Somehow have people define the values they use
-    Math.UnaryNode s -> Ok 1 -- TODO: Somehow have poeple define how to resolve the function
-    Math.BinaryNode s -> Ok 1 -- TODO: somehow have people define how to resolve the function (we can make the lowest assumption, and evaluate 2-by-2 in order)
-    Math.DeclarativeNode _ -> Err "Cannot evaluate a declaration"
-    Math.GenericNode s -> case Dict.get s.name model.functions of
-        Nothing -> Err "Unable to evaluate an unknown function"
-        Just (f, _) -> Ok 1-- TODO: Somehow have poeple define how to resolve the function
+toJavascriptString_: Model -> String -> List String -> Result String String
+toJavascriptString_ model name children = case Dict.get name model.functions of
+    Nothing -> Err "Unable to evaluate the unknown function"
+    Just (f, _) -> case f.javascript of
+        InfixOp jsName -> Ok (String.join jsName children)
+        PrefixOp jsName -> if List.length children /= 1 then Err "Prefix can only be for unary operators"
+            else Ok (jsName ++ String.join "" children)
+        FuncOp jsName -> Ok (jsName ++ "(" ++ String.join "," children ++ ")")
+
+evaluateStr: Model -> Math.Tree s -> Result String String
+evaluateStr model root = (
+    case root of
+        Math.RealNode s -> Ok (String.fromFloat s.value)
+        Math.VariableNode s -> case Dict.get s.name model.constants of
+            Nothing -> Err "Unable to evaluate an unknown variable"
+            Just (str, _) -> Ok str
+        Math.UnaryNode s -> evaluateStr model s.child |> Result.andThen (\child -> toJavascriptString_ model s.name [child])
+        Math.BinaryNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+            |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
+        Math.DeclarativeNode _ -> Err "Cannot evaluate a declaration"
+        Math.GenericNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+            |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
+    ) |> Result.map (\str -> "(" ++ str ++ ")" )
 
 {-
 ## UI
@@ -287,20 +304,40 @@ topicDecoder: Dec.Decoder Topic
 topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
     (Dec.field "functions" functionDecoder_)
-    (Dec.field "constants" (Dec.list Dec.string))
-    |> Dec.andThen ( \(name, functions, variables) -> let vars = Set.fromList variables in
+    (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str -> if String.left 5 str /= "Math."
+        then Dec.fail "Only constants from Math are allowed"
+        else if String.dropLeft 5 str |> String.all Char.isAlphaNum then Dec.succeed str
+        else Dec.fail "Unknown characters after 'Math.'"
+    ))))
+    |> Dec.andThen ( \(name, functions, vars) ->
         Dec.field "actions" (Dec.list (ruleDecoder_ functions vars))
         |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
 functionDecoder_: Dec.Decoder (Dict.Dict String FunctionProperties_)
 functionDecoder_ = Dec.dict
-    <| Dec.map3 FunctionProperties_
+    <| Dec.map4 FunctionProperties_
         (Dec.field "arguments" Dec.int)
         (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
         (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
+        (Dec.field "javascript" javascriptDecoder_)
 
-ruleDecoder_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Rule_
+javascriptDecoder_: Dec.Decoder Javascript_
+javascriptDecoder_ = Dec.map2 Tuple.pair
+    (Dec.field "type" Dec.string)
+    (Dec.field "symbol" Dec.string)
+    |> Dec.andThen (\(t, symbol) -> case t of
+        "infix" -> if String.all (\s -> String.contains (String.fromChar s) "0123456789+-*/") symbol then Dec.succeed (InfixOp symbol)
+            else Dec.fail "Disallowed char in javascript function"
+        "prefix" -> if String.all (\s -> String.contains (String.fromChar s) "0123456789+-*/") symbol then Dec.succeed (PrefixOp symbol)
+            else Dec.fail "Disallowed char in javascript function"
+        "function" -> if String.left 5 symbol /= "Math." then Dec.fail "Only functions from the Math object can be used"
+            else if String.dropLeft 5 symbol |> String.all Char.isAlphaNum then Dec.succeed (FuncOp symbol)
+            else Dec.fail "Unexpected symbols after 'Math.'"
+        _ -> Dec.fail "Unknown type of javascript function"
+    )
+
+ruleDecoder_: Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Rule_
 ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
@@ -355,7 +392,7 @@ mergeTokens_ parameters new = Helper.resultDict (\name tok dict -> case Dict.get
     parameters
     new
 
-expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Expression_
+expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Expression_
 expressionDecoder_ from functions constants =
     Dec.andThen
     (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ from functions constants) of
@@ -364,7 +401,7 @@ expressionDecoder_ from functions constants =
     )
     Dec.string
 
-treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
+treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
 treeToMatcher_ from functions constants root =
     let
         processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ from functions constants child
@@ -387,7 +424,7 @@ treeToMatcher_ from functions constants root =
     in
     case root of
         Math.RealNode s -> Ok (Matcher.RealMatcher {value = s.value}, Dict.empty)
-        Math.VariableNode s -> if Set.member s.name constants
+        Math.VariableNode s -> if Dict.member s.name constants
             then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
             else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
         Math.UnaryNode s -> treeToMatcher_ from functions constants s.child
