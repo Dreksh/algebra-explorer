@@ -1,5 +1,5 @@
 module Rules exposing (Model, Event(..), Parameters, Topic, init,
-    addTopic, deleteTopic, topicDecoder,
+    addTopic, deleteTopic, addSources, topicDecoder,
     replaceGlobalVar, evaluateStr,
     menuTopics
     )
@@ -67,9 +67,13 @@ type alias Parameters state =
 type alias Model =
     {   functions: Dict.Dict String (FunctionProperties_, Int) -- Properties + Number of topics that contain this function
     ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
-    ,   topics: Dict.Dict String Topic
+    ,   topics: Dict.Dict String (LoadState_ Topic)
     ,   createMode: Bool
     }
+
+type LoadState_ obj =
+    NotInstalled_ String
+    | Installed_ (Maybe String) obj
 
 type Event treeState =
     Apply (Parameters treeState)
@@ -77,6 +81,7 @@ type Event treeState =
     | Ungroup
     | NumericalSubstitution Float
     | Substitute
+    | Download String
 
 init: Model
 init =
@@ -91,9 +96,9 @@ init =
 -}
 
 addTopic: Topic -> Model -> Result String Model
-addTopic topic m = let id = String.toLower topic.name in
-    let model = deleteTopic id m in -- Clear Existing topic
-    topic.functions |> Helper.resultDict (\name props dict -> case Dict.get name dict of
+addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
+    topic.functions
+    |> Helper.resultDict (\name props dict -> case Dict.get name dict of
         Nothing -> Ok (Dict.insert name (props, 1) dict)
         Just (p, count) -> if p.arguments == props.arguments && p.associative == props.associative && p.commutative == props.commutative
             then Ok (Dict.insert name (p, count + 1) dict)
@@ -102,37 +107,62 @@ addTopic topic m = let id = String.toLower topic.name in
     model.functions
     |> (\res -> case res of
         Err errStr -> Err errStr
-        Ok functions -> topic.constants |> Helper.resultDict (\name js dict -> case Dict.get name dict of
+        Ok functions -> topic.constants
+            |> Helper.resultDict (\name js dict -> case Dict.get name dict of
                 Nothing -> Ok (Dict.insert name (js, 1) dict)
                 Just (prev, count) -> if prev /= js then Err (name ++ " has different javascript values")
                     else Ok (Dict.insert name (prev, count + 1) dict)
             )
             model.constants
-            |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert id topic model.topics})
+            |> Result.map (\constants ->
+                {   model
+                |   functions = functions
+                ,   constants = constants
+                ,   topics = case Dict.get topic.name model.topics of
+                    Nothing -> Dict.insert topic.name (Installed_ Nothing topic) model.topics
+                    Just (NotInstalled_ url) -> Dict.insert topic.name (Installed_ (Just url) topic) model.topics
+                    Just (Installed_ url _) -> Dict.insert topic.name (Installed_ url topic) model.topics
+                }
+            )
     )
 
 deleteTopic: String -> Model -> Model
-deleteTopic name model = let id = String.toLower name in
-    case Dict.get id model.topics of
-        Nothing -> model
-        Just topic ->
-            let
-                newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
-                        Nothing -> newDict
-                        Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
-                    )
-                    model.functions
-                newConstants = topic.constants |> Dict.foldl (\n _ newSet -> case Dict.get n newSet of
-                        Nothing -> newSet
-                        Just (js, i) -> if i < 2 then Dict.remove n newSet else Dict.insert n (js, i - 1) newSet
-                    )
-                    model.constants
-            in
-                {   model
-                |   topics = Dict.remove id model.topics
-                ,   constants = newConstants
-                ,   functions = newFunctions
-                }
+deleteTopic name model = case Dict.get name model.topics of
+    Just (Installed_ url topic) ->
+        let
+            newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
+                    Nothing -> newDict
+                    Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
+                )
+                model.functions
+            newConstants = topic.constants |> Dict.foldl (\n _ newSet -> case Dict.get n newSet of
+                    Nothing -> newSet
+                    Just (js, i) -> if i < 2 then Dict.remove n newSet else Dict.insert n (js, i - 1) newSet
+                )
+                model.constants
+        in
+            {   model
+            |   topics = case url of
+                    Nothing -> Dict.remove name model.topics
+                    Just existing -> Dict.insert name (NotInstalled_ existing) model.topics
+            ,   constants = newConstants
+            ,   functions = newFunctions
+            }
+    _ -> model
+
+addSources: Dict.Dict String String -> Model -> Model
+addSources map model =
+    {   model
+    |   topics = Dict.foldl (\name url dict ->
+            case Dict.get name dict of
+                Nothing -> Dict.insert name (NotInstalled_ url) dict
+                Just existing -> case existing of
+                    Installed_ Nothing obj -> Dict.insert name (Installed_ (Just url) obj) dict
+                    _ -> dict -- Don't override existing topics
+        )
+        model.topics
+        map
+    }
 
 {-
 ## Verification
@@ -203,11 +233,18 @@ menuTopics converter model selectedNode =
                 )
             ]
     in
-    Dict.values model.topics
-    |> List.map (\topic -> Menu.Section topic.name True
-        ( List.map individualRule topic.rules )
+    Dict.foldl (\k t -> (::)
+        (case t of
+            NotInstalled_ url -> Menu.Section k True
+                [   Menu.Content [a [HtmlEvent.onClick (converter (Download url)), class "clickable"] [text "Download"]]
+                ]
+            Installed_ _ topic -> Menu.Section topic.name True
+                ( List.map individualRule topic.rules )
+        )
     )
-    |> (::) (coreTopic_ converter selectedNode)
+    [coreTopic_ converter selectedNode]
+    model.topics
+    |> List.reverse
 
 matchRule_: Maybe (Math.Tree (Matcher.State state), Int) -> Rule_ -> (Bool, Maybe (Parameters state))
 matchRule_ selected rule = case selected of
@@ -234,8 +271,8 @@ matchRule_ selected rule = case selected of
 
 applyButton : (Event state -> msg) -> Maybe (Event state) -> Html.Html msg
 applyButton converter e = case e of
-    Nothing -> a [title "Cannot be applied"] [text "apply"]
-    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "apply"]
+    Nothing -> a [title "Cannot be applied"] [text "Apply"]
+    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "Apply"]
 
 coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
 coreTopic_ converter root =
@@ -297,7 +334,7 @@ coreTopic_ converter root =
         ]
 
 {-
-## Parser
+## Topic Parser
 -}
 
 topicDecoder: Dec.Decoder Topic

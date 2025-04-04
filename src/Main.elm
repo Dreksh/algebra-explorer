@@ -82,8 +82,8 @@ type Event =
     | OpenDialog (Dialog.Model Event)
     | CloseDialog
     | DeleteTopic String
-    | DownloadTopic String
     | ProcessTopic String (Result Http.Error Rules.Topic)
+    | ProcessSource String (Result Http.Error Source)
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
@@ -96,6 +96,10 @@ type Event =
 type LoadableFile =
     TopicFile
     | SaveFile
+
+type alias Source =
+    {   topics: Dict.Dict String String
+    }
 
 -- Events
 
@@ -119,7 +123,11 @@ init _ url key =
         , showMenu = if newScreen then True else False
         , dialog = Nothing
         }
-    , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
+    ,   Cmd.batch
+        [   Cmd.map NotificationEvent nCmd
+        ,   if newScreen then focusTextBar_ "textInput" else Cmd.none
+        ,   loadSources query.sources
+        ]
     )
 
 parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
@@ -134,6 +142,10 @@ subscriptions model = Sub.batch
             _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
     ,   evaluateResult ApplyNumSub
     ]
+
+{-
+## State changes
+-}
 
 update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
@@ -181,12 +193,14 @@ update event model = case event of
         )
     CloseDialog -> ({model | dialog = Nothing}, Cmd.none)
     DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules, dialog = Nothing}, Cmd.none)
-    DownloadTopic url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
     ProcessTopic url result -> case result of
         Err err -> httpErrorToString_ url err |> submitNotification_ model
         Ok topic -> case Rules.addTopic topic model.rules of
             Err errStr -> submitNotification_ model errStr
             Ok rModel -> ({model | rules = rModel}, Cmd.none)
+    ProcessSource url result -> case result of
+        Err err -> httpErrorToString_ url err |> submitNotification_ model
+        Ok source -> ({model | rules = Rules.addSources source.topics model.rules}, Cmd.none)
     FileSelect fileType -> (model, FSelect.file ["application/json"] (FileSelected fileType))
     FileSelected fileType file -> ({model | dialog = Nothing}, Task.perform (FileLoaded fileType) (File.toString file))
     FileLoaded fileType str -> case fileType of
@@ -212,6 +226,7 @@ update event model = case event of
             Ok dModel -> ({model | display = dModel}, Cmd.none)
         Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
         Rules.NumericalSubstitution target -> ({ model | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
+        Rules.Download url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
     ApplyParameters params -> case model.dialog of
         Just (_, Just existing) -> (    case Dict.get "_method" params of
                 Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -272,6 +287,10 @@ httpErrorToString_ url err = case err of
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
+
+{-
+## UI
+-}
 
 view: Model -> Browser.Document Event
 view model =
@@ -347,7 +366,7 @@ addTopicDialog_ =
             }
         ]
     ,   success = (\val -> case Dict.get "url" val of
-            Just (Dialog.TextValue a) -> DownloadTopic a
+            Just (Dialog.TextValue a) -> RuleEvent (Rules.Download a)
             _ -> NoOp
         )
     ,   cancel = CloseDialog
@@ -425,3 +444,17 @@ numSubDialog_ target =
     ,   cancel = CloseDialog
     ,   focus = Just "expr"
     }
+
+{-
+## State
+-}
+
+loadSources: List String -> Cmd Event
+loadSources sources = List.map
+    (\url -> Http.get { url = url, expect = Http.expectJson (ProcessSource url) sourceDecoder})
+    ("source.json"::sources)
+    |> Cmd.batch
+
+sourceDecoder: Decode.Decoder Source
+sourceDecoder = Decode.map Source
+    (Decode.oneOf [Decode.field "topics" (Decode.dict Decode.string), Decode.succeed Dict.empty])
