@@ -16,6 +16,7 @@ import Task
 import Url
 -- Our imports
 import Display
+import Evaluate
 import Helper
 import Matcher
 import Math
@@ -41,6 +42,8 @@ main = Browser.application
     }
 
 port updateMathJax: () -> Cmd msg
+port evaluateString: {id: Int, str: String} -> Cmd msg
+port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 
 -- Types
 
@@ -51,6 +54,7 @@ type alias Model =
     ,   notification: Notification.Model
     ,   query: Query.Model
     ,   menu: Menu.Model
+    ,   evaluator: Evaluate.Model (Float, Math.Tree ()) Event
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
@@ -78,18 +82,24 @@ type Event =
     | OpenDialog (Dialog.Model Event)
     | CloseDialog
     | DeleteTopic String
-    | DownloadTopic String
     | ProcessTopic String (Result Http.Error Rules.Topic)
+    | ProcessSource String (Result Http.Error Source)
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution String String
+    | ConvertSubString Float String
+    | ApplyNumSub {id: Int, value: Float}
 
 type LoadableFile =
     TopicFile
     | SaveFile
+
+type alias Source =
+    {   topics: Dict.Dict String String
+    }
 
 -- Events
 
@@ -107,12 +117,17 @@ init _ url key =
         , notification = nModel
         , query = query
         , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Topics", "Core"])
+        , evaluator = Evaluate.init evaluateString
         , createMode = if newScreen then Just Nothing else Nothing
         , showHelp = False
         , showMenu = if newScreen then True else False
         , dialog = Nothing
         }
-    , Cmd.batch [Cmd.map NotificationEvent nCmd, if newScreen then focusTextBar_ "textInput" else Cmd.none]
+    ,   Cmd.batch
+        [   Cmd.map NotificationEvent nCmd
+        ,   if newScreen then focusTextBar_ "textInput" else Cmd.none
+        ,   loadSources query.sources
+        ]
     )
 
 parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
@@ -121,9 +136,16 @@ parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createS
     Result.Err err -> (result, err :: errs )
 
 subscriptions: Model -> Sub Event
-subscriptions model = case (model.createMode, model.dialog) of
-    (Nothing, Nothing) -> Sub.none
-    _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+subscriptions model = Sub.batch
+    [   case (model.createMode, model.dialog) of
+            (Nothing, Nothing) -> Sub.none
+            _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+    ,   evaluateResult ApplyNumSub
+    ]
+
+{-
+## State changes
+-}
 
 update: Event -> Model -> ( Model, Cmd Event )
 update event model = case event of
@@ -171,12 +193,14 @@ update event model = case event of
         )
     CloseDialog -> ({model | dialog = Nothing}, Cmd.none)
     DeleteTopic name -> ({model | rules = Rules.deleteTopic name model.rules, dialog = Nothing}, Cmd.none)
-    DownloadTopic url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
     ProcessTopic url result -> case result of
         Err err -> httpErrorToString_ url err |> submitNotification_ model
         Ok topic -> case Rules.addTopic topic model.rules of
             Err errStr -> submitNotification_ model errStr
             Ok rModel -> ({model | rules = rModel}, Cmd.none)
+    ProcessSource url result -> case result of
+        Err err -> httpErrorToString_ url err |> submitNotification_ model
+        Ok source -> ({model | rules = Rules.addSources source.topics model.rules}, Cmd.none)
     FileSelect fileType -> (model, FSelect.file ["application/json"] (FileSelected fileType))
     FileSelected fileType file -> ({model | dialog = Nothing}, Task.perform (FileLoaded fileType) (File.toString file))
     FileLoaded fileType str -> case fileType of
@@ -201,6 +225,8 @@ update event model = case event of
             Err errStr -> submitNotification_ model errStr
             Ok dModel -> ({model | display = dModel}, Cmd.none)
         Rules.Substitute -> ({ model | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
+        Rules.NumericalSubstitution target -> ({ model | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
+        Rules.Download url -> ({model | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
     ApplyParameters params -> case model.dialog of
         Just (_, Just existing) -> (    case Dict.get "_method" params of
                 Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -225,6 +251,21 @@ update event model = case event of
             )
         _ -> ({ model | dialog = Nothing}, Cmd.none)
     ApplySubstitution rawIn rawOut -> ({model | dialog = Nothing}, Cmd.none)
+    ConvertSubString target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
+        Err errStr -> submitNotification_ model errStr
+        Ok newTree -> case Rules.evaluateStr model.rules newTree of
+            Err errStr -> submitNotification_ model errStr
+            Ok evalStr -> let (eModel, cmd) = Evaluate.send (target, newTree) evalStr model.evaluator in
+                ({model | evaluator = eModel}, cmd)
+    ApplyNumSub reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
+        let newModel = {model | evaluator = eModel } in
+        case c of
+            Nothing -> submitNotification_ newModel "Unable to evaluate a string"
+            Just (target, tree) -> if target /= reply.value
+                then submitNotification_ newModel ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
+                else case Display.replaceNumber newModel.display target tree of
+                    Err errStr -> submitNotification_ newModel errStr
+                    Ok dModel -> ({newModel | display = dModel, dialog = Nothing}, Cmd.none)
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
@@ -246,6 +287,10 @@ httpErrorToString_ url err = case err of
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
+
+{-
+## UI
+-}
 
 view: Model -> Browser.Document Event
 view model =
@@ -321,7 +366,7 @@ addTopicDialog_ =
             }
         ]
     ,   success = (\val -> case Dict.get "url" val of
-            Just (Dialog.TextValue a) -> DownloadTopic a
+            Just (Dialog.TextValue a) -> RuleEvent (Rules.Download a)
             _ -> NoOp
         )
     ,   cancel = CloseDialog
@@ -373,7 +418,8 @@ substitutionDialog_: Dialog.Model Event
 substitutionDialog_ =
     {   title = "Substitute a variable for a formula"
     ,   sections =
-        [{  subtitle = "For each "
+        -- TODO: Make this into a dropdown for selecting the equation to pick
+        [{  subtitle = "For each instance of the specified variable, replace it with the formula"
         ,   lines = [[Dialog.Text {id="var"}, Dialog.Info {text = "="}, Dialog.Text {id="formula"}]]
         }]
     ,   success = (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
@@ -383,3 +429,32 @@ substitutionDialog_ =
     ,   cancel = CloseDialog
     ,   focus = Just "var"
     }
+
+numSubDialog_: Float -> Dialog.Model Event
+numSubDialog_ target =
+    {   title = "Substitute a number for an expression"
+    ,   sections =
+        [{  subtitle = "The expression to replace " ++ String.fromFloat target
+        ,   lines = [[Dialog.Text {id="expr"}]]
+        }]
+    ,   success = (\dict -> case Dict.get "expr" dict of
+            Just (Dialog.TextValue val) -> ConvertSubString target val
+            _ -> NoOp
+        )
+    ,   cancel = CloseDialog
+    ,   focus = Just "expr"
+    }
+
+{-
+## State
+-}
+
+loadSources: List String -> Cmd Event
+loadSources sources = List.map
+    (\url -> Http.get { url = url, expect = Http.expectJson (ProcessSource url) sourceDecoder})
+    ("source.json"::sources)
+    |> Cmd.batch
+
+sourceDecoder: Decode.Decoder Source
+sourceDecoder = Decode.map Source
+    (Decode.oneOf [Decode.field "topics" (Decode.dict Decode.string), Decode.succeed Dict.empty])

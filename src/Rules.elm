@@ -1,13 +1,13 @@
 module Rules exposing (Model, Event(..), Parameters, Topic, init,
-    addTopic, deleteTopic, topicDecoder,
+    addTopic, deleteTopic, addSources, topicDecoder,
+    replaceGlobalVar, evaluateStr,
     menuTopics
     )
 
 import Dict
-import Html exposing (a, h2, h3, p, text)
+import Html exposing (a, h3, p, text)
 import Html.Attributes exposing (class, title)
 import Json.Decode as Dec
-import Set
 -- Ours
 import Helper
 import Matcher
@@ -23,7 +23,13 @@ type alias FunctionProperties_ =
     {   arguments: Int -- Number of arguments it takes
     ,   associative: Bool -- Allows processing in different order
     ,   commutative: Bool -- Allows swapping argument ordering
+    ,   javascript: Javascript_
     }
+
+type Javascript_ =
+    InfixOp String
+    | PrefixOp String
+    | FuncOp String
 
 type Token_ =
     FunctionToken Int -- Number of arguments
@@ -44,7 +50,7 @@ type alias Rule_ =
 
 type alias Topic =
     {   name: String
-    ,   constants: Set.Set String
+    ,   constants: Dict.Dict String String
     ,   functions: Dict.Dict String FunctionProperties_
     ,   rules: List Rule_
     }
@@ -60,16 +66,22 @@ type alias Parameters state =
 -}
 type alias Model =
     {   functions: Dict.Dict String (FunctionProperties_, Int) -- Properties + Number of topics that contain this function
-    ,   constants: Dict.Dict String Int -- Number of topics that rely on the constant
-    ,   topics: Dict.Dict String Topic
+    ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
+    ,   topics: Dict.Dict String (LoadState_ Topic)
     ,   createMode: Bool
     }
+
+type LoadState_ obj =
+    NotInstalled_ String
+    | Installed_ (Maybe String) obj
 
 type Event treeState =
     Apply (Parameters treeState)
     | Group
     | Ungroup
+    | NumericalSubstitution Float
     | Substitute
+    | Download String
 
 init: Model
 init =
@@ -79,10 +91,14 @@ init =
     ,   createMode = False
     }
 
+{-
+## Topics
+-}
+
 addTopic: Topic -> Model -> Result String Model
-addTopic topic m = let id = String.toLower topic.name in
-    let model = deleteTopic id m in -- Clear Existing topic
-    topic.functions |> Helper.resultDict (\name props dict -> case Dict.get name dict of
+addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
+    topic.functions
+    |> Helper.resultDict (\name props dict -> case Dict.get name dict of
         Nothing -> Ok (Dict.insert name (props, 1) dict)
         Just (p, count) -> if p.arguments == props.arguments && p.associative == props.associative && p.commutative == props.commutative
             then Ok (Dict.insert name (p, count + 1) dict)
@@ -91,36 +107,115 @@ addTopic topic m = let id = String.toLower topic.name in
     model.functions
     |> (\res -> case res of
         Err errStr -> Err errStr
-        Ok functions -> topic.constants |> Helper.resultSet (\name dict -> case Dict.get name dict of
-                Nothing -> Ok (Dict.insert name 1 dict)
-                Just count -> Ok (Dict.insert name (count + 1) dict)
+        Ok functions -> topic.constants
+            |> Helper.resultDict (\name js dict -> case Dict.get name dict of
+                Nothing -> Ok (Dict.insert name (js, 1) dict)
+                Just (prev, count) -> if prev /= js then Err (name ++ " has different javascript values")
+                    else Ok (Dict.insert name (prev, count + 1) dict)
             )
             model.constants
-            |> Result.map (\constants -> {model | functions = functions, constants = constants, topics = Dict.insert id topic model.topics})
+            |> Result.map (\constants ->
+                {   model
+                |   functions = functions
+                ,   constants = constants
+                ,   topics = case Dict.get topic.name model.topics of
+                    Nothing -> Dict.insert topic.name (Installed_ Nothing topic) model.topics
+                    Just (NotInstalled_ url) -> Dict.insert topic.name (Installed_ (Just url) topic) model.topics
+                    Just (Installed_ url _) -> Dict.insert topic.name (Installed_ url topic) model.topics
+                }
+            )
     )
 
 deleteTopic: String -> Model -> Model
-deleteTopic name model = let id = String.toLower name in
-    case Dict.get id model.topics of
-        Nothing -> model
-        Just topic ->
-            let
-                newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
-                        Nothing -> newDict
-                        Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
-                    )
-                    model.functions
-                newConstants = topic.constants |> Set.foldl (\n newSet -> case Dict.get n newSet of
-                        Nothing -> newSet
-                        Just i -> if i < 2 then Dict.remove n newSet else Dict.insert n (i - 1) newSet
-                    )
-                    model.constants
-            in
-                {   model
-                |   topics = Dict.remove id model.topics
-                ,   constants = newConstants
-                ,   functions = newFunctions
-                }
+deleteTopic name model = case Dict.get name model.topics of
+    Just (Installed_ url topic) ->
+        let
+            newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
+                    Nothing -> newDict
+                    Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
+                )
+                model.functions
+            newConstants = topic.constants |> Dict.foldl (\n _ newSet -> case Dict.get n newSet of
+                    Nothing -> newSet
+                    Just (js, i) -> if i < 2 then Dict.remove n newSet else Dict.insert n (js, i - 1) newSet
+                )
+                model.constants
+        in
+            {   model
+            |   topics = case url of
+                    Nothing -> Dict.remove name model.topics
+                    Just existing -> Dict.insert name (NotInstalled_ existing) model.topics
+            ,   constants = newConstants
+            ,   functions = newFunctions
+            }
+    _ -> model
+
+addSources: Dict.Dict String String -> Model -> Model
+addSources map model =
+    {   model
+    |   topics = Dict.foldl (\name url dict ->
+            case Dict.get name dict of
+                Nothing -> Dict.insert name (NotInstalled_ url) dict
+                Just existing -> case existing of
+                    Installed_ Nothing obj -> Dict.insert name (Installed_ (Just url) obj) dict
+                    _ -> dict -- Don't override existing topics
+        )
+        model.topics
+        map
+    }
+
+{-
+## Verification
+-}
+
+replaceGlobalVar: Model -> Math.Tree state -> Result String (Math.Tree state)
+replaceGlobalVar model root =
+    let
+        processChildren = Helper.resultList (\child list -> replaceGlobalVar model child |> Result.map (\c -> c::list)) []
+            >> Result.map List.reverse
+    in
+    case root of
+        Math.UnaryNode s -> replaceGlobalVar model s.child |> Result.map (\child -> Math.UnaryNode {s | child = child})
+        Math.BinaryNode s -> processChildren s.children |> Result.map (\children -> Math.BinaryNode {s | children = children})
+        Math.DeclarativeNode s -> processChildren s.children |> Result.map (\children -> Math.DeclarativeNode {s | children = children})
+        Math.GenericNode s -> processChildren s.children |> Result.andThen (\children -> case Dict.get s.name model.functions of
+            Nothing -> Ok (Math.GenericNode {s | children = children})
+            Just (f, _) -> if f.arguments == 2 && (f.associative || f.commutative)
+                then Ok (Math.BinaryNode {state = s.state, name = s.name, associative = f.associative, commutative = f.commutative, children = children})
+                else if List.length s.children /= f.arguments then Err ("Unexpected number of arguments in " ++ s.name)
+                else case children of
+                    [child] -> Ok (Math.UnaryNode {state = s.state, name = s.name, child = child})
+                    _ -> Ok (Math.GenericNode {s | children = children})
+            )
+        _ -> Ok root
+
+toJavascriptString_: Model -> String -> List String -> Result String String
+toJavascriptString_ model name children = case Dict.get name model.functions of
+    Nothing -> Err "Unable to evaluate the unknown function"
+    Just (f, _) -> case f.javascript of
+        InfixOp jsName -> Ok (String.join jsName children)
+        PrefixOp jsName -> if List.length children /= 1 then Err "Prefix can only be for unary operators"
+            else Ok (jsName ++ String.join "" children)
+        FuncOp jsName -> Ok (jsName ++ "(" ++ String.join "," children ++ ")")
+
+evaluateStr: Model -> Math.Tree s -> Result String String
+evaluateStr model root = (
+    case root of
+        Math.RealNode s -> Ok (String.fromFloat s.value)
+        Math.VariableNode s -> case Dict.get s.name model.constants of
+            Nothing -> Err "Unable to evaluate an unknown variable"
+            Just (str, _) -> Ok str
+        Math.UnaryNode s -> evaluateStr model s.child |> Result.andThen (\child -> toJavascriptString_ model s.name [child])
+        Math.BinaryNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+            |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
+        Math.DeclarativeNode _ -> Err "Cannot evaluate a declaration"
+        Math.GenericNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+            |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
+    ) |> Result.map (\str -> "(" ++ str ++ ")" )
+
+{-
+## UI
+-}
 
 menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Int) -> List (Menu.Part msg)
 menuTopics converter model selectedNode =
@@ -138,11 +233,18 @@ menuTopics converter model selectedNode =
                 )
             ]
     in
-    Dict.values model.topics
-    |> List.map (\topic -> Menu.Section topic.name True
-        ( List.map individualRule topic.rules )
+    Dict.foldl (\k t -> (::)
+        (case t of
+            NotInstalled_ url -> Menu.Section k True
+                [   Menu.Content [a [HtmlEvent.onClick (converter (Download url)), class "clickable"] [text "Download"]]
+                ]
+            Installed_ _ topic -> Menu.Section topic.name True
+                ( List.map individualRule topic.rules )
+        )
     )
-    |> (::) (coreTopic_ converter selectedNode)
+    [coreTopic_ converter selectedNode]
+    model.topics
+    |> List.reverse
 
 matchRule_: Maybe (Math.Tree (Matcher.State state), Int) -> Rule_ -> (Bool, Maybe (Parameters state))
 matchRule_ selected rule = case selected of
@@ -169,16 +271,20 @@ matchRule_ selected rule = case selected of
 
 applyButton : (Event state -> msg) -> Maybe (Event state) -> Html.Html msg
 applyButton converter e = case e of
-    Nothing -> a [title "Cannot be applied"] [text "apply"]
-    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "apply"]
+    Nothing -> a [title "Cannot be applied"] [text "Apply"]
+    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "Apply"]
 
--- TODO: Maybe having information about which nodes are highlighted will be useful
 coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
 coreTopic_ converter root =
     let
-        (subApply, groupApply, ungroupApply) = case root of
-            Nothing -> (Nothing, Nothing, Nothing)
-            Just (Math.BinaryNode n, childCount) -> if not n.associative then (Just Substitute, Nothing, Nothing)
+        shouldDisplay a conv = a.empty || ( case conv a of
+                Just _ -> True
+                Nothing -> False
+            )
+        apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False} in
+            case root of
+            Nothing -> {applies | empty = True}
+            Just (Math.BinaryNode n, childCount) -> if not n.associative then {applies | subApply = (Just Substitute)}
                 else
                     let
                         sameBinaryNode = List.any
@@ -188,58 +294,87 @@ coreTopic_ converter root =
                             )
                             n.children
                     in
-                    (   Just Substitute
-                    ,   if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
-                    ,   if sameBinaryNode then Just Ungroup else Nothing
-                    )
-            _ -> (Just Substitute, Nothing, Nothing)
+                    {   applies
+                    |   subApply = Just Substitute
+                    ,   groupApply = if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
+                    ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
+                    }
+            Just (Math.RealNode n, _ ) -> {applies | numApply = Just (NumericalSubstitution n.value)}
+            _ -> {applies | subApply = Just Substitute}
     in
         Menu.Section "Core" True
-        [   Menu.Section "Substitute" True
+        [   Menu.Section "Number Substitution" (shouldDisplay apply .numApply)
             [   Menu.Content
-                [  applyButton converter subApply
-                ,   h2 [] [text "Given x=y, f(x)=f(y)"]
+                [  applyButton converter apply.numApply
+                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
+                ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
+                ]
+            ]
+        ,   Menu.Section "Substitute" (shouldDisplay apply .subApply)
+            [   Menu.Content
+                [  applyButton converter apply.subApply
+                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
                 ]
             ]
-        ,   Menu.Section "Group" True
+        ,   Menu.Section "Group" (shouldDisplay apply .groupApply)
             [   Menu.Content
-                [   applyButton converter groupApply
-                ,   h2 [] [text "Focus on a specific part"]
+                [   applyButton converter apply.groupApply
+                ,   h3 [] [text "Focus on a specific part"]
                 ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
                 ]
             ]
-        ,   Menu.Section "Ungroup" True
+        ,   Menu.Section "Ungroup" (shouldDisplay apply .ungroupApply)
             [   Menu.Content
-                [   applyButton converter ungroupApply
-                ,   h2 [] [text "Return the group with the rest"]
+                [   applyButton converter apply.ungroupApply
+                ,   h3 [] [text "Return the group with the rest"]
                 ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
                 ]
             ]
         ]
 
 {-
-## Parser
+## Topic Parser
 -}
 
 topicDecoder: Dec.Decoder Topic
 topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
     (Dec.field "functions" functionDecoder_)
-    (Dec.field "constants" (Dec.list Dec.string))
-    |> Dec.andThen ( \(name, functions, variables) -> let vars = Set.fromList variables in
+    (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str -> if String.left 5 str /= "Math."
+        then Dec.fail "Only constants from Math are allowed"
+        else if String.dropLeft 5 str |> String.all Char.isAlphaNum then Dec.succeed str
+        else Dec.fail "Unknown characters after 'Math.'"
+    ))))
+    |> Dec.andThen ( \(name, functions, vars) ->
         Dec.field "actions" (Dec.list (ruleDecoder_ functions vars))
         |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
 functionDecoder_: Dec.Decoder (Dict.Dict String FunctionProperties_)
 functionDecoder_ = Dec.dict
-    <| Dec.map3 FunctionProperties_
+    <| Dec.map4 FunctionProperties_
         (Dec.field "arguments" Dec.int)
         (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
         (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
+        (Dec.field "javascript" javascriptDecoder_)
 
-ruleDecoder_: Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Rule_
+javascriptDecoder_: Dec.Decoder Javascript_
+javascriptDecoder_ = Dec.map2 Tuple.pair
+    (Dec.field "type" Dec.string)
+    (Dec.field "symbol" Dec.string)
+    |> Dec.andThen (\(t, symbol) -> case t of
+        "infix" -> if String.all (\s -> String.contains (String.fromChar s) "0123456789+-*/") symbol then Dec.succeed (InfixOp symbol)
+            else Dec.fail "Disallowed char in javascript function"
+        "prefix" -> if String.all (\s -> String.contains (String.fromChar s) "0123456789+-*/") symbol then Dec.succeed (PrefixOp symbol)
+            else Dec.fail "Disallowed char in javascript function"
+        "function" -> if String.left 5 symbol /= "Math." then Dec.fail "Only functions from the Math object can be used"
+            else if String.dropLeft 5 symbol |> String.all Char.isAlphaNum then Dec.succeed (FuncOp symbol)
+            else Dec.fail "Unexpected symbols after 'Math.'"
+        _ -> Dec.fail "Unknown type of javascript function"
+    )
+
+ruleDecoder_: Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Rule_
 ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
@@ -294,7 +429,7 @@ mergeTokens_ parameters new = Helper.resultDict (\name tok dict -> case Dict.get
     parameters
     new
 
-expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Dec.Decoder Expression_
+expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Expression_
 expressionDecoder_ from functions constants =
     Dec.andThen
     (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ from functions constants) of
@@ -303,7 +438,7 @@ expressionDecoder_ from functions constants =
     )
     Dec.string
 
-treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Set.Set String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
+treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
 treeToMatcher_ from functions constants root =
     let
         processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ from functions constants child
@@ -326,7 +461,7 @@ treeToMatcher_ from functions constants root =
     in
     case root of
         Math.RealNode s -> Ok (Matcher.RealMatcher {value = s.value}, Dict.empty)
-        Math.VariableNode s -> if Set.member s.name constants
+        Math.VariableNode s -> if Dict.member s.name constants
             then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
             else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
         Math.UnaryNode s -> treeToMatcher_ from functions constants s.child

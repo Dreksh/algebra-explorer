@@ -12,6 +12,7 @@ type alias Model =
     ,   key: Nav.Key
     -- Values for calculating the query
     ,   equations: List String
+    ,   sources: List String
     }
 
 setEquations: Dict.Dict Int (Matcher.Equation msg) -> Model -> Model
@@ -34,6 +35,7 @@ parseInit url key =
     {   current = url
     ,   key = key
     ,   equations = []
+    ,   sources = []
     }
 
 pushUrl: Model -> Cmd msg
@@ -52,6 +54,9 @@ unmarshalModel_ line model =
         case field of
             "eq" -> case value of
                 Just str -> {model | equations = model.equations ++ [str]}
+                _ -> model
+            "source" -> case value of
+                Just str -> {model | sources = model.sources ++ [str]}
                 _ -> model
             _ -> model
     )

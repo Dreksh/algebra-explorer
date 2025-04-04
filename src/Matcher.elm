@@ -1,7 +1,7 @@
 module Matcher exposing (Equation, Matcher(..), MatchResult, State,
     getID, getName, countChildren, parseEquation, selectedSubtree, variableArgsOnly,
     groupSubtree, ungroupSubtree,
-    addMatch, matchNode, matchSubtree, replaceSubtree
+    addMatch, matchNode, matchSubtree, replaceSubtree, replaceRealNode
     )
 
 import Dict
@@ -258,11 +258,11 @@ ungroupSubtree ids eq =
     in
     case affectedSubtree_ ids tracker.parent of
         Nothing -> Err "Nodes not found"
-        Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (foo tracker id nodes) eq
+        Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (ungroupChild_ tracker id nodes) eq
             |> Result.map Tuple.second
 
-foo: Tracker_ state -> Int -> Set.Set Int -> Equation state -> Result String ((), Equation state)
-foo tracker id nodes subEq =
+ungroupChild_: Tracker_ state -> Int -> Set.Set Int -> Equation state -> Result String ((), Equation state)
+ungroupChild_ tracker id nodes subEq =
     case subEq.root of
         Math.BinaryNode n ->
             if not n.associative then Err "Node is not associative"
@@ -273,21 +273,38 @@ foo tracker id nodes subEq =
                         (\c -> Dict.insert (Math.getState c |> getID) id)
                         (Dict.remove (getID s.state) tracker.parent)
                         s.children
-                    processChildren found children = case children of
+                    traverseRemaining unselectedFound children = case children of
                         [] -> Err "All children are ungrouped"
                         (c::other) -> case c of
-                            Math.BinaryNode m -> if m.name /= n.name then processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                            Math.BinaryNode m -> if m.name /= n.name then traverseRemaining unselectedFound other |> Result.map (\(list, t) -> (c::list, t))
                                 else if Set.member (getID m.state) nodes then Ok (m.children ++ other, {tracker | parent = updateParent m})
-                                else case processChildren found other of
+                                else case traverseRemaining True other of
                                     Ok (list, t) -> Ok (c::list, t)
-                                    Err errStr -> if found then Err errStr
+                                    Err errStr -> if unselectedFound then Err errStr -- Keep propagating
                                         else Ok (m.children ++ other, {tracker | parent = updateParent m})
-                            _ -> processChildren found other |> Result.map (\(list, t) -> (c::list, t))
+                            _ -> traverseRemaining unselectedFound other |> Result.map (\(list, t) -> (c::list, t))
                 in
-                    processChildren False n.children
+                    traverseRemaining False n.children
                     |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
         _ -> Err "Node is not associative"
 
+replaceRealNode: Set.Set Int -> Float -> Math.Tree () -> Equation state -> Result String (Equation state)
+replaceRealNode ids target subtree eq = case affectedSubtree_ ids eq.tracker.parent of
+    Nothing -> Err "Nodes not found"
+    Just (id, _) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
+            Math.RealNode n -> if target /= n.value then Err "Expression does not equal to the node's value"
+                else processID_ -1 subEq.tracker subtree
+                |> (\(root, tracker) ->
+                    let
+                        parent = Dict.get id tracker.parent
+                        nextTracker = {tracker | parent = Dict.remove (getID n.state) tracker.parent}
+                    in
+                        Ok ((), {root = root, tracker = setParent_ root parent nextTracker})
+                )
+            _ -> Err "Node is not a number"
+        )
+        eq
+        |> Result.map Tuple.second
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)

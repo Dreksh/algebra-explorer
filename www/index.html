@@ -23,6 +23,7 @@
         });
         /* Add commands / subscriptions onto the app below */
         app.ports.updateMathJax.subscribe(function (val) { if (MathJax.typeset) MathJax.typeset(); });
+        app.ports.evaluateString.subscribe(function (val) { app.ports.evaluateResult.send({"id": val["id"], "value": eval(val["str"])}); });
     </script>
 </body>
 </html>
