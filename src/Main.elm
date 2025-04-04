@@ -161,12 +161,8 @@ update event core = let model = core.swappable in
     case event of
         EventUrlRequest _ -> (core, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
-        DisplayEvent e ->
-            let
-                (dModel, dCmd) = Display.update e model.display
-                query = Query.setEquations (Display.listEquations dModel) core.query
-            in
-                (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, Query.pushUrl query, updateMathJax ()])
+        DisplayEvent e -> let (dModel, dCmd) = Display.update e model.display in
+            (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
         NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
@@ -188,9 +184,8 @@ update event core = let model = core.swappable in
                     Just i ->
                         Display.updateEquation i root model.display
                 )
-                |> (\dModel -> Display.listEquations dModel
-                    |> (\list -> Query.setEquations list core.query )
-                    |> (\query -> (updateCore {model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [Query.pushUrl query, updateMathJax ()]) )
+                |> (\dModel ->
+                    (updateCore {model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [updateQuery_ core dModel, updateMathJax ()])
                 )
             Result.Err err -> submitNotification_ core err
         ToggleHelp -> (updateCore {model | showHelp = not model.showHelp}, focusTextBar_ "textInput")
@@ -226,7 +221,7 @@ update event core = let model = core.swappable in
                 |> Result.mapError Decode.errorToString
                 |> (\result -> case result of
                     Err errStr -> submitNotification_ core errStr
-                    Ok s -> ({core | swappable = s}, Cmd.none)
+                    Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
@@ -236,15 +231,15 @@ update event core = let model = core.swappable in
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
             Rules.Group -> case Display.groupChildren model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, Cmd.none)
+                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
             Rules.Ungroup -> case Display.ungroupChildren model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, Cmd.none)
+                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
             Rules.Substitute -> ({core | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution target -> ({ core | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
-            Rules.Download url -> ({core | dialog = Nothing}, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
+            Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
         ApplyParameters params -> case core.dialog of
-            Just (_, Just existing) -> (    case Dict.get "_method" params of
+            Just (_, Just existing) -> ( case Dict.get "_method" params of
                     Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
                     _ -> Helper.listIndex 0 existing.matches
                 )
@@ -281,14 +276,14 @@ update event core = let model = core.swappable in
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
                     else case Display.replaceNumber model.display target tree of
                         Err errStr -> submitNotification_ newCore errStr
-                        Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, Cmd.none)
+                        Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
     case Display.transformEquation params.matcher params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
-        Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, Cmd.none)
+        Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ model newDisplay)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let swappable = model.swappable in
@@ -302,6 +297,11 @@ httpErrorToString_ url err = case err of
     Http.NetworkError -> "Unable to reach: " ++ url
     Http.BadStatus code -> "The url returned an error code [" ++ String.fromInt code ++ "]: " ++ url
     Http.BadBody str -> "The file is malformed:\n" ++ str
+
+updateQuery_: Model -> Display.Model -> Cmd Event
+updateQuery_ model dModel = let query = Query.setEquations (Display.listEquations dModel) model.query in
+    Query.pushUrl query
+
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
