@@ -111,3 +111,7 @@ This piping is usually why functions like [Dict.insert](https://package.elm-lang
       * these could be tabs on the left
     * by default we want to visualise the associative rule because otherwise you end up with tall trees that are unwieldy
 * creation is not the same as modification
+
+### animation
+we also want to animate the linearised view
+look at https://github.com/3b1b/manim for inspiration
