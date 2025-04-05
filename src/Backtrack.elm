@@ -1,88 +1,112 @@
-module Backtrack exposing (Continuation, fail, init, searchOrdered, searchUnordered, return, toMaybe)
-import Http exposing (Response(..))
+module Backtrack exposing (Continuation, Evaluator,
+    fail, init, return, getState, run,
+    orderedStack, unorderedStack
+    )
+import Helper
 
 -- For continuing from a previous attempt
-type Continuation state =
-    Start_ {initial: state}                                                                 -- Initial state
-    | Done_                                                                                 -- Negative result / No more results
-    | Select_ {initial: state, result: state}                                               -- Positive result (do not retry)
-    | Ordered_ {initial: state, result: state, children: List (Continuation state)}         -- Marking for choice-child pairs (ordered match)
-    | Unordered_ {initial: state, result: state, children: List (Int, Continuation state)}  -- Marking for choice made per child (unordered match)
+type alias Continuation state =
+    {   initial: state
+    ,   progress: Maybe (state, Progress_ state)
+    }
+
+type Progress_ state =
+    Match_                                  -- All is consumed
+    | Choice_ Int (Continuation state)      -- Remove specific choice each time
+    | List_ (List (Continuation state))     -- Track child Continuation through multiple steps
+
+type alias Evaluator state choice = List choice -> Continuation state -> Maybe (Continuation state)
 
 init: state -> Continuation state
-init initial = Start_ {initial = initial}
+init initial = Continuation initial Nothing
 
-fail: Continuation state
-fail = Done_
+fail: Maybe (Continuation state)
+fail = Nothing
 
-return: (state -> Maybe state) -> Continuation state -> Continuation state
-return func initial = case initial of
-    Start_ s -> case func s.initial of
-        Just newS -> Select_ {initial = s.initial, result = newS}
-        Nothing -> Done_
-    _ -> Done_
+-- Returns once only, no other choices
+return: (state -> Maybe state) -> Continuation state -> Maybe (Continuation state)
+return func token = case token.progress of
+    Nothing -> func token.initial |> Maybe.map (\newS -> {token | progress = Just (newS, Match_)})
+    _ -> Nothing
 
-toMaybe: Continuation state -> Maybe state
-toMaybe c = case c of
-    Select_ s -> Just s.result
-    Ordered_ s -> Just s.result
-    Unordered_ s -> Just s.result
-    Start_ _ -> Nothing -- start is not valid, it's a blank initial state
-    Done_ -> Nothing
+getState: Continuation state -> Maybe state
+getState c = Maybe.map Tuple.first c.progress
 
-searchOrdered: (slot -> choice -> Continuation state -> Continuation state) -> List slot -> List choice -> Continuation state -> Continuation state
-searchOrdered func slots choices initial =
-    let
-        checkNext prev otherSlot otherChoice result = case toMaybe result |> Maybe.map (\s -> searchOrdered func otherSlot otherChoice (Start_ {initial = s}) ) of
-            Just (Ordered_ newS) -> Ordered_ {newS | children = (result :: newS.children), initial = prev}
-            _ -> Done_
-    in
-        if List.length slots /= List.length choices
-        then Done_
-        else case initial of
-            Start_ s -> case (slots, choices) of
-                ([], []) -> Ordered_ {initial = s.initial, result = s.initial, children = []}
-                ((startSlot::otherSlot), (startChoice::otherChoice)) -> func startSlot startChoice initial
-                    |> checkNext s.initial otherSlot otherChoice
-                _ -> Done_
-            Ordered_ s -> case (slots, choices, s.children) of
-                ([currentSlot], [currentChoice], [currentToken]) -> func currentSlot currentChoice currentToken
-                        |> checkNext s.initial [] []
-                ((startSlot::otherSlot), (startChoice::otherChoice), (startToken::otherToken)) -> case searchOrdered func otherSlot otherChoice (Ordered_ {s | children = otherToken}) of
-                    Ordered_ newS -> Ordered_ {newS | children = (startToken::newS.children), initial = s.initial}
-                    _ -> func startSlot startChoice startToken
-                        |> checkNext s.initial otherSlot otherChoice
-                _ -> Done_
-            _ -> Done_
+{-
+## Run
+-}
 
-searchUnordered: (slot -> choice -> Continuation state -> Continuation state) -> List slot -> List choice -> Continuation state -> Continuation state
-searchUnordered func slots choices initial = if List.length slots /= List.length choices then Done_
-    else unordered_ func slots [] choices initial
+run: List (Evaluator state choice) -> List choice -> Continuation state -> Maybe (Continuation state)
+run evals choices tok = case evals of
+    [] -> case tok.progress of
+        Nothing -> Just {tok | progress = Just (tok.initial, List_ [])}
+        Just _ -> Nothing
+    (eval::nextEvals) -> case tok.progress of
+        Nothing -> processNext_ eval nextEvals choices tok
+        Just (oldRes,List_ (currentTok::otherToks)) -> currentTok.progress
+            |> Maybe.andThen (\(_, childP) -> removeSelectedChildren_ childP choices)
+            |> Maybe.andThen (\newChoices -> case run nextEvals newChoices {tok | progress = Just (oldRes, List_ otherToks)} of
+                Nothing -> processNext_ eval nextEvals choices currentTok
+                Just newNext -> case newNext.progress of
+                    Just (finalRes, List_ finalList) -> Just {tok | progress = Just (finalRes, List_ (currentTok::finalList))}
+                    _ -> Nothing
+            )
+        _ -> Nothing
 
-unordered_: (slot -> choice -> Continuation state -> Continuation state) -> List slot -> List choice -> List choice -> Continuation state -> Continuation state
-unordered_ func slots prechoice choices initial =
-    let
-        checkNext prev nextSlot currentChoice nextChoice result =
-            case toMaybe result |> Maybe.map (\s -> unordered_ func nextSlot [] (prechoice ++ nextChoice) (Start_ {initial = s})) |> Maybe.withDefault Done_ of
-                Done_ -> unordered_ func slots (prechoice ++ [currentChoice]) nextChoice (Start_ {initial = prev})
-                Unordered_ newS -> Unordered_ {newS | children = (List.length prechoice, result)::newS.children, initial = prev }
-                _ -> Done_
-    in
-        case initial of
-            Start_ s -> case (slots, choices) of
-                ([], _) -> Unordered_ {initial = s.initial, result = s.initial, children = []}
-                (_, []) -> Done_
-                ((currentSlot::nextSlot),(currentChoice::nextChoice)) -> func currentSlot currentChoice initial
-                    |> checkNext s.initial nextSlot currentChoice nextChoice
-            Unordered_ s -> case (slots, choices) of
-                ([], _) -> Done_
-                (_, []) -> Done_
-                ((currentSlot::nextSlot),(currentChoice::nextChoice)) -> case s.children of
-                    ((num, continuation)::others) -> if num > 0
-                        then unordered_ func slots (prechoice ++ [currentChoice]) nextChoice (Unordered_ {s | children = (num - 1,continuation)::others})
-                        else case unordered_ func nextSlot [] (prechoice++nextChoice) (Unordered_ {s | children = others}) of
-                            Unordered_ newS -> Unordered_ {newS | children = (num, continuation)::newS.children, initial = s.initial}
-                            _ -> func currentSlot currentChoice continuation
-                                |> checkNext s.initial nextSlot currentChoice nextChoice
-                    _ -> Done_
-            _ -> Done_
+processNext_: Evaluator state choice -> List (Evaluator state choice) -> List choice -> Continuation state -> Maybe (Continuation state)
+processNext_ eval nextEvals choices inputTok = eval choices inputTok
+    |> Maybe.andThen (\childTok -> case childTok.progress of
+        Just (res, p) -> removeSelectedChildren_ p choices
+            |> Maybe.andThen (\newChoices -> run nextEvals newChoices {initial = res, progress = Nothing})
+            |> Maybe.andThen (\finalTok -> case finalTok.progress of
+                Just (finalRes, List_ list) -> Just {inputTok | progress = Just (finalRes, List_ (childTok::list))}
+                _ -> Nothing
+            )
+        _ -> Nothing
+    )
+
+removeSelectedChildren_: Progress_ state -> List choice -> Maybe (List choice)
+removeSelectedChildren_ p c = case p of
+    Match_ -> Just []
+    Choice_ index _ -> if index < 0 || index >= List.length c then Nothing
+        else Just ((List.take index c) ++ (List.drop (index+1) c))
+    List_ list -> Helper.maybeList (\tok children -> tok.progress
+        |> Maybe.andThen (\(_, childP) -> removeSelectedChildren_ childP children)
+        )
+        c list
+
+{-
+## Common list-iterating operations
+-}
+
+orderedStack: (slot -> choice -> Continuation state -> Maybe (Continuation state)) -> List slot -> List (Evaluator state choice)
+orderedStack func = List.map (\s choices tok ->
+    List.head choices
+    |> Maybe.andThen (\c -> case tok.progress of
+        Just (_, Choice_ 0 childTok) -> func s c childTok
+        _ -> Nothing
+    )
+    |> Maybe.andThen (\newChild ->
+        getState newChild
+        |> Maybe.map (\newRes -> {tok | progress = Just (newRes, Choice_ 0 newChild)})
+    )
+    )
+
+unorderedStack: (slot -> choice -> Continuation state -> Maybe (Continuation state)) -> List slot -> List (Evaluator state choice)
+unorderedStack func = List.map (\s -> checkOption_ func s 0)
+
+checkOption_: (slot -> choice -> Continuation state -> Maybe (Continuation state)) -> slot -> Int -> List choice -> Continuation state -> Maybe (Continuation state)
+checkOption_ func slot index choices tok = case choices of
+    [] -> Nothing
+    (choice::other) ->
+        let
+            testChoice token = case func slot choice token of
+                Nothing -> checkOption_ func slot (index+1) other {tok | progress = Nothing} -- Try next
+                Just child -> getState child |> Maybe.map (\res -> {tok | progress = Just (res, Choice_ index child)})
+        in
+            case tok.progress of
+                Nothing -> testChoice tok
+                Just (old, Choice_ num childTok) -> if num < 0 || num >= List.length choices then Nothing
+                    else if num == 0 then testChoice childTok
+                    else checkOption_ func slot num (List.drop num choices) {tok | progress = Just (old, Choice_ 0 childTok)}
+                _ -> Nothing

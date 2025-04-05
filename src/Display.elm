@@ -61,7 +61,7 @@ updateEquation id eq model = {model | equations = Dict.insert id eq model.equati
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations
 
-selectedNode: Model -> Maybe (Math.Tree (Matcher.State State), Int)
+selectedNode: Model -> Maybe (Math.Tree (Matcher.State State), Set.Set Int, Int)
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
         |> Maybe.andThen (Matcher.selectedSubtree ids >> Result.toMaybe)

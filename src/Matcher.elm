@@ -42,9 +42,8 @@ type Matcher =
     AnyMatcher {name: String, arguments: List Matcher} -- Unknown variables and functions
     | RealMatcher {value: Float} -- Numbers
     | ExactMatcher {name: String, arguments: List Matcher} -- Known functions or variables, exact arguments
-    | CommutativeMatcher {name: String, arguments: List Matcher }  -- Unordered (set-based)
+    | CommutativeMatcher {name: String, arguments: List Matcher, others: Maybe String}  -- Unordered (set-based)
     | DeclarativeMatcher {name: String, arguments: List Matcher, commutative: Bool} -- Specifically for Declarative statements
-    | CommutativeAssociativeMatcher {name: String, arguments: List Matcher } -- Unordered & group-able
 
 getName: Matcher -> String
 getName m = case m of
@@ -53,16 +52,14 @@ getName m = case m of
     ExactMatcher s -> s.name
     CommutativeMatcher s -> s.name
     DeclarativeMatcher s -> s.name
-    CommutativeAssociativeMatcher s -> s.name
 
 countChildren: Matcher -> Int
 countChildren m = case m of
     AnyMatcher s -> List.length s.arguments
-    RealMatcher s -> 0
+    RealMatcher _ -> 0
     ExactMatcher s -> List.length s.arguments
-    CommutativeMatcher s -> List.length s.arguments
+    CommutativeMatcher s -> List.length s.arguments + (Maybe.map (\_ -> 1) s.others |> Maybe.withDefault 0)
     DeclarativeMatcher s -> List.length s.arguments
-    CommutativeAssociativeMatcher s -> List.length s.arguments
 
 type alias MatchResult state =
     {   nodes: Dict.Dict Int (Math.Tree (State state))
@@ -74,13 +71,17 @@ type alias ReplacementState_ state =
     ,   argument: Maybe Int
     }
 
-type alias Value_ state =
-    {   subtree: Math.Tree (ReplacementState_ state)
-    ,   example: List Int -- List is only useful if there are no arguments
-    }
+type Value_ state =
+    SingleValue_ (Replacement_ state) -- List is only useful if there are no arguments
+    | MultiValue_ {op: String, pre: List (Replacement_ state), post: List (Replacement_ state)} -- These should only be matched once, so it'll simply be moving them around
+
+type alias Replacement_ state = {subtree: Math.Tree (ReplacementState_ state), example: List Int}
 
 addMatch: String -> Dict.Dict String Int -> Math.Tree () -> MatchResult state -> MatchResult state
-addMatch key args value result = {result | matches = Dict.insert key {subtree = toValue_ (\_ -> Nothing) args value, example = []} result.matches}
+addMatch key args value result =
+    {   result
+    |   matches = Dict.insert key (SingleValue_ {subtree = toValue_ (\_ -> Nothing) args value, example = []}) result.matches
+    }
 
 variableArgsOnly: List Matcher -> Result String (Dict.Dict String Int)
 variableArgsOnly = List.indexedMap Tuple.pair
@@ -145,13 +146,14 @@ toValue_ converter varDict =
         convert
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
-selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state), Int)
+selectedSubtree: Set.Set Int -> Equation state -> Result String (Math.Tree (State state), Set.Set Int, Int)
 selectedSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Nodes not found"
     Just (id, nodes) ->
         processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> Ok (subEq.root, subEq)) eq
         |> Result.map (\(root, _) ->
             (   root
+            ,   nodes
             ,   (   case root of
                 Math.RealNode _ -> 0
                 Math.VariableNode _ -> 0
@@ -234,7 +236,7 @@ matchNode matcher root = case (matcher, root) of
     (ExactMatcher m, Math.VariableNode n) -> m.name == n.name && List.isEmpty m.arguments
     (ExactMatcher m, Math.GenericNode n) -> m.name == n.name && List.length m.arguments == List.length n.children
     (DeclarativeMatcher m, Math.DeclarativeNode n) -> m.name == n.name
-    (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name -- TODO: switch to CommutativeAssociativeMatcher
+    (CommutativeMatcher m, Math.BinaryNode n) -> m.name == n.name
     _ -> False
 
 -- ## groupSubtree: make children go one more step down
@@ -244,16 +246,29 @@ groupSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
     Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
             Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
                 else if not n.commutative then Err "Not implemented for non-commutative"
-                else let filtered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
-                    let unfiltered = List.filter (\c -> Set.member (Math.getState c |> getID) nodes |> not) n.children in
-                    if List.isEmpty filtered || List.isEmpty unfiltered then Err "Grouping all or none does nothing"
+                else let (pre,group,post) = groupPartition_ (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
+                    if (List.length pre + List.length post == 0) || List.isEmpty group then Err "Grouping all or none does nothing"
                     else let (newS, newT) = addNode_ Nothing (getID n.state) subEq.tracker in
-                        let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent filtered in
-                        Ok ((), {root = Math.BinaryNode {n | children = Math.BinaryNode {n | children = filtered, state = newS}::unfiltered}, tracker = {newT | parent = newP}})
+                        let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent group in
+                        Ok ((), {root = Math.BinaryNode
+                            {   n
+                            |   children = List.reverse pre++(Math.BinaryNode {n | children = List.reverse group, state = newS}::List.reverse post)
+                            }
+                            , tracker = {newT | parent = newP}
+                            }
+                        )
             _ -> Err "Node is not associative"
         )
         eq
         |> Result.map Tuple.second
+
+groupPartition_: (Math.Tree (State state) -> Bool) -> List (Math.Tree (State state)) -> (List (Math.Tree (State state)),List (Math.Tree (State state)),List (Math.Tree (State state)))
+groupPartition_ check = List.foldl
+    (\elem (pre,group,post) -> if check elem then (pre, elem::group, post)
+        else if List.isEmpty group then (elem::pre, group, post)
+        else (pre, group, elem::post)
+    )
+    ([],[],[])
 
 ungroupSubtree: Set.Set Int -> Equation state -> Result String (Equation state)
 ungroupSubtree ids eq =
@@ -311,13 +326,13 @@ replaceRealNode ids target subtree eq = case affectedSubtree_ ids eq.tracker.par
         |> Result.map Tuple.second
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
-matchSubtree: Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
-matchSubtree matcher root =
-    extractPattern_ matcher root (Backtrack.init {nodes = Dict.empty, matches = Dict.empty})
-    |> Backtrack.toMaybe
+matchSubtree: Set.Set Int -> Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
+matchSubtree priority matcher root =
+    extractPattern_ priority matcher root (Backtrack.init {nodes = Dict.empty, matches = Dict.empty})
+    |> Maybe.andThen Backtrack.getState
 
-extractPattern_: Matcher -> Math.Tree (State state) -> Backtrack.Continuation (MatchResult state) -> Backtrack.Continuation (MatchResult state)
-extractPattern_ from root token = case from of
+extractPattern_: Set.Set Int -> Matcher -> Math.Tree (State state) -> Backtrack.Continuation (MatchResult state) -> Maybe (Backtrack.Continuation (MatchResult state))
+extractPattern_ priority from root token = case from of
     RealMatcher s -> case root of
         Math.RealNode n -> if n.value /= s.value then Backtrack.fail
             else Backtrack.return Just token
@@ -329,24 +344,25 @@ extractPattern_ from root token = case from of
                 |> Result.toMaybe
                 |> Maybe.andThen (\varDict -> let newSubtree = toValue_ Just varDict root in
                     case Dict.get s.name result.matches of
-                        Just existing ->
+                        Just (MultiValue_ _) -> Nothing
+                        Just (SingleValue_ existing) ->
                             if subtreeEqual_ newSubtree existing.subtree |> not then Nothing
                             else if List.isEmpty s.arguments |> not then Just result
                             else
                                 Just
                                 {  result
                                 |   nodes = Dict.insert id root result.nodes
-                                ,   matches = Dict.insert s.name {existing | example = id::existing.example} result.matches
+                                ,   matches = Dict.insert s.name (SingleValue_ {existing | example = id::existing.example}) result.matches
                                 }
                         _ ->
                             if List.isEmpty s.arguments |> not then
                                 Just {  result
-                                | matches = Dict.insert s.name {subtree = newSubtree, example = []} result.matches
-                                }
+                                | matches = Dict.insert s.name (SingleValue_ {subtree = newSubtree, example = []}) result.matches
+                                } -- TODO: Someway of preserving some of the functions
                             else Just
                                 {  result
                                 |   nodes = Dict.insert id root result.nodes
-                                ,   matches = Dict.insert s.name {subtree = newSubtree, example = [id]} result.matches
+                                ,   matches = Dict.insert s.name (SingleValue_ {subtree = newSubtree, example = [id]}) result.matches
                                 }
                     )
                 ) token
@@ -356,23 +372,54 @@ extractPattern_ from root token = case from of
                 else Backtrack.return Just token
             _ -> Backtrack.fail
         else case root of
-            Math.GenericNode n -> if n.name /= s.name then Backtrack.fail
-                else Backtrack.searchOrdered extractPattern_ s.arguments n.children token
+            Math.GenericNode n -> if n.name /= s.name || (List.length s.arguments /= List.length n.children)
+                then Backtrack.fail
+                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) n.children token
             Math.UnaryNode n -> if n.name /= s.name then Backtrack.fail
                 else case s.arguments of
-                    [arg] -> extractPattern_ arg n.child token
+                    [arg] -> extractPattern_ priority arg n.child token
                     _ -> Backtrack.fail
             _ -> Backtrack.fail
     CommutativeMatcher s -> case root of
         Math.BinaryNode n -> if s.name /= n.name then Backtrack.fail
-            else Backtrack.searchUnordered extractPattern_ s.arguments n.children token
+            else case s.others of
+                Nothing -> let priorityList = priorityList_ priority n.children in
+                    if List.length s.arguments /= List.length priorityList then Backtrack.fail
+                    else Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList token
+                Just o -> List.indexedMap Tuple.pair n.children
+                    |> List.partition (\(_, childN) -> Set.member (Math.getState childN |> getID) priority)
+                    |> (\(a,b) -> Backtrack.run
+                        (   Backtrack.unorderedStack (\slot (_, c) -> extractPattern_ priority slot c) s.arguments
+                        ++  [ otherMatchEvaluator_ s.name o ]
+                        )
+                        (a++b) token
+                    )
         _ -> Backtrack.fail
     DeclarativeMatcher s -> case root of
-        Math.DeclarativeNode n -> if s.name /= n.name then Backtrack.fail
-            else if s.commutative then Backtrack.searchUnordered extractPattern_ s.arguments n.children token
-            else Backtrack.searchOrdered extractPattern_ s.arguments n.children token
+        Math.DeclarativeNode n -> if s.name /= n.name || (List.length s.arguments /= List.length n.children) then Backtrack.fail
+            else let priorityList = priorityList_ priority n.children in
+                if s.commutative then Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList token
+                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) priorityList token
         _ -> Backtrack.fail
-    CommutativeAssociativeMatcher _ -> Backtrack.fail -- TODO:
+
+priorityList_: Set.Set Int -> List (Math.Tree (State state)) -> List (Math.Tree (State state))
+priorityList_ set = List.partition (\n -> Set.member (Math.getState n |> getID) set) >> (\(a,b) -> a++b)
+
+otherMatchEvaluator_: String -> String -> Backtrack.Evaluator (MatchResult state) (Int, Math.Tree (State state))
+otherMatchEvaluator_ op key nodes = Backtrack.return (\result -> List.sortBy Tuple.first nodes
+    |> List.indexedMap Tuple.pair
+    |> List.partition (\(index, (preIndex, _)) -> index == preIndex)
+    |> (\(a,b)-> let toReplacements = List.map (\(_, (_, n)) -> {subtree = toValue_ Just Dict.empty n, example = [Math.getState n |> getID]}) in
+        Just {   result
+        |   nodes = List.foldl (\(_, n) -> Dict.insert (Math.getState n |> getID) n) result.nodes nodes
+        ,   matches = Dict.insert key (MultiValue_ {op = op, pre = toReplacements a, post = toReplacements b}) result.matches
+        }
+    )
+    )
+
+-- Splits
+childrenCategories_: List (Math.Tree (State state)) -> Dict.Dict String (List (Math.Tree (State state)))
+childrenCategories_ list = Dict.empty
 
 subtreeEqual_: Math.Tree (ReplacementState_ state) -> Math.Tree (ReplacementState_ state) -> Bool
 subtreeEqual_ = Math.equal
@@ -388,9 +435,13 @@ replaceSubtree ids into with eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Unable to find selected nodes"
     Just (id, _) ->
         processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq ->
-            let (newRoot, (newTracker, _)) = constructFromSource_ with subEq.tracker -1 into in
-            let parent = Dict.get (Math.getState subEq.root |> getID) subEq.tracker.parent in
-            Ok ((), {root = newRoot, tracker = setParent_ newRoot parent newTracker})
+            let
+                (newRoot, (newTracker, _)) = constructFromSource_ with subEq.tracker -1 into
+                pID = Dict.get (Math.getState subEq.root |> getID) subEq.tracker.parent
+                finalTracker = Set.diff (getSubtreeIDs_ subEq.root) (getSubtreeIDs_ newRoot)
+                    |> Set.foldl (\elem t -> {t | parent = Dict.remove elem t.parent}) (setParent_ newRoot pID newTracker)
+            in
+            Ok ((), {root = newRoot, tracker = finalTracker})
         )
         eq
         |> Result.map Tuple.second
@@ -401,6 +452,15 @@ setParent_ root parent tracker = let id = Math.getState root |> getID in
         Nothing -> {tracker | parent = Dict.remove id tracker.parent}
         Just p -> {tracker | parent = Dict.insert id p tracker.parent}
 
+getSubtreeIDs_: Math.Tree (State state) -> Set.Set Int
+getSubtreeIDs_ root = case root of
+    Math.RealNode s -> Set.singleton (getID s.state)
+    Math.VariableNode s -> Set.singleton (getID s.state)
+    Math.UnaryNode s -> Set.insert (getID s.state) (getSubtreeIDs_ s.child)
+    Math.BinaryNode s -> List.foldl (\e -> Set.union (getSubtreeIDs_ e)) (Set.singleton (getID s.state)) s.children
+    Math.GenericNode s -> List.foldl (\e -> Set.union (getSubtreeIDs_ e)) (Set.singleton (getID s.state)) s.children
+    Math.DeclarativeNode s -> List.foldl (\e -> Set.union (getSubtreeIDs_ e)) (Set.singleton (getID s.state)) s.children
+
 constructFromSource_: MatchResult state -> Tracker_ state -> Int -> Matcher -> (Math.Tree (State state), (Tracker_ state, MatchResult state))
 constructFromSource_ result tracker p matcher =
     let
@@ -410,11 +470,21 @@ constructFromSource_ result tracker p matcher =
     in
         case matcher of
             AnyMatcher m -> case Dict.get m.name result.matches of
-                Just existing -> case existing.example of
+                Just (SingleValue_ existing) -> case existing.example of
                     (nodeID::other) -> case Dict.get nodeID result.nodes of
-                        Just n -> (n, (setParent_ n (Just p) tracker, {result | matches = Dict.insert m.name {existing | example = other} result.matches}))
+                        Just n -> (n, (setParent_ n (Just p) tracker, {result | matches = Dict.insert m.name (SingleValue_ {existing | example = other}) result.matches}))
                         Nothing -> constructFromValue_ p result m.arguments existing.subtree tracker
                     _ -> constructFromValue_ p result m.arguments existing.subtree tracker
+                Just (MultiValue_ nodes) -> processMultiValue_ id result.nodes t nodes.pre
+                    |> (\(preNodes, (newT, newPre)) -> processMultiValue_ id result.nodes newT nodes.post
+                        |> (\(postNodes, (finalT, newPost)) ->
+                            (   Math.BinaryNode {state = s, name = nodes.op, commutative = True, associative = True, children = preNodes ++ postNodes}
+                            ,   (   finalT
+                                ,   {result | matches = Dict.insert m.name (MultiValue_ {nodes | pre = newPre, post = newPost}) result.matches}
+                                )
+                            )
+                        )
+                    )
                 _ -> (Math.VariableNode {state = s, name = "MISSING MATCH"}, (t, result)) -- TODO:
             RealMatcher m -> (Math.RealNode {state = s, value = m.value}, (t, result))
             ExactMatcher m -> case m.arguments of
@@ -426,8 +496,25 @@ constructFromSource_ result tracker p matcher =
             DeclarativeMatcher m -> constructChildren t m.arguments
                 |> (\(c, final) -> (Math.DeclarativeNode {state = s, name = m.name, children = c}, final))
             CommutativeMatcher m -> constructChildren t m.arguments
-                |> (\(c, final) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, final))
-            CommutativeAssociativeMatcher _ -> (Math.VariableNode {state = s, name = "TODO"}, (t, result)) -- TODO:
+                |> (\(c, (nextT, nextRes)) -> case m.others of
+                    Nothing -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, (nextT, nextRes))
+                    Just o -> case Dict.get o result.matches of
+                        Just (MultiValue_ mv) -> if mv.op /= m.name
+                            then constructFromSource_ nextRes nextT id (AnyMatcher {name = o, arguments = []})
+                                |> (\(finalNode, final) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c ++ [finalNode]}, final))
+                            else processMultiValue_ id result.nodes nextT mv.pre
+                                |> (\(preNodes, (newT, newPre)) -> processMultiValue_ id result.nodes newT mv.post
+                                    |> (\(postNodes, (finalT, newPost)) ->
+                                        (   Math.BinaryNode {state = s, name = mv.op, commutative = True, associative = True, children = preNodes ++ c ++ postNodes}
+                                        ,   (   finalT
+                                            ,   {nextRes | matches = Dict.insert m.name (MultiValue_ {mv | pre = newPre, post = newPost}) nextRes.matches}
+                                            )
+                                        )
+                                    )
+                                )
+                        _ -> constructFromSource_ nextRes nextT id (AnyMatcher {name = o, arguments = []})
+                            |> (\(finalNode, final) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c ++ [finalNode]}, final))
+                )
 
 -- TODO: If the rules match f(x) on an existing node, we shuld try to reuse the existing node ids
 constructFromValue_: Int -> MatchResult state -> List Matcher -> Math.Tree (ReplacementState_ state) -> Tracker_ state -> (Math.Tree (State state), (Tracker_ state, MatchResult state))
@@ -450,6 +537,17 @@ constructFromValue_ parent result args existing tracker =
             (Math.GenericNode {state = newS, name = s.name, children = newChildren}, final)
         Math.DeclarativeNode s -> let (newChildren, final) = processChildren (newTracker, result) s.children in
             (Math.DeclarativeNode {state = newS, name = s.name, children = newChildren}, final)
+
+processMultiValue_: Int -> Dict.Dict Int (Math.Tree (State state)) -> Tracker_ state -> List (Replacement_ state) -> (List (Math.Tree (State state)), (Tracker_ state, List (Replacement_ state)))
+processMultiValue_ parent dict tracker = Helper.listMapWithState (\(t,r) child -> case List.head child.example of
+        Nothing -> constructFromValue_ parent {nodes = Dict.empty, matches = Dict.empty} [] child.subtree t
+            |> \(node, (newT, _)) -> (node, (newT, r ++ [child]))
+        Just nodeID -> case Dict.get nodeID dict of
+            Nothing -> let (newS, newTracker) = addNode_ Nothing parent t in
+                (Math.VariableNode {state = newS, name = "MISSING MATCH"},(newTracker, r ++ [{child | example = List.drop 1 child.example}]))
+            Just node -> (node, (setParent_ node (Just parent) tracker, r ++ [{child | example = List.drop 1 child.example}]))
+    )
+    (tracker,[])
 
 {-
 ## Encoding and Decoding
@@ -490,12 +588,11 @@ encodeMatcher matcher = case matcher of
     ExactMatcher s -> Encode.object
         [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "exact")]
     CommutativeMatcher s -> Encode.object
-        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "commutative")]
+        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments),
+        ("other", Maybe.map Encode.string s.others |> Maybe.withDefault Encode.null),("type", Encode.string "commutative")]
     DeclarativeMatcher s -> Encode.object
         [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments)
         ,("commutative", Encode.bool s.commutative), ("type", Encode.string "declarative")]
-    CommutativeAssociativeMatcher s -> Encode.object
-        [("name", Encode.string s.name), ("arguments", Encode.list encodeMatcher s.arguments), ("type", Encode.string "commutativeAssociative")]
 
 matcherDecoder: Decode.Decoder Matcher
 matcherDecoder = Decode.field "type" Decode.string
@@ -505,13 +602,12 @@ matcherDecoder = Decode.field "type" Decode.string
         "real" -> Decode.map (\v -> RealMatcher {value = v}) (Decode.field "value" Decode.float)
         "exact" -> Decode.map2 (\n a -> ExactMatcher {name = n, arguments = a})
             (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
-        "commutative" ->Decode.map2 (\n a -> CommutativeMatcher {name = n, arguments = a})
+        "commutative" ->Decode.map3 (\n a o -> CommutativeMatcher {name = n, arguments = a, others = o})
             (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
+            (Decode.maybe <| Decode.field "other" Decode.string)
         "declarative" ->Decode.map3 (\n a c -> DeclarativeMatcher {name = n, arguments = a, commutative = c})
             (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
             (Decode.field "commutative" <| Decode.oneOf [Decode.bool, Decode.succeed False])
-        "commutativeAssociative" ->Decode.map2 (\n a -> CommutativeAssociativeMatcher {name = n, arguments = a})
-            (Decode.field "name" Decode.string) (Decode.field "arguments" <| Decode.list <| Decode.lazy (\_ -> matcherDecoder))
         _ -> Decode.fail ("Unknown type of matcher: " ++ t)
     )
 
@@ -522,13 +618,22 @@ encodeMatchResult convert result = Encode.object
     ]
 
 encodeValue_: (state -> Encode.Value) -> Value_ state -> Encode.Value
-encodeValue_ convert v = Encode.object
+encodeValue_ convert v = case v of
+    SingleValue_ s -> Encode.object [("type",Encode.string "single"),("child",encodeReplacement_ convert s)]
+    MultiValue_ s -> Encode.object
+        [("type",Encode.string "multi"),("op",Encode.string s.op)
+        ,("pre",Encode.list (encodeReplacement_ convert) s.pre)
+        ,("post", Encode.list (encodeReplacement_ convert) s.post)
+        ]
+
+encodeReplacement_: (state -> Encode.Value) -> Replacement_ state -> Encode.Value
+encodeReplacement_ convert r = Encode.object
     [   ("subtree", Math.encode (\s -> Encode.object
             [ ("original", Maybe.map (encodeState_ convert) s.original |> Maybe.withDefault Encode.null)
             , ("argument", Maybe.map Encode.int s.argument |> Maybe.withDefault Encode.null)
             ]
-        ) v.subtree)
-    ,   ("example", Encode.list Encode.int v.example)
+        ) r.subtree)
+    ,   ("example", Encode.list Encode.int r.example)
     ]
 
 matchResultDecoder: Decode.Decoder state -> Decode.Decoder (MatchResult state)
@@ -537,7 +642,18 @@ matchResultDecoder innerDec = Decode.map2 (\n m -> {nodes = n, matches = m})
     (Decode.field "matches" <| Decode.dict (valueDecoder_ innerDec))
 
 valueDecoder_: Decode.Decoder state -> Decode.Decoder (Value_ state)
-valueDecoder_ innerDec = Decode.map2 (\s e -> {subtree = s, example = e})
+valueDecoder_ innerDecode = Decode.field "type" Decode.string
+    |> Decode.andThen (\t -> case t of
+        "single" -> Decode.map SingleValue_ (Decode.field "child" (replacementDecoder_ innerDecode))
+        "multi" -> Decode.map3 (\o pr po -> MultiValue_ {op = o, pre = pr, post = po})
+            (Decode.field "op" Decode.string)
+            (Decode.field "pre" (Decode.list (replacementDecoder_ innerDecode)))
+            (Decode.field "post" (Decode.list (replacementDecoder_ innerDecode)))
+        _ -> Decode.fail "unknown type of value"
+    )
+
+replacementDecoder_: Decode.Decoder state -> Decode.Decoder (Replacement_ state)
+replacementDecoder_ innerDec = Decode.map2 (\s e -> {subtree = s, example = e})
     (Decode.field "subtree" <| Math.decoder (
         Decode.map2 (\o a -> {original = o, argument = a})
         (Decode.maybe <| Decode.field "original" <| stateDecoder_ innerDec)

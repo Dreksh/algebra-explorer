@@ -56,11 +56,12 @@ equal check left right = case (left, right) of
     (BinaryNode l, BinaryNode r) -> check l.state r.state && l.name == r.name
         && l.associative == r.associative && l.commutative == r.commutative
         && List.length l.children == List.length r.children
-        &&  (   Backtrack.searchUnordered
-                (\lhs rhs result -> if equal check lhs rhs then Backtrack.return Just result else Backtrack.fail)
-                l.children r.children
-                (Backtrack.init True)
-            |> Backtrack.toMaybe
+        &&  (   Backtrack.run
+                (   Backtrack.unorderedStack
+                    (\lhs rhs result -> if equal check lhs rhs then Backtrack.return Just result else Backtrack.fail)
+                    l.children
+                ) r.children (Backtrack.init True)
+            |> Maybe.andThen Backtrack.getState
             |> Maybe.withDefault False
             )
     (GenericNode l, GenericNode r) -> check l.state r.state && l.name == r.name

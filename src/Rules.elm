@@ -10,6 +10,7 @@ import Html exposing (a, h3, p, text)
 import Html.Attributes exposing (class, title)
 import Json.Decode as Dec
 import Json.Encode as Enc
+import Set
 -- Ours
 import Helper
 import Matcher
@@ -40,7 +41,6 @@ type Token_ =
 type alias Expression_ =
     {   name: String
     ,   root: Matcher.Matcher
-    ,   tokens: Dict.Dict String Token_
     }
 
 type alias Rule_ =
@@ -217,7 +217,7 @@ evaluateStr model root = (
 ## UI
 -}
 
-menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Int) -> List (Menu.Part msg)
+menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Set.Set Int, Int) -> List (Menu.Part msg)
 menuTopics converter model selectedNode =
     let
         individualRule rule = let (display, params) = matchRule_ selectedNode rule in
@@ -246,14 +246,14 @@ menuTopics converter model selectedNode =
     model.topics
     |> List.reverse
 
-matchRule_: Maybe (Math.Tree (Matcher.State state), Int) -> Rule_ -> (Bool, Maybe (Parameters state))
+matchRule_: Maybe (Math.Tree (Matcher.State state), Set.Set Int, Int) -> Rule_ -> (Bool, Maybe (Parameters state))
 matchRule_ selected rule = case selected of
     Nothing -> (True, Nothing)
-    Just (node, _) -> if List.any (\m -> Matcher.matchNode m.from.root node) rule.matches |> not
+    Just (node, priority, _) -> if List.any (\m -> Matcher.matchNode m.from.root node) rule.matches |> not
         then (False, Nothing)
         else
             let
-                matches = List.foldl (\m -> Matcher.matchSubtree m.from.root node
+                matches = List.foldl (\m -> Matcher.matchSubtree priority m.from.root node
                     |> Maybe.map (\result -> {from = result, name = m.to.name, matcher = m.to.root})
                     |> Helper.maybeAppend
                     ) [] rule.matches
@@ -274,7 +274,7 @@ applyButton converter e = case e of
     Nothing -> a [title "Cannot be applied"] [text "Apply"]
     Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "Apply"]
 
-coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Int) -> Menu.Part msg
+coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Set.Set Int, Int) -> Menu.Part msg
 coreTopic_ converter root =
     let
         shouldDisplay a conv = a.empty || ( case conv a of
@@ -284,7 +284,7 @@ coreTopic_ converter root =
         apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False} in
             case root of
             Nothing -> {applies | empty = True}
-            Just (Math.BinaryNode n, childCount) -> if not n.associative then {applies | subApply = (Just Substitute)}
+            Just (Math.BinaryNode n, _, childCount) -> if not n.associative then {applies | subApply = (Just Substitute)}
                 else
                     let
                         sameBinaryNode = List.any
@@ -299,7 +299,7 @@ coreTopic_ converter root =
                     ,   groupApply = if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
                     ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
                     }
-            Just (Math.RealNode n, _ ) -> {applies | numApply = Just (NumericalSubstitution n.value)}
+            Just (Math.RealNode n, _, _ ) -> {applies | numApply = Just (NumericalSubstitution n.value)}
             _ -> {applies | subApply = Just Substitute}
     in
         Menu.Section "Core" True
@@ -357,6 +357,13 @@ functionDecoder_ = Dec.map4 FunctionProperties_
     (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
     (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
     (Dec.field "javascript" javascriptDecoder_)
+    |> Dec.andThen (\f ->
+        if (f.associative || f.commutative) && f.arguments /= 2
+        then Dec.fail "Associative and Commutative properties only apply to binary functions"
+        else if f.associative && not f.commutative
+        then Dec.fail "Only associative binary nodes is not supported yet"
+        else Dec.succeed f
+    )
 
 javascriptDecoder_: Dec.Decoder Javascript_
 javascriptDecoder_ = Dec.map2 Tuple.pair
@@ -382,13 +389,16 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
         |>  Dec.andThen (
             Helper.resultList (\(key, description) (others, dict) -> Math.parse key
                 |> Result.andThen (treeToMatcher_ True functions constants)
-                |> Result.andThen (\(matcher, tokens) -> case matcher of
-                    Matcher.AnyMatcher _ -> Ok (matcher, tokens)
+                |> Result.andThen (\(matcher, _) -> case matcher of
+                    Matcher.AnyMatcher m -> case Dict.get m.name dict of
+                        Just _ -> Err "Parameters are duplicated"
+                        Nothing -> Ok
+                            (   others ++ [{match = {name = key, root = matcher}, description = description}]
+                            ,   case m.arguments of
+                                [] -> Dict.insert m.name AnyToken dict
+                                n -> Dict.insert m.name (FunctionToken (List.length n)) dict
+                            )
                     _ -> Err "Parameters can only be variables or functions"
-                )
-                |> Result.andThen (\(matcher, tokens) ->
-                    mergeTokens_ dict tokens
-                    |> Result.map (\newDict -> (others ++ [{match= {name = key, root = matcher, tokens = tokens}, description = description}], newDict))
                 )
             )
             ([], Dict.empty)
@@ -407,52 +417,85 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
         |> Dec.map (Rule_ title description parameters)
     )
 
-verifyMatch_: Dict.Dict String Token_ -> (Expression_, Expression_) -> Dec.Decoder {from: Expression_, to: Expression_}
-verifyMatch_ paramDict (from, to) = mergeTokens_ paramDict from.tokens
-    |> Result.andThen (\fromDict ->
-        if Dict.diff to.tokens fromDict |> Dict.isEmpty then Ok {from = from, to = to}
-        else Err "Not enough information for the transformation"
+verifyMatch_: Dict.Dict String Token_ -> ((Expression_, Dict.Dict String (Bool, Token_)), (Expression_, Dict.Dict String (Bool, Token_))) -> Dec.Decoder {from: Expression_, to: Expression_}
+verifyMatch_ paramDict ((from, fromTok), (to, toTok)) = mergeTokens_ paramDict fromTok
+    |> Result.andThen (\fromDict -> if Dict.diff toTok fromDict |> Dict.isEmpty |> not
+        then Err "Not enough information for the transformation"
+        else Helper.resultDict (\k (lSingle,lTok) set ->
+            if not lSingle then Ok set
+            else case Dict.get k toTok of
+                Just (rSingle, rTok) -> case (lTok, rTok) of
+                    ((FunctionToken oArgs), (FunctionToken args)) ->
+                        if oArgs == args then Ok (if lSingle && rSingle then Set.insert k set else set)
+                        else Err ("Different function signature for '" ++ k ++ "' between from and to")
+                    (AnyToken, AnyToken) -> Ok (if lSingle && rSingle then Set.insert k set else set)
+                    _ -> Err ("Different usages of '" ++ k ++ "' between from and to")
+                _ -> Ok set
+        ) Set.empty fromDict
+        |> Result.map (\nSet -> {from = {from | root = setOthers_ nSet from.root}, to = {to | root = setOthers_ nSet to.root}} )
     )
     |> Helper.resultToDecoder
 
-mergeTokens_: Dict.Dict String Token_ -> Dict.Dict String Token_ -> Result String (Dict.Dict String Token_)
+setOthers_: Set.Set String -> Matcher.Matcher -> Matcher.Matcher
+setOthers_ others m = case m of
+    Matcher.AnyMatcher s -> Matcher.AnyMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
+    Matcher.RealMatcher _ -> m
+    Matcher.ExactMatcher s -> Matcher.ExactMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
+    Matcher.DeclarativeMatcher s -> Matcher.DeclarativeMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
+    Matcher.CommutativeMatcher s -> case s.others of
+        Just _ -> Matcher.CommutativeMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
+        Nothing -> List.indexedMap Tuple.pair s.arguments
+            |> List.foldl (\(index, n) res -> case n of
+                Matcher.AnyMatcher c -> if List.isEmpty c.arguments && Set.member s.name others then Just (index, c.name)
+                    else res
+                _ -> res
+            ) Nothing
+            |> (\res -> case res of
+                Nothing -> Matcher.CommutativeMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
+                Just (index, name) -> Matcher.CommutativeMatcher
+                    {   s
+                    |   arguments = List.map (setOthers_ others) (List.take index s.arguments ++ List.drop (index+1) s.arguments)
+                    ,   others = Just name
+                    }
+            )
+
+mergeTokens_: Dict.Dict String Token_ -> Dict.Dict String (Bool, Token_) -> Result String (Dict.Dict String (Bool, Token_))
 mergeTokens_ parameters new = Helper.resultDict (\name tok dict -> case Dict.get name dict of
-        Nothing -> Ok (Dict.insert name tok dict)
-        Just oldTok -> case (oldTok, tok) of
+        Nothing -> Ok (Dict.insert name (False, tok) dict)
+        Just (_, oldTok) -> case (oldTok, tok) of
             ((FunctionToken oArgs), (FunctionToken args)) ->
-                if oArgs == args then Ok dict
+                if oArgs == args then Ok (Dict.insert name (False, oldTok) dict)
                 else Err ("Different function signature for '" ++ name ++ "' detected within parameters")
-            (AnyToken, AnyToken) -> Ok dict
+            (AnyToken, AnyToken) -> Ok (Dict.insert name (False, oldTok) dict)
             _ -> Err ("Different usages of '" ++ name ++ "' detected within parameters")
     )
-    parameters
     new
+    parameters
 
-expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Expression_
+expressionDecoder_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder (Expression_, Dict.Dict String (Bool, Token_))
 expressionDecoder_ from functions constants =
     Dec.andThen
     (\str -> case Math.parse str |> Result.andThen (treeToMatcher_ from functions constants) of
         Err errStr -> Dec.fail ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
-        Ok (matcher, tokens) -> Dec.succeed {name = str, root = matcher, tokens = tokens}
+        Ok (matcher, tokens) -> Dec.succeed ({name = str, root = matcher}, tokens)
     )
     Dec.string
 
-treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String Token_)
+updateTokens_: String -> (Bool, Token_) -> Dict.Dict String (Bool, Token_) -> Result String (Dict.Dict String (Bool, Token_))
+updateTokens_ k (single, v) total = case Dict.get k total of
+    Nothing -> Ok (Dict.insert k (single, v) total)
+    Just (_, other) -> case (other, v) of
+        (AnyToken, AnyToken) -> Ok (Dict.insert k (False, other) total)
+        (FunctionToken lArgs, FunctionToken rArgs) -> if lArgs == rArgs
+            then Ok (Dict.insert k (False, other) total)
+            else Err ("'" ++ k ++ "' has different number of arguments")
+        _ -> Err ("'" ++ k ++ "' is used as a variable and a function")
+
+treeToMatcher_: Bool -> Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Math.Tree () -> Result String (Matcher.Matcher, Dict.Dict String (Bool, Token_))
 treeToMatcher_ from functions constants root =
     let
         processChildren = Helper.resultList (\child (list, tokens) -> treeToMatcher_ from functions constants child
-                |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict
-                    (\k v total -> case Dict.get k total of
-                        Nothing -> Ok (Dict.insert k v total)
-                        Just other -> case (other, v) of
-                            (AnyToken, AnyToken) -> Ok total
-                            (FunctionToken lArgs, FunctionToken rArgs) -> if lArgs == rArgs
-                                then Ok total
-                                else Err ("'" ++ k ++ "' has different number of arguments")
-                            _ -> Err ("'" ++ k ++ "' is used as a variable and a function")
-                    )
-                    tokens
-                    childToken
+                |> Result.andThen (\(childMatcher, childToken) -> Helper.resultDict updateTokens_ tokens childToken
                     |> Result.map (\newToken -> (list ++ [childMatcher], newToken))
                 )
             )
@@ -462,24 +505,22 @@ treeToMatcher_ from functions constants root =
         Math.RealNode s -> Ok (Matcher.RealMatcher {value = s.value}, Dict.empty)
         Math.VariableNode s -> if Dict.member s.name constants
             then Ok (Matcher.ExactMatcher {name = s.name, arguments = []}, Dict.empty)
-            else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name AnyToken)
+            else Ok (Matcher.AnyMatcher {name = s.name, arguments = []}, Dict.singleton s.name (True, AnyToken))
         Math.UnaryNode s -> treeToMatcher_ from functions constants s.child
             |> Result.map (\(childMatcher, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = [childMatcher]}, tokens))
-        Math.BinaryNode s -> processChildren s.children
-            |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens)) -- TODO: Switch to CommutativeAssociativeMatcher
+        Math.BinaryNode s -> if s.commutative then processChildren s.children |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children, others = Nothing}, tokens))
+            else processChildren s.children |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
         Math.DeclarativeNode s -> processChildren s.children
             |> Result.map (\(children, tokens) -> (Matcher.DeclarativeMatcher {name = s.name, commutative = True, arguments = children}, tokens)) -- TODO: Not all of them are commutative (like <)
         Math.GenericNode s -> case Dict.get s.name functions of
             Nothing -> processChildren s.children
                 |> Result.andThen (\(children, tokens) ->
                     (if from then Matcher.variableArgsOnly children else Ok Dict.empty)
-                    |> Result.map (\_ -> (Matcher.AnyMatcher {name = s.name, arguments = children}, Dict.insert s.name (List.length children |> FunctionToken) tokens))
+                    |> Result.andThen (\_ -> updateTokens_ s.name (True, List.length children |> FunctionToken) tokens)
+                    |> Result.map (\newToks -> (Matcher.AnyMatcher {name = s.name, arguments = children}, newToks))
                 )
-            Just prop -> if prop.associative || prop.commutative
-                then processChildren s.children
-                    |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children}, tokens))
-                else processChildren s.children
-                    |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
+            Just prop -> if prop.commutative then processChildren s.children |> Result.map (\(children, tokens) -> (Matcher.CommutativeMatcher {name = s.name, arguments = children, others = Nothing}, tokens))
+                else processChildren s.children |> Result.map (\(children, tokens) -> (Matcher.ExactMatcher {name = s.name, arguments = children}, tokens))
 
 {-
 ## Encoding and Decoding
