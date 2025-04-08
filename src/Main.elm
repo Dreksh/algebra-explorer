@@ -9,7 +9,7 @@ import File
 import File.Download as FDownload
 import File.Select as FSelect
 import Html exposing (Html, a, button, div, form, input, pre, text)
-import Html.Attributes exposing (class, id, name, type_)
+import Html.Attributes exposing (class, id, name, placeholder, type_, value)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -65,6 +65,7 @@ type alias Swappable =
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
+    ,   resetInput: Bool
     ,   showHelp: Bool
     ,   showMenu: Bool
     }
@@ -125,6 +126,7 @@ init _ url key =
             , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Topics", "Core"])
             , evaluator = Evaluate.init evaluateString
             , createMode = if newScreen then Just Nothing else Nothing
+            , resetInput = False
             , showHelp = False
             , showMenu = if newScreen then True else False
             }
@@ -174,20 +176,23 @@ update event core = let model = core.swappable in
                 (Just _, _) -> ({core | dialog = Nothing}, Cmd.none)
                 (_, Just _) -> (updateCore {model | createMode = Nothing, showHelp = False}, Cmd.none)
                 _ -> (core, Cmd.none)
-        EnterCreateMode -> (updateCore {model | createMode = Just Nothing }, focusTextBar_ "textInput")
+        EnterCreateMode -> (updateCore {model | createMode = Just Nothing, resetInput = False}, focusTextBar_ "textInput")
         CancelCreateMode -> (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
-        SubmitEquation id str -> case Matcher.parseEquation Display.createState Display.updateState str of
-            Result.Ok root -> (
-                case id of
-                    Nothing ->
-                        Display.addEquation root model.display
-                    Just i ->
-                        Display.updateEquation i root model.display
-                )
-                |> (\dModel ->
-                    (updateCore {model | createMode = Nothing, display = dModel, showHelp = False}, Cmd.batch [updateQuery_ core dModel, updateMathJax ()])
-                )
-            Result.Err err -> submitNotification_ core err
+        SubmitEquation id str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
+            else case Matcher.parseEquation Display.createState Display.updateState str of
+                Result.Ok root -> (
+                    case id of
+                        Nothing ->
+                            Display.addEquation root model.display
+                        Just i ->
+                            Display.updateEquation i root model.display
+                    )
+                    |> (\dModel ->
+                        (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False, resetInput = True}
+                        ,   Cmd.batch [updateQuery_ core dModel, updateMathJax ()]
+                        )
+                    )
+                Result.Err err -> submitNotification_ core err
         ToggleHelp -> (updateCore {model | showHelp = not model.showHelp}, focusTextBar_ "textInput")
         ToggleMenu -> (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
         Save -> (core, saveFile model)
@@ -360,10 +365,13 @@ inputDiv model =
     )
     [   Icon.help [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
     ,   input
-        [ type_ "text"
-        , name "equation"
-        , id "textInput"
-        ]
+        (   [ type_ "text"
+            , name "equation"
+            , id "textInput"
+            , placeholder "Type an equation to solve"
+            ]
+        ++  if model.resetInput then [value ""] else []
+        )
         []
     ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CancelCreateMode]
     ,   button [type_ "submit", Icon.class "noDefault"] [   case model.createMode of
@@ -493,13 +501,14 @@ swappableDecoder = let evalStateDecoder = Decode.map2 Tuple.pair Decode.float (M
         (Decode.field "menu" Menu.decoder)
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalStateDecoder))
     )
-    (   Decode.map3 triplet
+    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
         (Decode.maybe <| Decode.field "createMode" <| Decode.maybe <| Decode.field "eq" Decode.int)
+        (Decode.field "resetInput" Decode.bool)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
     )
-    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),(createMode,showHelp,showMenu)) ->
-       Swappable display rules tutorial notification menu evaluator createMode showHelp showMenu
+    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),((createMode,resetInput),(showHelp,showMenu))) ->
+       Swappable display rules tutorial notification menu evaluator createMode resetInput showHelp showMenu
     )
 
 -- All internal state information should be encoded. This is mainly useful for debugging / bug-reports
@@ -519,6 +528,7 @@ saveFile model = Encode.encode 0
                 Just Nothing -> Encode.object []
                 Just (Just num) -> Encode.object [("eq", Encode.int num)]
             )
+        ,   ("resetInput", Encode.bool model.resetInput)
         ,   ("showHelp", Encode.bool model.showHelp)
         ,   ("showMenu", Encode.bool model.showMenu)
         ]

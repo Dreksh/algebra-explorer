@@ -144,7 +144,7 @@ ab - a variable "a" multiplied by a variable "b"
 
 -- Parser implementation
 parse: String -> Result String (Tree ())
-parse input = Parser.run equation_ input |> Result.mapError (createErrorMessage_ input)
+parse input = Parser.run (equation_ |. Parser.end) input |> Result.mapError (createErrorMessage_ input)
 
 equation_: Parser.Parser (Tree ())
 equation_ = Parser.loop []
