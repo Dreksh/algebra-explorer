@@ -446,7 +446,7 @@ setOthers_ others m = case m of
         Just _ -> Matcher.CommutativeMatcher {s | arguments = List.map (setOthers_ others) s.arguments}
         Nothing -> List.indexedMap Tuple.pair s.arguments
             |> List.foldl (\(index, n) res -> case n of
-                Matcher.AnyMatcher c -> if List.isEmpty c.arguments && Set.member s.name others then Just (index, c.name)
+                Matcher.AnyMatcher c -> if List.isEmpty c.arguments && Set.member c.name others then Just (index, c.name)
                     else res
                 _ -> res
             ) Nothing
