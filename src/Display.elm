@@ -95,8 +95,14 @@ replaceNumber target subtree model = case model.selected of
 replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
 replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
-    Just eq -> Matcher.replaceSubtree (Set.singleton id) (Matcher.RealMatcher {value = number}) {nodes = Dict.empty, matches = Dict.empty} eq
-        |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
+    Just eq ->
+        let
+            matcher = if number < 0
+                then Matcher.ExactMatcher {name = "-", arguments = [Matcher.RealMatcher {value = -number}]}
+                else Matcher.RealMatcher {value = number}
+        in
+            Matcher.replaceSubtree (Set.singleton id) matcher {nodes = Dict.empty, matches = Dict.empty} eq
+            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
 
 transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
 transformEquation matcher result model = case model.selected of
