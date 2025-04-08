@@ -57,12 +57,13 @@ processNext_: Evaluator state choice -> List (Evaluator state choice) -> List ch
 processNext_ eval nextEvals choices inputTok = eval choices inputTok
     |> Maybe.andThen (\childTok -> case childTok.progress of
         Just (res, p) -> removeSelectedChildren_ p choices
-            |> Maybe.andThen (\newChoices -> run nextEvals newChoices {initial = res, progress = Nothing})
-            |> Maybe.andThen (\finalTok -> case finalTok.progress of
-                Just (finalRes, List_ list) -> Just {inputTok | progress = Just (finalRes, List_ (childTok::list))}
-                _ -> Nothing
+            |> Maybe.andThen (\newChoices -> case run nextEvals newChoices {initial = res, progress = Nothing} of
+                Nothing -> processNext_ eval nextEvals choices childTok
+                Just finalTok -> case finalTok.progress of
+                    Just (finalRes, List_ list) -> Just {inputTok | progress = Just (finalRes, List_ (childTok::list))}
+                    _ -> Nothing
             )
-        _ -> Nothing
+        _ -> Nothing -- evaluating should always produce a result
     )
 
 removeSelectedChildren_: Progress_ state -> List choice -> Maybe (List choice)

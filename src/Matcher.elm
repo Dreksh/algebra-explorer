@@ -406,16 +406,23 @@ priorityList_: Set.Set Int -> List (Math.Tree (State state)) -> List (Math.Tree 
 priorityList_ set = List.partition (\n -> Set.member (Math.getState n |> getID) set) >> (\(a,b) -> a++b)
 
 otherMatchEvaluator_: String -> String -> Backtrack.Evaluator (MatchResult state) (Int, Math.Tree (State state))
-otherMatchEvaluator_ op key nodes = Backtrack.return (\result -> List.sortBy Tuple.first nodes
-    |> List.indexedMap Tuple.pair
-    |> List.partition (\(index, (preIndex, _)) -> index == preIndex)
-    |> (\(a,b)-> let toReplacements = List.map (\(_, (_, n)) -> {subtree = toValue_ Just Dict.empty n, example = [Math.getState n |> getID]}) in
-        Just {   result
-        |   nodes = List.foldl (\(_, n) -> Dict.insert (Math.getState n |> getID) n) result.nodes nodes
-        ,   matches = Dict.insert key (MultiValue_ {op = op, pre = toReplacements a, post = toReplacements b}) result.matches
-        }
-    )
-    )
+otherMatchEvaluator_ op key nodes = Backtrack.return (\result -> if List.isEmpty nodes then Just result
+    else if List.length nodes == 1 then List.head nodes
+        |> Maybe.map (\(_, node) -> let id = Math.getState node |> getID in
+            {   result
+            |   nodes = Dict.insert id node result.nodes
+            ,   matches = Dict.insert key (SingleValue_ {subtree = toValue_ Just Dict.empty node, example = [id]}) result.matches
+            })
+    else List.sortBy Tuple.first nodes
+        |> List.indexedMap Tuple.pair
+        |> List.partition (\(index, (preIndex, _)) -> index == preIndex)
+        |> (\(a,b)-> let toReplacements = List.map (\(_, (_, n)) -> {subtree = toValue_ Just Dict.empty n, example = [Math.getState n |> getID]}) in
+            Just {   result
+            |   nodes = List.foldl (\(_, n) -> Dict.insert (Math.getState n |> getID) n) result.nodes nodes
+            ,   matches = Dict.insert key (MultiValue_ {op = op, pre = toReplacements a, post = toReplacements b}) result.matches
+            }
+        )
+        )
 
 -- Splits
 childrenCategories_: List (Math.Tree (State state)) -> Dict.Dict String (List (Math.Tree (State state)))
@@ -499,6 +506,7 @@ constructFromSource_ result tracker p matcher =
                 |> (\(c, (nextT, nextRes)) -> case m.others of
                     Nothing -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, (nextT, nextRes))
                     Just o -> case Dict.get o result.matches of
+                        Nothing ->(Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c}, (nextT, nextRes)) -- no additional nodes matched
                         Just (MultiValue_ mv) -> if mv.op /= m.name
                             then constructFromSource_ nextRes nextT id (AnyMatcher {name = o, arguments = []})
                                 |> (\(finalNode, final) -> (Math.BinaryNode {state = s, name = m.name, associative = True, commutative = True, children = c ++ [finalNode]}, final))
