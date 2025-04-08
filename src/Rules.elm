@@ -83,10 +83,16 @@ type Event treeState =
     | NumericalSubstitution Float
     | Substitute
     | Download String
+    | Evaluate
 
 init: Model
 init =
-    {   functions = Dict.empty
+    {   functions = Dict.fromList
+            [   ("+",({arguments = 2, associative = True, commutative = True, javascript = InfixOp "+"},1))
+            ,   ("*",({arguments = 2, associative = True, commutative = True, javascript = InfixOp "*"},1))
+            ,   ("-",({arguments = 1, associative = False, commutative = False, javascript = PrefixOp "-"},1))
+            ,   ("/",({arguments = 1, associative = False, commutative = False, javascript = PrefixOp "1/"},1))
+            ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty
     }
@@ -217,7 +223,9 @@ evaluateStr model root = (
 ## UI
 -}
 
-menuTopics: (Event state -> msg) -> Model -> Maybe (Math.Tree (Matcher.State state), Set.Set Int, Int) -> List (Menu.Part msg)
+type alias SelectedNode_ state = {eq: Int, root: Math.Tree (Matcher.State state), nodes: Set.Set Int, childCount: Int}
+
+menuTopics: (Event state -> msg) -> Model -> Maybe (SelectedNode_ state) -> List (Menu.Part msg)
 menuTopics converter model selectedNode =
     let
         individualRule rule = let (display, params) = matchRule_ selectedNode rule in
@@ -246,14 +254,14 @@ menuTopics converter model selectedNode =
     model.topics
     |> List.reverse
 
-matchRule_: Maybe (Math.Tree (Matcher.State state), Set.Set Int, Int) -> Rule_ -> (Bool, Maybe (Parameters state))
+matchRule_: Maybe (SelectedNode_ state) -> Rule_ -> (Bool, Maybe (Parameters state))
 matchRule_ selected rule = case selected of
     Nothing -> (True, Nothing)
-    Just (node, priority, _) -> if List.any (\m -> Matcher.matchNode m.from.root node) rule.matches |> not
+    Just n -> if List.any (\m -> Matcher.matchNode m.from.root n.root) rule.matches |> not
         then (False, Nothing)
         else
             let
-                matches = List.foldl (\m -> Matcher.matchSubtree priority m.from.root node
+                matches = List.foldl (\m -> Matcher.matchSubtree n.nodes m.from.root n.root
                     |> Maybe.map (\result -> {from = result, name = m.to.name, matcher = m.to.root})
                     |> Helper.maybeAppend
                     ) [] rule.matches
@@ -274,36 +282,45 @@ applyButton converter e = case e of
     Nothing -> a [title "Cannot be applied"] [text "Apply"]
     Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "Apply"]
 
-coreTopic_: (Event state -> msg) -> Maybe (Math.Tree s, Set.Set Int, Int) -> Menu.Part msg
-coreTopic_ converter root =
+coreTopic_: (Event state -> msg) -> Maybe (SelectedNode_ state) -> Menu.Part msg
+coreTopic_ converter selected =
     let
         shouldDisplay a conv = a.empty || ( case conv a of
                 Just _ -> True
                 Nothing -> False
             )
-        apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False} in
-            case root of
-            Nothing -> {applies | empty = True}
-            Just (Math.BinaryNode n, _, childCount) -> if not n.associative then {applies | subApply = (Just Substitute)}
-                else
-                    let
-                        sameBinaryNode = List.any
-                            (\child -> case child of
-                                Math.BinaryNode m -> n.name == m.name
-                                _ -> False
-                            )
-                            n.children
-                    in
-                    {   applies
-                    |   subApply = Just Substitute
-                    ,   groupApply = if List.length n.children == childCount || childCount < 2 then Nothing else Just Group -- grouping everything is a noop
-                    ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
-                    }
-            Just (Math.RealNode n, _, _ ) -> {applies | numApply = Just (NumericalSubstitution n.value)}
-            _ -> {applies | subApply = Just Substitute}
+        apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False, evalApply=Just Evaluate} in
+            case selected of
+            Nothing -> {applies | empty = True, evalApply=Nothing}
+            Just val -> case val.root of
+                Math.BinaryNode n -> if not n.associative then {applies | subApply = (Just Substitute)}
+                    else
+                        let
+                            sameBinaryNode = List.any
+                                (\child -> case child of
+                                    Math.BinaryNode m -> n.name == m.name
+                                    _ -> False
+                                )
+                                n.children
+                        in
+                        {   applies
+                        |   subApply = Just Substitute
+                        ,   groupApply = if List.length n.children == val.childCount || val.childCount < 2 then Nothing else Just Group -- grouping everything is a noop
+                        ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
+                        }
+                Math.RealNode n -> {applies | numApply = Just (NumericalSubstitution n.value)}
+                Math.DeclarativeNode _ -> {applies | subApply = Just Substitute, evalApply = Nothing}
+                _ -> {applies | subApply = Just Substitute}
     in
         Menu.Section "Core" True
-        [   Menu.Section "Number Substitution" (shouldDisplay apply .numApply)
+        [   Menu.Section "Evaluate" (shouldDisplay apply .evalApply)
+            [   Menu.Content
+                [   applyButton converter apply.evalApply
+                ,   h3 [] [text "Convert expression into a single number"]
+                ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
+                ]
+            ]
+        ,   Menu.Section "Number Substitution" (shouldDisplay apply .numApply)
             [   Menu.Content
                 [  applyButton converter apply.numApply
                 ,   h3 [] [text "Given x=y, f(x)=f(y)"]

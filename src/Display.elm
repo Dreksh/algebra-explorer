@@ -2,7 +2,7 @@ module Display exposing (
     Model, Event(..), State, init, update, view,
     createState, updateState,
     addEquation, updateEquation, transformEquation, listEquations,
-    groupChildren, ungroupChildren, replaceNumber,
+    groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     selectedNode,
     encode, decoder, encodeState, stateDecoder
     )
@@ -61,10 +61,11 @@ updateEquation id eq model = {model | equations = Dict.insert id eq model.equati
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations
 
-selectedNode: Model -> Maybe (Math.Tree (Matcher.State State), Set.Set Int, Int)
+selectedNode: Model -> Maybe {eq: Int, root: Math.Tree (Matcher.State State), nodes: Set.Set Int, childCount: Int}
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
         |> Maybe.andThen (Matcher.selectedSubtree ids >> Result.toMaybe)
+        |> Maybe.map (\(root, nodes, count) -> {eq = eq, root = root, nodes = nodes, childCount = count})
     )
 
 groupChildren: Model -> Result String Model
@@ -83,13 +84,19 @@ ungroupChildren model = case model.selected of
         Just eq -> Matcher.ungroupSubtree ids eq
             |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
 
-replaceNumber: Model -> Float -> Math.Tree () -> Result String Model
-replaceNumber model target subtree = case model.selected of
+replaceNumber: Float -> Math.Tree () -> Model -> Result String Model
+replaceNumber target subtree model = case model.selected of
     Nothing -> Err "Nothing was selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation not found"
         Just eq -> Matcher.replaceRealNode ids target subtree eq
             |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
+
+replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
+replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
+    Nothing -> Err "Equation not found"
+    Just eq -> Matcher.replaceSubtree (Set.singleton id) (Matcher.RealMatcher {value = number}) {nodes = Dict.empty, matches = Dict.empty} eq
+        |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
 
 transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
 transformEquation matcher result model = case model.selected of

@@ -61,7 +61,7 @@ type alias Swappable =
     ,   tutorial: Tutorial.Model
     ,   notification: Notification.Model
     ,   menu: Menu.Model
-    ,   evaluator: Evaluate.Model (Float, Math.Tree ()) Event
+    ,   evaluator: Evaluate.Model EvalType Event
     -- UI fields
         --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
     ,   createMode: Maybe (Maybe Int)
@@ -99,11 +99,15 @@ type Event =
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution String String
     | ConvertSubString Float String
-    | ApplyNumSub {id: Int, value: Float}
+    | EvalComplete {id: Int, value: Float}
 
 type LoadableFile =
     TopicFile
     | SaveFile
+
+type EvalType =
+    NumSubType_ Float (Math.Tree ())
+    | EvalType_ Int Int
 
 type alias Source =
     {   topics: Dict.Dict String String
@@ -150,7 +154,7 @@ subscriptions model = Sub.batch
     [   case (model.swappable.createMode, model.dialog) of
             (Nothing, Nothing) -> Sub.none
             _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
-    ,   evaluateResult ApplyNumSub
+    ,   evaluateResult EvalComplete
     ]
 
 {-
@@ -243,6 +247,13 @@ update event core = let model = core.swappable in
             Rules.Substitute -> ({core | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution target -> ({ core | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
             Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
+            Rules.Evaluate -> case Display.selectedNode model.display of
+                Nothing -> (core, Cmd.none)
+                Just n -> let id = Math.getState n.root |> Matcher.getID in
+                    case Rules.evaluateStr model.rules n.root of
+                        Err errStr -> submitNotification_ core errStr
+                        Ok evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ n.eq id) evalStr model.evaluator in
+                            (updateCore {model | evaluator = eModel}, cmd)
         ApplyParameters params -> case core.dialog of
             Just (_, Just existing) -> ( case Dict.get "_method" params of
                     Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -271,17 +282,21 @@ update event core = let model = core.swappable in
             Err errStr -> submitNotification_ core errStr
             Ok newTree -> case Rules.evaluateStr model.rules newTree of
                 Err errStr -> submitNotification_ core errStr
-                Ok evalStr -> let (eModel, cmd) = Evaluate.send (target, newTree) evalStr model.evaluator in
+                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ target newTree) evalStr model.evaluator in
                     (updateCore {model | evaluator = eModel}, cmd)
-        ApplyNumSub reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
+        EvalComplete reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
             let newCore = updateCore {model | evaluator = eModel } in
             case c of
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
-                Just (target, tree) -> if target /= reply.value
+                Just (NumSubType_ target tree) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber model.display target tree of
+                    else case Display.replaceNumber target tree model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
+                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber eqNum id reply.value model.display of
+                    Err errStr -> submitNotification_ newCore errStr
+                    Ok dModel -> ({core | swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
+
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
@@ -489,8 +504,7 @@ triplet: a -> b -> c -> (a,b,c)
 triplet x y z = (x,y,z)
 
 swappableDecoder: Decode.Decoder Swappable
-swappableDecoder = let evalStateDecoder = Decode.map2 Tuple.pair Decode.float (Math.decoder (Decode.succeed ())) in
-    Decode.map3 triplet
+swappableDecoder = Decode.map3 triplet
     (   Decode.map3 triplet
         (Decode.field "display" Display.decoder)
         (Decode.field "rules" Rules.decoder)
@@ -499,7 +513,7 @@ swappableDecoder = let evalStateDecoder = Decode.map2 Tuple.pair Decode.float (M
     (   Decode.map3 triplet
         (Decode.field "notification" Notification.decoder)
         (Decode.field "menu" Menu.decoder)
-        (Decode.field "evaluator" (Evaluate.decoder evaluateString evalStateDecoder))
+        (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
     )
     (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
         (Decode.maybe <| Decode.field "createMode" <| Decode.maybe <| Decode.field "eq" Decode.int)
@@ -509,6 +523,14 @@ swappableDecoder = let evalStateDecoder = Decode.map2 Tuple.pair Decode.float (M
     )
     |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),((createMode,resetInput),(showHelp,showMenu))) ->
        Swappable display rules tutorial notification menu evaluator createMode resetInput showHelp showMenu
+    )
+
+evalTypeDecoder_: Decode.Decoder EvalType
+evalTypeDecoder_ = Decode.field "type" Decode.string
+    |> Decode.andThen (\t -> case t of
+        "numSub" -> Decode.map2 NumSubType_ (Decode.field "target" Decode.float) (Decode.field "root" (Math.decoder (Decode.succeed ())))
+        "eval" -> Decode.map2 EvalType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int)
+        _ -> Decode.fail "unknown type"
     )
 
 -- All internal state information should be encoded. This is mainly useful for debugging / bug-reports
@@ -521,7 +543,11 @@ saveFile model = Encode.encode 0
         ,   ("tutorial", Tutorial.encode model.tutorial)
         ,   ("notification", Notification.encode model.notification)
         ,   ("menu", Menu.encode model.menu)
-        ,   ("evaluator", Evaluate.encode (\(f, tree) -> Encode.object [("target",Encode.float f),("tree",Math.encode (\_ -> Encode.null) tree)]) model.evaluator)
+        ,   ("evaluator", Evaluate.encode (\t -> case t of
+                NumSubType_ f tree -> Encode.object [("target",Encode.float f),("tree",Math.encode (\_ -> Encode.null) tree),("type",Encode.string "numSub")]
+                EvalType_ eq node -> Encode.object [("eq",Encode.int eq),("node",Encode.int node),("type",Encode.string "eval")]
+                ) model.evaluator
+            )
         ,   (   "createMode"
             ,   case model.createMode of
                 Nothing -> Encode.null
