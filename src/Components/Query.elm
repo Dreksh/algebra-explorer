@@ -1,11 +1,11 @@
-module Query exposing (Model, parseInit, pushUrl, setEquations)
+module Components.Query exposing (Model, parseInit, pushUrl, setEquations)
 
 import Browser.Navigation as Nav
 import Dict
 import Url
 -- Ours
-import Math
-import Matcher
+import Algo.Math as Math
+import Algo.Matcher as Matcher
 
 type alias Model =
     {   current: Url.Url

@@ -1,4 +1,4 @@
-module Matcher exposing (Equation, Matcher(..), MatchResult, State,
+module Algo.Matcher exposing (Equation, Matcher(..), MatchResult, State,
     getID, getName, countChildren, parseEquation, selectedSubtree, variableArgsOnly,
     groupSubtree, ungroupSubtree,
     addMatch, matchNode, matchSubtree, replaceSubtree, replaceRealNode,
@@ -9,10 +9,10 @@ module Matcher exposing (Equation, Matcher(..), MatchResult, State,
 import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Math
 import Set
 -- Ours
-import Backtrack
+import Algo.Math as Math
+import Algo.Backtrack as Backtrack
 import Helper
 
 type State state = State_ Int state

@@ -1,4 +1,4 @@
-module Tutorial exposing (Model, Event, init, menu, update, view,
+module Components.Tutorial exposing (Model, Event, init, menu, update, view,
     encode, decoder
     )
 

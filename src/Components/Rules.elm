@@ -1,4 +1,4 @@
-module Rules exposing (Model, Event(..), Parameters, Topic, init,
+module Components.Rules exposing (Model, Event(..), Parameters, Topic, init,
     addTopic, deleteTopic, addSources, topicDecoder,
     replaceGlobalVar, evaluateStr,
     menuTopics,
@@ -13,8 +13,8 @@ import Json.Encode as Enc
 import Set
 -- Ours
 import Helper
-import Matcher
-import Math
+import Algo.Matcher as Matcher
+import Algo.Math as Math
 import UI.Menu as Menu
 import UI.HtmlEvent as HtmlEvent
 

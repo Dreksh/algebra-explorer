@@ -1,4 +1,4 @@
-module Evaluate exposing (Model, finish, init, send, decoder, encode)
+module Components.Evaluate exposing (Model, finish, init, send, decoder, encode)
 
 import Dict
 import Json.Decode as Decode

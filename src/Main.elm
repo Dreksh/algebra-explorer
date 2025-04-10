@@ -17,19 +17,19 @@ import Set
 import Task
 import Url
 -- Our imports
-import Display
-import Evaluate
+import Algo.Matcher as Matcher
+import Algo.Math as Math
+import Components.Display as Display
+import Components.Evaluate as Evaluate
+import Components.Query as Query
+import Components.Rules as Rules
+import Components.Tutorial as Tutorial
 import Helper
-import Matcher
-import Math
-import Query
 import UI.Dialog as Dialog
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
 import UI.Notification as Notification
-import Rules
-import Tutorial
 
 -- Overall Structure of the app: it's a document
 

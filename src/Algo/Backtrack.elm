@@ -1,4 +1,4 @@
-module Backtrack exposing (Continuation, Evaluator,
+module Algo.Backtrack exposing (Continuation, Evaluator,
     fail, init, return, getState, run,
     orderedStack, unorderedStack
     )

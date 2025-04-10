@@ -1,4 +1,4 @@
-module Math exposing (Tree(..), Symbol(..),
+module Algo.Math exposing (Tree(..), Symbol(..),
     equal, validVariable,
     getChildren, getState, getName,
     notation, parse, symbolicate, toString,
@@ -10,7 +10,7 @@ import Json.Encode as Encode
 import Parser exposing ((|.), (|=))
 import Set
 -- Ours
-import Backtrack
+import Algo.Backtrack as Backtrack
 
 type Tree s =
     RealNode {state: s, value: Float}

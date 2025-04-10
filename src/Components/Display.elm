@@ -1,4 +1,4 @@
-module Display exposing (
+module Components.Display exposing (
     Model, Event(..), State, init, update, view, menu,
     createState, updateState,
     addEquation, updateEquation, transformEquation, listEquations, listUnselectedEquations,
@@ -15,8 +15,8 @@ import Json.Encode as Encode
 import Set
 -- Ours
 import Helper
-import Math
-import Matcher
+import Algo.Math as Math
+import Algo.Matcher as Matcher
 import UI.HtmlEvent
 import UI.Icon
 import UI.Menu
