@@ -1,7 +1,7 @@
 module Math exposing (Tree(..), Symbol(..),
     equal, validVariable,
     getChildren, getState, getName,
-    notation, parse, symbolicate,
+    notation, parse, symbolicate, toString,
     encode, decoder
     )
 
@@ -78,6 +78,14 @@ type Symbol s =
 
 symbolicate: Tree state -> Symbol state
 symbolicate root = symbolicateRecursive_ Nothing True root
+
+toString: Tree state -> String
+toString root = symbolicate root |> eqToString_
+
+eqToString_: Symbol msg -> String
+eqToString_ root = case root of
+    Text str -> str
+    Node s -> List.map eqToString_ s.children |> String.join ""
 
 functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
 functionPrecedence_ node = case getName node of

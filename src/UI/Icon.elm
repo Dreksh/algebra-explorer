@@ -1,4 +1,4 @@
-module UI.Icon exposing (..)
+module UI.Icon exposing (class, help, menu, tick, add, cancel, shown, hidden)
 
 import Html
 import Svg exposing (circle, defs, path, rect, svg, text, text_)
@@ -9,7 +9,7 @@ class: String -> Html.Attribute msg
 class = Svg.Attributes.class
 
 help: List (Html.Attribute msg) -> Html.Html msg
-help attr = svg (attr ++ [viewBox "0 0 24 24"])
+help attr = svg (viewBox "0 0 24 24" :: attr)
     [   defs []
         [ Svg.mask [id "helpMask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
@@ -20,7 +20,7 @@ help attr = svg (attr ++ [viewBox "0 0 24 24"])
     ]
 
 menu: List (Html.Attribute msg) -> Html.Html msg
-menu attr = svg (attr ++ [viewBox "0 0 150 50"])
+menu attr = svg (viewBox "0 0 150 50" :: attr)
     [   defs []
         [ Svg.mask [id "menuMask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
@@ -31,7 +31,7 @@ menu attr = svg (attr ++ [viewBox "0 0 150 50"])
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg
-tick attr = svg (attr ++ [viewBox "0 0 24 24"])
+tick attr = svg (viewBox "0 0 24 24" :: attr)
     [   defs []
         [ Svg.mask [id "tickMask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
@@ -42,7 +42,7 @@ tick attr = svg (attr ++ [viewBox "0 0 24 24"])
     ]
 
 add: List (Html.Attribute msg) -> Html.Html msg
-add attr = svg (attr ++ [viewBox "0 0 24 24"])
+add attr = svg (viewBox "0 0 24 24" :: attr)
     [   defs []
         [ Svg.mask [id "addMask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
@@ -53,7 +53,7 @@ add attr = svg (attr ++ [viewBox "0 0 24 24"])
     ]
 
 cancel: List (Html.Attribute msg) -> Html.Html msg
-cancel attr = svg (attr ++ [viewBox "0 0 24 24"])
+cancel attr = svg (viewBox "0 0 24 24" :: attr)
     [   defs []
         [ Svg.mask [id "cancelMask"]
             [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
@@ -63,7 +63,15 @@ cancel attr = svg (attr ++ [viewBox "0 0 24 24"])
     ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#cancelMask)"] []
     ]
 
-rightArrow: List (Html.Attribute msg) -> Html.Html msg
-rightArrow attr = svg (attr ++ [viewBox "0 0 24 24"])
-    [   path [d "M3 5L18 12 L3 19 L9 12Z", stroke "none", fill "currentColor"] []
+eye_: List (Svg.Svg msg)
+eye_ = [   path [d "M1 13A12 12 1 0 1 23 13", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M2 12A12 9 0 0 0 22 12", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   circle [cx "12", cy "11", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
     ]
+
+shown: List (Html.Attribute msg) -> Html.Html msg
+shown attr = svg (viewBox "0 0 24 24" :: attr) eye_
+
+hidden: List (Html.Attribute msg) -> Html.Html msg
+hidden attr = svg (viewBox "0 0 24 24" :: attr)
+    (path [d "M2 22 L 22 2", stroke "currentColor", strokeWidth "1", fill "none"] [] :: eye_)

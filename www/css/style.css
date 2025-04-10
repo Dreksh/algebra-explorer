@@ -155,6 +155,10 @@ button.noDefault {
     list-style: none;
     overflow: hidden;
 }
+#menu svg {
+    height: 1rem;
+    vertical-align: middle;
+}
 li.menuSection {
     height: 0;
     transition: height 0.5s linear;

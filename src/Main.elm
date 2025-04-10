@@ -97,7 +97,7 @@ type Event =
     | FileLoaded LoadableFile String
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
-    | ApplySubstitution String String
+    | ApplySubstitution Int
     | ConvertSubString Float String
     | EvalComplete {id: Int, value: Float}
 
@@ -127,7 +127,7 @@ init _ url key =
             , rules = Rules.init
             , tutorial = Tutorial.init
             , notification = nModel
-            , menu = Menu.init (Set.fromList ["Settings", "Tutorials", "Topics", "Core"])
+            , menu = Menu.init (Set.fromList ["Settings", "Equations", "Tutorials"])
             , evaluator = Evaluate.init evaluateString
             , createMode = if newScreen then Just Nothing else Nothing
             , resetInput = False
@@ -244,7 +244,7 @@ update event core = let model = core.swappable in
             Rules.Ungroup -> case Display.ungroupChildren model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
-            Rules.Substitute -> ({core | dialog = Just (substitutionDialog_, Nothing)} , Cmd.none)
+            Rules.Substitute -> ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution target -> ({ core | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
             Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
             Rules.Evaluate -> case Display.selectedNode model.display of
@@ -277,7 +277,7 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution rawIn rawOut -> ({core | dialog = Nothing}, Cmd.none)
+        ApplySubstitution eqNum -> ({core | dialog = Nothing}, Cmd.none)
         ConvertSubString target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
             Err errStr -> submitNotification_ core errStr
             Ok newTree -> case Rules.evaluateStr model.rules newTree of
@@ -347,6 +347,7 @@ view core = let model = core.swappable in
                         [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]] -- TODO
                         ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
                         ]
+                    ,   Display.menu DisplayEvent model.display
                     ,   Tutorial.menu TutorialEvent model.tutorial
                     ,   Menu.Section "Topics" True
                         (   [   Menu.Content [ a
@@ -445,7 +446,7 @@ parameterDialog_ params =
                 else { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]
-                        ,   [Dialog.Radio {name = "_method", options = List.map (\m -> m.name) params.matches}]
+                        ,   [Dialog.Radio {name = "_method", options = List.indexedMap (\k m -> (k, m.name)) params.matches |> Dict.fromList}]
                         ]
                     }
                     :: sections
@@ -455,20 +456,25 @@ parameterDialog_ params =
     ,   focus = Nothing
     }
 
-substitutionDialog_: Dialog.Model Event
-substitutionDialog_ =
+substitutionDialog_: Swappable -> Dialog.Model Event
+substitutionDialog_ model =
     {   title = "Substitute a variable for a formula"
     ,   sections =
-        -- TODO: Make this into a dropdown for selecting the equation to pick
-        [{  subtitle = "For each instance of the specified variable, replace it with the formula"
-        ,   lines = [[Dialog.Text {id="var"}, Dialog.Info {text = "="}, Dialog.Text {id="formula"}]]
+        [{  subtitle = "Select the equation to use for substitution"
+        ,   lines = [[
+                Dialog.Radio
+                {   name = "eqNum"
+                ,   options = Display.listUnselectedEquations model.display
+                    |> Dict.map (\_ elem -> Math.toString elem.root)
+                }
+            ]]
         }]
-    ,   success = (\dict -> case (Dict.get "var" dict, Dict.get "formula" dict) of
-            (Just (Dialog.TextValue a), Just (Dialog.TextValue b)) -> ApplySubstitution a b
+    ,   success = (\dict -> case Dict.get "eqNum" dict of
+            Just (Dialog.IntValue a) -> ApplySubstitution a
             _ -> NoOp
         )
     ,   cancel = CloseDialog
-    ,   focus = Just "var"
+    ,   focus = Just "eqNum"
     }
 
 numSubDialog_: Float -> Dialog.Model Event

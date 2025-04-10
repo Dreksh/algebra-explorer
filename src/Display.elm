@@ -1,14 +1,14 @@
 module Display exposing (
-    Model, Event(..), State, init, update, view,
+    Model, Event(..), State, init, update, view, menu,
     createState, updateState,
-    addEquation, updateEquation, transformEquation, listEquations,
+    addEquation, updateEquation, transformEquation, listEquations, listUnselectedEquations,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     selectedNode,
     encode, decoder, encodeState, stateDecoder
     )
 
 import Dict
-import Html exposing (Html, button, div, text)
+import Html exposing (Html, a, button, div, text)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -18,10 +18,13 @@ import Helper
 import Math
 import Matcher
 import UI.HtmlEvent
+import UI.Icon
+import UI.Menu
 
 type alias Model =
     {   equations: Dict.Dict Int (Matcher.Equation State)
     ,   nextEquationNum: Int
+    ,   hidden: Set.Set Int
     ,   selected: Maybe (Int, Set.Set Int)
     ,   createModeForEquation: Maybe Int
     }
@@ -29,6 +32,7 @@ type alias Model =
 type Event =
     Select Int Int
     | Unselect
+    | ToggleHide Int
 
 type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
@@ -44,6 +48,7 @@ init: List (Matcher.Equation State) -> Model
 init eqs =
     {   equations = List.indexedMap Tuple.pair eqs |> Dict.fromList
     ,   selected = Nothing
+    ,   hidden = Set.empty
     ,   nextEquationNum = List.length eqs
     ,   createModeForEquation = Nothing
     }
@@ -60,6 +65,11 @@ updateEquation id eq model = {model | equations = Dict.insert id eq model.equati
 
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations
+
+listUnselectedEquations: Model -> Dict.Dict Int (Matcher.Equation State)
+listUnselectedEquations model = case model.selected of
+    Nothing -> model.equations
+    Just (eq, _) -> Dict.filter (\k _ -> k /= eq) model.equations
 
 selectedNode: Model -> Maybe {eq: Int, root: Math.Tree (Matcher.State State), nodes: Set.Set Int, childCount: Int}
 selectedNode model = model.selected
@@ -124,15 +134,28 @@ update event model = case event of
                 else ({model | selected = Just (eq, newSet)}, Cmd.none)
             else ({model | selected = Just (eq, Set.insert node current)}, Cmd.none)
     Unselect -> ({model | selected = Nothing}, Cmd.none)
+    ToggleHide eq -> if Set.member eq model.hidden
+        then ({model | hidden = Set.remove eq model.hidden}, Cmd.none)
+        else ({model | hidden = Set.insert eq model.hidden}, Cmd.none)
 
 {-
 # View-related functions
 -}
 
+menu: (Event -> msg) -> Model -> UI.Menu.Part msg
+menu convert model = UI.Menu.Section "Equations" True
+    (   Dict.toList model.equations
+    |> List.map (\(num, eq) -> UI.Menu.Content [a [class "clickable", UI.HtmlEvent.onClick (convert (ToggleHide num))]
+        [   if Set.member num model.hidden then UI.Icon.hidden [] else UI.Icon.shown []
+        ,   text (Math.toString eq.root)
+        ]]
+    ) )
+
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div attr
     (   Dict.foldl
-        (\eqNum eq result ->
+        (\eqNum eq result -> if Set.member eqNum model.hidden then result
+            else
             let
                 highlight = model.selected
                     |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
@@ -209,6 +232,7 @@ encode: Model -> Encode.Value
 encode model = Encode.object
     [   ("equations", Encode.dict String.fromInt (Matcher.encodeEquation (\s -> Encode.object [("prevID", Encode.int s.prevID)])) model.equations)
     ,   ("nextEquationNum", Encode.int model.nextEquationNum)
+    ,   ("hidden", Encode.list Encode.int (Set.toList model.hidden))
     ,   (   "selected"
         ,   case model.selected of
             Nothing -> Encode.null
@@ -226,11 +250,12 @@ encode model = Encode.object
 
 
 decoder: Decode.Decoder Model
-decoder = Decode.map4 (\eq next sel create -> {equations = eq, nextEquationNum = next, selected = sel, createModeForEquation = create})
+decoder = Decode.map5 (\eq next hidden sel create -> {equations = eq, nextEquationNum = next, hidden = hidden, selected = sel, createModeForEquation = create})
     (   Decode.field "equations"
         <| Helper.intDictDecoder (Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
     )
     (Decode.field "nextEquationNum" Decode.int)
+    (Decode.field "hidden" <| Decode.map (Set.fromList) <| Decode.list Decode.int)
     (   Decode.field "selected"
         <| Decode.maybe <| Decode.map2 Tuple.pair (Decode.field "eq" Decode.int) (Decode.field "nodes" <| Decode.map Set.fromList <| Decode.list Decode.int)
     )

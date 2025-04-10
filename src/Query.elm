@@ -16,16 +16,10 @@ type alias Model =
     }
 
 setEquations: Dict.Dict Int (Matcher.Equation msg) -> Model -> Model
-setEquations dict model = Dict.foldl
-    (\_ elem result -> Math.symbolicate elem.root
-        |> (\symbols -> eqToString_ symbols:: result)
-    ) [] dict
+setEquations dict model = dict
+    |> Dict.toList
+    |> List.map (\(_, elem) -> Math.toString elem.root )
     |> (\result -> {model | equations = result})
-
-eqToString_: Math.Symbol msg -> String
-eqToString_ root = case root of
-    Math.Text str -> str
-    Math.Node s -> List.map eqToString_ s.children |> String.join ""
 
 parseInit: Url.Url -> Nav.Key -> Model
 parseInit url key =

@@ -25,7 +25,7 @@ type Input msg =
     Text {id: String}
     | Button {text: String, event: msg}
     | Info {text: String}
-    | Radio {name: String, options: List String}
+    | Radio {name: String, options: Dict.Dict Int String}
     | Function {name: String, arguments: Int}
 
 -- Autogenerate from Model
@@ -57,7 +57,7 @@ listView_ = List.map (\input -> case input of
         Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
         Info i -> text i.text
         Radio r -> r.options
-            |> List.indexedMap Tuple.pair
+            |> Dict.toList
             |> List.concatMap (\(num, t) -> let n = String.fromInt num in
                 let id = r.name ++ n |> fieldID in
                 [   Html.br [] []
