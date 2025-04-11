@@ -15,6 +15,7 @@ import Json.Encode as Encode
 import Set
 -- Ours
 import Helper
+import Algo.History as History
 import Algo.Math as Math
 import Algo.Matcher as Matcher
 import UI.HtmlEvent
@@ -22,7 +23,7 @@ import UI.Icon
 import UI.Menu
 
 type alias Model =
-    {   equations: Dict.Dict Int (Matcher.Equation State)
+    {   equations: Dict.Dict Int (History.Model (Matcher.Equation State))
     ,   nextEquationNum: Int
     ,   hidden: Set.Set Int
     ,   selected: Maybe (Int, Set.Set Int)
@@ -46,7 +47,7 @@ updateState s _ = {prevID = Matcher.getID s}
 
 init: List (Matcher.Equation State) -> Model
 init eqs =
-    {   equations = List.indexedMap Tuple.pair eqs |> Dict.fromList
+    {   equations = List.indexedMap (\index eq -> (index, History.init eq)) eqs |> Dict.fromList
     ,   selected = Nothing
     ,   hidden = Set.empty
     ,   nextEquationNum = List.length eqs
@@ -57,24 +58,28 @@ addEquation: Matcher.Equation State -> Model -> Model
 addEquation eq model =
     {   model
     |   nextEquationNum = model.nextEquationNum + 1
-    ,   equations = Dict.insert model.nextEquationNum eq model.equations
+    ,   equations = Dict.insert model.nextEquationNum (History.init eq) model.equations
     }
 
 updateEquation: Int -> Matcher.Equation State -> Model -> Model
-updateEquation id eq model = {model | equations = Dict.insert id eq model.equations}
+updateEquation id eq model = case Dict.get id model.equations of
+    Nothing -> {model | equations = Dict.insert id (History.init eq) model.equations}
+    Just hisModel -> {model | equations = Dict.insert id (History.add eq hisModel) model.equations}
 
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
-listEquations model = model.equations
+listEquations model = model.equations |> Dict.map (\_ -> History.current)
 
 listUnselectedEquations: Model -> Dict.Dict Int (Matcher.Equation State)
-listUnselectedEquations model = case model.selected of
-    Nothing -> model.equations
-    Just (eq, _) -> Dict.filter (\k _ -> k /= eq) model.equations
+listUnselectedEquations model =
+    ( case model.selected of
+        Nothing -> model.equations
+        Just (eq, _) -> Dict.filter (\k _ -> k /= eq) model.equations
+    ) |> Dict.map (\_ -> History.current)
 
 selectedNode: Model -> Maybe {eq: Int, root: Math.Tree (Matcher.State State), nodes: Set.Set Int, childCount: Int}
 selectedNode model = model.selected
     |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
-        |> Maybe.andThen (Matcher.selectedSubtree ids >> Result.toMaybe)
+        |> Maybe.andThen (History.current >> Matcher.selectedSubtree ids >> Result.toMaybe)
         |> Maybe.map (\(root, nodes, count) -> {eq = eq, root = root, nodes = nodes, childCount = count})
     )
 
@@ -83,24 +88,27 @@ groupChildren model = case model.selected of
     Nothing -> Err "Nothing was selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation not found"
-        Just eq -> Matcher.groupSubtree ids eq
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
+        Just eq -> History.current eq
+            |> Matcher.groupSubtree ids
+            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
 ungroupChildren: Model -> Result String Model -- only ungroups one, and can be an unselected node
 ungroupChildren model = case model.selected of
     Nothing -> Err "Nothing was selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation not found"
-        Just eq -> Matcher.ungroupSubtree ids eq
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
+        Just eq -> History.current eq
+            |> Matcher.ungroupSubtree ids
+            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
 replaceNumber: Float -> Math.Tree () -> Model -> Result String Model
 replaceNumber target subtree model = case model.selected of
     Nothing -> Err "Nothing was selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation not found"
-        Just eq -> Matcher.replaceRealNode ids target subtree eq
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum newEq model.equations, selected = Nothing})
+        Just eq -> History.current eq
+            |> Matcher.replaceRealNode ids target subtree
+            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
 replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
 replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
@@ -111,16 +119,18 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
                 then Matcher.ExactMatcher {name = "-", arguments = [Matcher.RealMatcher {value = -number}]}
                 else Matcher.RealMatcher {value = number}
         in
-            Matcher.replaceSubtree (Set.singleton id) matcher {nodes = Dict.empty, matches = Dict.empty} eq
-            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
+            History.current eq
+            |> Matcher.replaceSubtree (Set.singleton id) matcher {nodes = Dict.empty, matches = Dict.empty}
+            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum (History.add newEq eq) model.equations})
 
 transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
 transformEquation matcher result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation is not found"
-        Just eq -> Matcher.replaceSubtree ids matcher result eq
-            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum newEq model.equations})
+        Just eq -> History.current eq
+            |> Matcher.replaceSubtree ids matcher result
+            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum (History.add newEq eq) model.equations})
 
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of
@@ -147,16 +157,17 @@ menu convert model = UI.Menu.Section "Equations" True
     (   Dict.toList model.equations
     |> List.map (\(num, eq) -> UI.Menu.Content [a [class "clickable", UI.HtmlEvent.onClick (convert (ToggleHide num))]
         [   if Set.member num model.hidden then UI.Icon.hidden [] else UI.Icon.shown []
-        ,   text (Math.toString eq.root)
+        ,   text (History.current eq |> .root |> Math.toString)
         ]]
     ) )
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div attr
     (   Dict.foldl
-        (\eqNum eq result -> if Set.member eqNum model.hidden then result
+        (\eqNum hisEq result -> if Set.member eqNum model.hidden then result
             else
             let
+                eq = History.current hisEq
                 highlight = model.selected
                     |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
                     |> Maybe.withDefault Set.empty
@@ -230,7 +241,12 @@ stackRecursive eq highlight width depth node =
 
 encode: Model -> Encode.Value
 encode model = Encode.object
-    [   ("equations", Encode.dict String.fromInt (Matcher.encodeEquation (\s -> Encode.object [("prevID", Encode.int s.prevID)])) model.equations)
+    [   (   "equations"
+        ,   Encode.dict
+            String.fromInt
+            ( History.encode <| Matcher.encodeEquation <| \s -> Encode.object [("prevID", Encode.int s.prevID)] )
+            model.equations
+        )
     ,   ("nextEquationNum", Encode.int model.nextEquationNum)
     ,   ("hidden", Encode.list Encode.int (Set.toList model.hidden))
     ,   (   "selected"
@@ -252,7 +268,7 @@ encode model = Encode.object
 decoder: Decode.Decoder Model
 decoder = Decode.map5 (\eq next hidden sel create -> {equations = eq, nextEquationNum = next, hidden = hidden, selected = sel, createModeForEquation = create})
     (   Decode.field "equations"
-        <| Helper.intDictDecoder (Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
+        <| Helper.intDictDecoder (History.decoder <| Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
     )
     (Decode.field "nextEquationNum" Decode.int)
     (Decode.field "hidden" <| Decode.map (Set.fromList) <| Decode.list Decode.int)
