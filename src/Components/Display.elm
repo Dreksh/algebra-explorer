@@ -230,11 +230,12 @@ stackRecursive eq highlight minWidth minDepth node =
                     let (w, d, divs) = stackRecursive eq highlight foldWidth (minDepth+1) child
                     in (w, max foldDepth d, foldDivs ++ divs)
                 ) (minWidth, minDepth, [])
-        -- attrs = ( if (Set.member id highlight) then [class "selected"] else [] ) :: UI.HtmlEvent.onClick (Select eq id)
+        onClick = UI.HtmlEvent.onClick (Select eq id)
+        selected = (Set.member id highlight)
     in
         (   maxWidth
         ,   maxDepth
-        ,   ( UI.Block.block minWidth maxWidth minDepth maxDepth [] (Math.getName node)) :: childBlocks
+        ,   ( UI.Block.block minWidth maxWidth minDepth maxDepth selected onClick (Math.getName node)) :: childBlocks
         )
 
 encode: Model -> Encode.Value

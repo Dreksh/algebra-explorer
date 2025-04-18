@@ -289,15 +289,26 @@ dialog svg {
     border: var(--color-selected) thin solid;
 }
 
-.blocks {
+/* .blocks {
     display: grid;
-    column-gap: .3rem
-}
+    column-gap: .3rem;
+} */
 .block {
-    text-align: center
+    stroke: black;
+    rx: 0.2;
+    fill: #FFF;
+}
+.block:hover {
+    stroke: var(--color-highlight)
+}
+.blockText {
+    font: 0.5pt monospace;
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: black;
 }
 .block.selected {
-    background-color: var(--color-selected);
+    fill: var(--color-selected);
 }
 /* History */
 #history div {
