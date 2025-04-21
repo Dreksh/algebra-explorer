@@ -98,15 +98,15 @@ update e model = case e of
 ## View
 -}
 
-view: (Event -> msg) -> Model component -> Html.Html msg
-view convert model = Html.div [id "history"] [serialize_ convert model.nodes 0 model.root ]
+view: (Event -> msg) -> (component -> String) -> Model component -> Html.Html msg
+view convert serializer model = Html.div [id "history"] [serialize_ convert serializer model.nodes 0 model.root ]
 
-serialize_: (Event -> msg) -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> Html.Html msg
-serialize_ convert nodes index n = Html.div []
-    (   Html.a [class "clickable", UI.HtmlEvent.onClick (SelectPast index |> convert) ] []
-    ::  List.concatMap (\c -> case Dict.get c.index nodes of
-        Nothing -> []
-        Just newN -> [serialize_ convert nodes c.index newN]
+serialize_: (Event -> msg) -> (c -> String) -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> Html.Html msg
+serialize_ convert serializer nodes index n = Html.div []
+    (   Html.a [class "clickable", UI.HtmlEvent.onClick (SelectPast index |> convert) ]
+        [Html.text (serializer n.component)]
+    ::  List.filterMap (\c -> Dict.get c.index nodes
+        |> Maybe.map (serialize_ convert serializer nodes c.index)
     ) n.children
     )
 

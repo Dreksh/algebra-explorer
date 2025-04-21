@@ -293,3 +293,7 @@ dialog svg {
 .block.selected {
     background-color: var(--color-selected);
 }
+/* History */
+#history div {
+    padding-left: 0.2rem;
+}

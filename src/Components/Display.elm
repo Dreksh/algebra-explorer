@@ -1,5 +1,5 @@
 module Components.Display exposing (
-    Model, Event(..), State, init, update, view, menu,
+    Model, Event(..), State, init, update, historyView, view, menu,
     createState, updateState,
     addEquation, updateEquation, transformEquation, listEquations, listUnselectedEquations,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
@@ -34,6 +34,7 @@ type Event =
     Select Int Int
     | Unselect
     | ToggleHide Int
+    | HistoryEvent History.Event
 
 type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
@@ -147,6 +148,11 @@ update event model = case event of
     ToggleHide eq -> if Set.member eq model.hidden
         then ({model | hidden = Set.remove eq model.hidden}, Cmd.none)
         else ({model | hidden = Set.insert eq model.hidden}, Cmd.none)
+    HistoryEvent he -> model.selected
+        |> Maybe.andThen (\(num, _) -> Dict.get num model.equations
+            |> Maybe.map (\eq -> ({model | equations = Dict.insert num (History.update he eq) model.equations}, Cmd.none))
+        )
+        |> Maybe.withDefault (model, Cmd.none)
 
 {-
 # View-related functions
@@ -160,6 +166,11 @@ menu convert model = UI.Menu.Section "Equations" True
         ,   text (History.current eq |> .root |> Math.toString)
         ]]
     ) )
+
+historyView: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
+historyView converter attr model = case Maybe.andThen (\(eqNum, _) -> Dict.get eqNum model.equations) model.selected of
+    Nothing -> div attr [text "No History to view"]
+    Just eq -> History.view (HistoryEvent >> converter) (.root >> Math.toString) eq
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div attr

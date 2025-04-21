@@ -9,6 +9,9 @@ maybeAppend thing list = case thing of
     Nothing -> list
     Just result -> list ++ [result]
 
+maybeGuard: Bool -> a -> Maybe a
+maybeGuard yes item = if yes then Just item else Nothing
+
 listMapWithState: (b -> a -> (c, b)) -> b -> List a -> (List c, b)
 listMapWithState process initial = List.foldl
     (\elem (list, s) -> let (res, newS) = process s elem in (res::list, newS) )

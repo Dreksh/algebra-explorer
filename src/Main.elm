@@ -68,6 +68,7 @@ type alias Swappable =
     ,   resetInput: Bool
     ,   showHelp: Bool
     ,   showMenu: Bool
+    ,   showHistory: Bool
     }
 
 type Event =
@@ -95,6 +96,7 @@ type Event =
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
+    | ToggleHistory
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution Int
@@ -133,6 +135,7 @@ init _ url key =
             , resetInput = False
             , showHelp = False
             , showMenu = if newScreen then True else False
+            , showHistory = False
             }
         , query = query
         , dialog = Nothing
@@ -232,6 +235,7 @@ update event core = let model = core.swappable in
                     Err errStr -> submitNotification_ core errStr
                     Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
+        ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
@@ -337,8 +341,11 @@ view core = let model = core.swappable in
         [   Display.view DisplayEvent [id "display"] model.display
         ,   div [id "inputPane"]
             [   div [id "leftPane"]
-                (  inputDiv model
-                :: (if model.showHelp then [ pre [id "helpText"] [text Math.notation] ] else [])
+                (  List.filterMap identity
+                    [   inputDiv model |> Just
+                    ,   pre [id "helpText"] [text Math.notation] |> Helper.maybeGuard model.showHelp
+                    ,   Display.historyView DisplayEvent [] model.display |> Helper.maybeGuard model.showHistory
+                    ]
                 )
             ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                 [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
@@ -346,6 +353,7 @@ view core = let model = core.swappable in
                     [   Menu.Section "Settings" True
                         [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]] -- TODO
                         ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
+                        ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                         ]
                     ,   Display.menu DisplayEvent model.display
                     ,   Tutorial.menu TutorialEvent model.tutorial
@@ -521,14 +529,15 @@ swappableDecoder = Decode.map3 triplet
         (Decode.field "menu" Menu.decoder)
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
     )
-    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
+    (   Decode.map5 (\a b c d e -> ((a,b),(c,d, e)))
         (Decode.maybe <| Decode.field "createMode" <| Decode.maybe <| Decode.field "eq" Decode.int)
         (Decode.field "resetInput" Decode.bool)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
+        (Decode.field "showHistory" Decode.bool)
     )
-    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),((createMode,resetInput),(showHelp,showMenu))) ->
-       Swappable display rules tutorial notification menu evaluator createMode resetInput showHelp showMenu
+    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),((createMode,resetInput),(showHelp,showMenu,showHistory))) ->
+       Swappable display rules tutorial notification menu evaluator createMode resetInput showHelp showMenu showHistory
     )
 
 evalTypeDecoder_: Decode.Decoder EvalType
@@ -563,6 +572,7 @@ saveFile model = Encode.encode 0
         ,   ("resetInput", Encode.bool model.resetInput)
         ,   ("showHelp", Encode.bool model.showHelp)
         ,   ("showMenu", Encode.bool model.showMenu)
+        ,   ("showHistory", Encode.bool model.showHistory)
         ]
     )
     |> FDownload.string "math.json" "application/json"
