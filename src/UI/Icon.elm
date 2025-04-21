@@ -20,14 +20,10 @@ help attr = svg (viewBox "0 0 24 24" :: attr)
     ]
 
 menu: List (Html.Attribute msg) -> Html.Html msg
-menu attr = svg (viewBox "0 0 150 50" :: attr)
-    [   defs []
-        [ Svg.mask [id "menuMask"]
-            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
-            ,   path [d "M50 15H100M50 35H100", stroke "#000", strokeWidth "10", fill "none"] []
-            ]
-        ]
-    ,   path [d "M0 50C25 50 25 0 50 0H100C125 0 125 50 150 50Z", stroke "none", fill "currentColor", mask "url(#menuMask)"] []
+menu attr = svg (viewBox "0 0 24 24" :: attr)
+    [   path [d "M3 0H21C23 0 24 1 24 3C24 5 23 6 21 6H3C1 6 0 5 0 3C0 1 1 0 3 0Z", fill "currentColor", mask "url(#menuMask)"] []
+    ,   path [d "M3 9H21C23 9 24 10 24 12C24 14 23 15 21 15H3C1 15 0 14 0 12C0 10 1 9 3 9Z", fill "currentColor", mask "url(#menuMask)"] []
+    ,   path [d "M3 18H21C23 18 24 19 24 21C24 23 23 24 21 24H3C1 24 0 23 0 21C0 19 1 18 3 18Z", fill "currentColor", mask "url(#menuMask)"] []
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg

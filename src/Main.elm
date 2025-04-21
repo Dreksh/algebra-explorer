@@ -337,21 +337,20 @@ focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
 view: Model -> Browser.Document Event
 view core = let model = core.swappable in
     { title = "Maths"
-    , body =
-        [   Display.view DisplayEvent [id "display"] model.display
+    , body = List.filterMap identity
+        [   Display.view DisplayEvent [id "display"] model.display |> Just
         ,   div [id "inputPane"]
-            [   div [id "leftPane"]
-                (  List.filterMap identity
-                    [   inputDiv model |> Just
-                    ,   pre [id "helpText"] [text Math.notation] |> Helper.maybeGuard model.showHelp
-                    ,   Display.historyView DisplayEvent [] model.display |> Helper.maybeGuard model.showHistory
-                    ]
-                )
-            ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
-                [   div [id "menuToggle"] [Icon.menu [HtmlEvent.onClick ToggleMenu, Icon.class "clickable", Icon.class "helpable"]]
+            [   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
+                [   Icon.menu (List.filterMap identity
+                        [ id "menuToggle" |> Just
+                        , HtmlEvent.onClick ToggleMenu |> Just
+                        , Icon.class "clickable" |> Just
+                        , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
+                        ]
+                    )
                 ,   Menu.view MenuEvent model.menu
                     [   Menu.Section "Settings" True
-                        [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]] -- TODO
+                        [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                         ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
                         ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                         ]
@@ -371,11 +370,18 @@ view core = let model = core.swappable in
                         )
                     ]
                 ]
-            ]
-        ,   Tutorial.view TutorialEvent [] model.tutorial
-        ,   Notification.view NotificationEvent [id "notification"] model.notification
+            ,   div [id "leftPane"]
+                (  List.filterMap identity
+                    [   pre [id "helpText"] [text Math.notation] |> Helper.maybeGuard model.showHelp
+                    ,   Display.historyView DisplayEvent [] model.display |> Helper.maybeGuard model.showHistory
+                    ]
+                )
+            ] |> Just
+        ,   inputDiv model |> Just
+        ,   Tutorial.view TutorialEvent [] model.tutorial |> Just
+        ,   core.dialog |> Maybe.map (Tuple.first >> Dialog.view)
+        ,   Notification.view NotificationEvent [id "notification"] model.notification |> Just
         ]
-        |> Helper.maybeAppend (Maybe.map (Tuple.first >> Dialog.view) core.dialog)
     }
 
 inputDiv: Swappable -> Html Event

@@ -42,7 +42,7 @@ button.noDefault {
 #inputPane {
     display: flex;
     flex-direction: row;
-    padding: 0 0 0 1rem;
+    padding: 0;
     box-sizing: border-box;
     gap: 1rem;
 }
@@ -56,13 +56,12 @@ button.noDefault {
     pointer-events: auto;
 }
 #rightPane {
-    display: flex;
+    display: block;
     position: relative;
     background-color: var(--color-menu);
     overflow: visible;
-    flex-direction: row;
-    width: min(15rem, 30%);
-    max-width: min(15rem, 30%);
+    width: min(15rem, 30vw);
+    max-width: min(15rem, 30vw);
     transition: max-width 0.5s ease-out;
 }
 .submitable {
@@ -126,15 +125,15 @@ button.noDefault {
 /* Menu */
 #menuToggle {
     position: absolute;
-    color: var(--color-text);
-    height: 2em;
-    left: -4rem;
-    top: 50vh;
-    transform: translateY(-50%);
+    height: 1.5rem;
+    top: 0.5rem;
+    left: calc(min(15rem, 30vw) - 2rem);
+    z-index: 1;
+    transition: left 0.5s ease-out;
 }
-#menuToggle > svg {
-    height: 2rem;
-    transform: rotate(-90deg);
+#menuToggle.closed {
+    left: 0.5rem;
+    transition: left 0.5s ease-out;
 }
 #rightPane.closed {
     max-width: 0;
@@ -143,6 +142,7 @@ button.noDefault {
 #menu {
     position: relative;
     display: block;
+    padding-top: 0.5rem;
     overflow-x: hidden;
     overflow-y: auto;
 }
@@ -157,7 +157,7 @@ button.noDefault {
 }
 #menu svg {
     height: 1rem;
-    vertical-align: middle;
+    vertical-align: -15%;
 }
 li.menuSection {
     height: 0;
