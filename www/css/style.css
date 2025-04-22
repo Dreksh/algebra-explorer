@@ -44,13 +44,13 @@ button.noDefault {
     flex-direction: row;
     padding: 0;
     box-sizing: border-box;
-    gap: 1rem;
 }
 #leftPane {
     flex-grow: 1;
     flex-shrink: 1;
     pointer-events: none;
     position: relative;
+    overflow: none;
 }
 #leftPane > * {
     pointer-events: auto;
@@ -63,6 +63,10 @@ button.noDefault {
     width: min(15rem, 30vw);
     max-width: min(15rem, 30vw);
     transition: max-width 0.5s ease-out;
+}
+span.space {
+    display: inline-block;
+    width: 1rem;
 }
 .submitable {
     color: var(--color-submit);
@@ -80,36 +84,38 @@ button.noDefault {
     color: var(--color-hovered);
 }
 /* Text bar */
-#textbar {
-    display: block;
-    background-color: var(--color-textbox);
-    margin-top: 1rem;
-    width: 100%;
+@keyframes textbarAppear {
+    from { width: 0; padding-right: 0; }
+    to { width: 70%; padding-right: 3rem; }
+}
+@keyframes textbarDisappear {
+    from { width: 70%; padding-right: 3rem; }
+    to { width: 0; padding-right: 0; }
+}
+.textbar {
+    position: absolute;
+    box-sizing: border-box;
+    width: 70%;
     height: 3rem;
-    max-width: 100vw;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    background-color: var(--color-textbox);
+    border-radius: 1.5rem;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: start;
-    pointer-events: none;
-    border-radius: 1.5rem;
-    transition: max-width 0.5s ease-out;
+    animation: textbarAppear 0.5s ease-out forwards;
 }
-#textbar.closed {
-    max-width: 3rem;
-    transition: max-width 0.5s ease-out;
+.textbar.deleting {
+    animation: textbarDisappear 0.5s ease-out forwards;
 }
-#textbar > * {
-    pointer-events: auto;
-}
-#textbar svg {
+.textbar svg {
     height: 2rem;
     margin: 0 0.5rem;
 }
-#textbar.closed > svg {
-    margin: 0;
-}
-#textbar > input[type="text"] {
+.textbar > input[type="text"] {
     height: 100%;
     padding: 0;
     margin: 0;
@@ -157,7 +163,7 @@ button.noDefault {
 }
 #menu svg {
     height: 1rem;
-    vertical-align: -15%;
+    vertical-align: -17%;
 }
 li.menuSection {
     height: 0;

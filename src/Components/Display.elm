@@ -8,7 +8,7 @@ module Components.Display exposing (
     )
 
 import Dict
-import Html exposing (Html, a, button, div, text)
+import Html exposing (Html, a, button, div, span, text)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -158,14 +158,14 @@ update event model = case event of
 # View-related functions
 -}
 
-menu: (Event -> msg) -> Model -> UI.Menu.Part msg
-menu convert model = UI.Menu.Section "Equations" True
-    (   Dict.toList model.equations
+menu: (Event -> msg) -> Model -> List (UI.Menu.Part msg)
+menu convert model = Dict.toList model.equations
     |> List.map (\(num, eq) -> UI.Menu.Content [a [class "clickable", UI.HtmlEvent.onClick (convert (ToggleHide num))]
         [   if Set.member num model.hidden then UI.Icon.hidden [] else UI.Icon.shown []
+        ,   span [class "space"] []
         ,   text (History.current eq |> .root |> Math.toString)
         ]]
-    ) )
+    )
 
 historyView: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 historyView converter attr model = case Maybe.andThen (\(eqNum, _) -> Dict.get eqNum model.equations) model.selected of

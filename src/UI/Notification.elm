@@ -10,16 +10,15 @@ import Html.Attributes exposing (class)
 import Html.Keyed exposing (node)
 import Json.Encode as Encode
 import Json.Decode as Decode
-import Process exposing (sleep)
-import Task
 -- Our modules
 import Helper
+import UI.Animation exposing (DeletableElement, newDeletable, delete, delayEvent)
 import UI.HtmlEvent
 import UI.Icon as Icon
 
 type alias Model =
     {   nextID: Int
-    ,   notifications: Dict.Dict Int (Bool, String) -- Bool represents whether it's deleting
+    ,   notifications: Dict.Dict Int (DeletableElement String Event) -- Bool represents whether it's deleting
     }
 
 type Event =
@@ -33,25 +32,20 @@ displayError: String -> (Model, Cmd Event) -> (Model, Cmd Event)
 displayError str (model, cmd) =
     (   {   model
         |   nextID = model.nextID + 1
-        ,   notifications = Dict.insert model.nextID (False, str) model.notifications
+        ,   notifications = Dict.insert model.nextID (newDeletable (delayedDelete_  model.nextID) str) model.notifications
         }
-    ,   Cmd.batch [ cmd, delayedClear_ model.nextID ]
+    ,   Cmd.batch [ cmd, delayEvent 15000 (ClearEvent model.nextID) ]
     )
 
-delayedClear_: Int -> Cmd Event
-delayedClear_ id = Task.perform (\_ -> ClearEvent id) (sleep 15000)
-
-delayedDelete_: Int -> Cmd Event
-delayedDelete_ id = Task.perform (\_ -> DeleteEvent id) (sleep 750) -- Match this with css animation
+delayedDelete_: Int -> () -> Cmd Event
+delayedDelete_ id _ = delayEvent 750 (DeleteEvent id) -- Match this with css animation
 
 update: Event -> Model -> (Model, Cmd Event)
 update e model = case e of
-    ClearEvent id ->
-        (   {   model
-            |   notifications = Dict.update id (Maybe.map (\(_, str) -> (True, str))) model.notifications
-            }
-        , delayedDelete_ id
-        )
+    ClearEvent id -> case Dict.get id model.notifications of
+        Nothing -> (model, Cmd.none)
+        Just n -> delete n
+            |> \(elem, cmd) -> ({model | notifications = Dict.insert id elem model.notifications}, cmd)
     DeleteEvent id ->
         ({ model | notifications = Dict.remove id model.notifications }, Cmd.none )
 
@@ -63,28 +57,33 @@ view converter attrs model = node "div" attrs
         model.notifications
     )
 
-notificationDiv_: (Event->msg) -> Int -> (Bool, String) -> (String, Html msg)
-notificationDiv_ converter id (deleting, message) =
-    ("notification-" ++ (String.fromInt id), div (notificationAttr_ converter id deleting) [Icon.cancel [Icon.class "clickable", Icon.class "cancelable"], pre [] [text message]])
-
-notificationAttr_: (Event -> msg) -> Int -> Bool -> List (Html.Attribute msg)
-notificationAttr_ converter id deleting =
-    if deleting then
-        [   class "notificationMessage"
-        ,   class "deleting"
-        ]
-    else
-        [   class "notificationMessage"
-        ,   UI.HtmlEvent.onClick (ClearEvent id |> converter)
-        ]
+notificationDiv_: (Event->msg) -> Int -> DeletableElement String Event -> (String, Html msg)
+notificationDiv_ converter id notification =
+    (   "notification-" ++ (String.fromInt id)
+    ,   div
+        ([class "notificationMessage", UI.HtmlEvent.onClick (ClearEvent id)] |> Helper.maybeAppend (UI.Animation.class notification))
+        [Icon.cancel [Icon.class "clickable", Icon.class "cancelable"], pre [] [text notification.element]]
+        |> Html.map converter
+    )
 
 encode: Model -> Encode.Value
 encode model = Encode.object
     [   ("nextID", Encode.int model.nextID)
-    ,   ("notifications", Encode.dict String.fromInt (\(b, s) -> Encode.object [("deleting", Encode.bool b),("message", Encode.string s)]) model.notifications )
+    ,   ("notifications", Encode.dict String.fromInt (UI.Animation.encode Encode.string) model.notifications )
     ]
 
 decoder: Decode.Decoder Model
 decoder = Decode.map2 (\id n -> {nextID = id, notifications = n})
     (Decode.field "nextID" Decode.int)
-    (Decode.field "notifications" <| Helper.intDictDecoder <| Decode.map2 Tuple.pair (Decode.field "deleting" Decode.bool) (Decode.field "message" Decode.string) )
+    (Decode.field "notifications" notificationDecoder_)
+
+notificationDecoder_: Decode.Decoder (Dict.Dict Int (DeletableElement String Event))
+notificationDecoder_ = Helper.intDictDecoder Decode.value
+    |> Decode.andThen (Helper.resultDict (\index val map -> let dec = UI.Animation.decoder Decode.string (delayedDelete_ index) in
+        case Decode.decodeValue dec val of
+            Ok notification -> Ok (Dict.insert index notification map)
+            Err _ -> Err ("failed to deserialise " ++ String.fromInt index)
+        )
+        Dict.empty
+        >> Helper.resultToDecoder
+    )

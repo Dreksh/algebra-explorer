@@ -1,4 +1,4 @@
-module UI.Icon exposing (class, help, menu, tick, add, cancel, shown, hidden)
+module UI.Icon exposing (class, menu, equation, tick, cancel, shown, hidden)
 
 import Html
 import Svg exposing (circle, defs, path, rect, svg, text, text_)
@@ -8,22 +8,16 @@ import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, st
 class: String -> Html.Attribute msg
 class = Svg.Attributes.class
 
-help: List (Html.Attribute msg) -> Html.Html msg
-help attr = svg (viewBox "0 0 24 24" :: attr)
-    [   defs []
-        [ Svg.mask [id "helpMask"]
-            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
-            ,   text_ [x "8", y "17", fill "#000"] [text "?"]
-            ]
-        ]
-    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#helpMask)"] []
-    ]
-
 menu: List (Html.Attribute msg) -> Html.Html msg
 menu attr = svg (viewBox "0 0 24 24" :: attr)
-    [   path [d "M3 0H21C23 0 24 1 24 3C24 5 23 6 21 6H3C1 6 0 5 0 3C0 1 1 0 3 0Z", fill "currentColor", mask "url(#menuMask)"] []
-    ,   path [d "M3 9H21C23 9 24 10 24 12C24 14 23 15 21 15H3C1 15 0 14 0 12C0 10 1 9 3 9Z", fill "currentColor", mask "url(#menuMask)"] []
-    ,   path [d "M3 18H21C23 18 24 19 24 21C24 23 23 24 21 24H3C1 24 0 23 0 21C0 19 1 18 3 18Z", fill "currentColor", mask "url(#menuMask)"] []
+    [   path [d "M2 0H22Q24 0 24 2Q24 4 22 4H2Q0 4 0 2Q0 0 2 0Z", fill "currentColor", mask "url(#menuMask)"] []
+    ,   path [d "M2 10H22Q24 10 24 12Q24 14 22 14H2Q0 14 0 12Q0 10 2 10Z", fill "currentColor", mask "url(#menuMask)"] []
+    ,   path [d "M2 20H22Q24 20 24 22Q24 24 22 24H2Q0 24 0 22Q0 20 2 20Z", fill "currentColor", mask "url(#menuMask)"] []
+    ]
+
+equation: List (Html.Attribute msg) -> Html.Html msg
+equation attr = svg (viewBox "0 0 24 24" :: attr)
+    [   Svg.text_ [] [Svg.text "f(x)"]
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg
@@ -35,17 +29,6 @@ tick attr = svg (viewBox "0 0 24 24" :: attr)
             ]
         ]
     ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#tickMask)"] []
-    ]
-
-add: List (Html.Attribute msg) -> Html.Html msg
-add attr = svg (viewBox "0 0 24 24" :: attr)
-    [   defs []
-        [ Svg.mask [id "addMask"]
-            [   rect [width "100%", height "100%", fill "#fff", x "0", y "0"] []
-            ,   path [d "M12 6V18M6 12H18", fill "none", stroke "#000", strokeWidth "2"] []
-            ]
-        ]
-    ,   circle [r "12", cx "12", cy "12", stroke "none", fill "currentColor", mask "url(#addMask)"] []
     ]
 
 cancel: List (Html.Attribute msg) -> Html.Html msg

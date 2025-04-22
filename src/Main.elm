@@ -10,6 +10,7 @@ import File.Download as FDownload
 import File.Select as FSelect
 import Html exposing (Html, a, button, div, form, input, pre, text)
 import Html.Attributes exposing (class, id, name, placeholder, type_, value)
+import Html.Lazy
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -25,6 +26,7 @@ import Components.Query as Query
 import Components.Rules as Rules
 import Components.Tutorial as Tutorial
 import Helper
+import UI.Animation as Animation
 import UI.Dialog as Dialog
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
@@ -63,9 +65,8 @@ type alias Swappable =
     ,   menu: Menu.Model
     ,   evaluator: Evaluate.Model EvalType Event
     -- UI fields
-        --  Textbox shown, elements are 'add-able' & rules are draggable, for an equation
-    ,   createMode: Maybe (Maybe Int)
-    ,   resetInput: Bool
+    ,   createMode: Maybe (Animation.DeletableElement Int Event)
+    ,   nextCreateInt: Int
     ,   showHelp: Bool
     ,   showMenu: Bool
     ,   showHistory: Bool
@@ -84,7 +85,8 @@ type Event =
     | PressedKey String -- For catching "Escape"
     | EnterCreateMode
     | CancelCreateMode
-    | SubmitEquation (Maybe Int) String
+    | DeleteCreateMode Int
+    | SubmitEquation String
     | ToggleHelp
     | ToggleMenu
     | Save
@@ -131,10 +133,10 @@ init _ url key =
             , notification = nModel
             , menu = Menu.init (Set.fromList ["Settings", "Equations", "Tutorials"])
             , evaluator = Evaluate.init evaluateString
-            , createMode = if newScreen then Just Nothing else Nothing
-            , resetInput = False
+            , createMode = if newScreen then Just (Animation.newDeletable (uiCancelCmd_ 0) 0) else Nothing
+            , nextCreateInt = if newScreen then 1 else 0
             , showHelp = False
-            , showMenu = if newScreen then True else False
+            , showMenu = False
             , showHistory = False
             }
         , query = query
@@ -146,6 +148,9 @@ init _ url key =
         ,   loadSources query.sources
         ]
     )
+
+uiCancelCmd_: Int -> () -> Cmd Event
+uiCancelCmd_ num _ = Animation.delayEvent 500 (DeleteCreateMode num)
 
 parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
 parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createState Display.updateState elem of
@@ -181,21 +186,30 @@ update event core = let model = core.swappable in
         PressedKey str -> if str /= "Escape" then (core, Cmd.none)
             else case (core.dialog, model.createMode) of
                 (Just _, _) -> ({core | dialog = Nothing}, Cmd.none)
-                (_, Just _) -> (updateCore {model | createMode = Nothing, showHelp = False}, Cmd.none)
+                (_, Just m) -> Animation.delete m
+                    |> \(newM, cmd) -> (updateCore {model | createMode = Just newM, showHelp=False}, cmd)
                 _ -> (core, Cmd.none)
-        EnterCreateMode -> (updateCore {model | createMode = Just Nothing, resetInput = False}, focusTextBar_ "textInput")
-        CancelCreateMode -> (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
-        SubmitEquation id str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
+        EnterCreateMode ->
+            (   updateCore
+                {   model
+                |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
+                ,   nextCreateInt = model.nextCreateInt + 1
+                }
+            ,   focusTextBar_ "textInput"
+            )
+        CancelCreateMode -> case model.createMode of
+            Nothing -> (core, Cmd.none)
+            Just m -> Animation.delete m
+                |> \(newM, cmd) -> (updateCore {model | createMode = Just newM, showHelp=False}, cmd)
+        DeleteCreateMode num -> case model.createMode of
+            Nothing -> (core, Cmd.none)
+            Just m -> if m.element /= num then (core, Cmd.none)
+                else (updateCore {model | createMode = Nothing}, Cmd.none)
+        SubmitEquation str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
             else case Matcher.parseEquation Display.createState Display.updateState str of
-                Result.Ok root -> (
-                    case id of
-                        Nothing ->
-                            Display.addEquation root model.display
-                        Just i ->
-                            Display.updateEquation i root model.display
-                    )
+                Result.Ok root -> Display.addEquation root model.display
                     |> (\dModel ->
-                        (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False, resetInput = True}
+                        (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False}
                         ,   Cmd.batch [updateQuery_ core dModel, updateMathJax ()]
                         )
                     )
@@ -354,7 +368,10 @@ view core = let model = core.swappable in
                         ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
                         ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                         ]
-                    ,   Display.menu DisplayEvent model.display
+                    ,   Menu.Section "Equations" True
+                        (   Menu.Content [a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"]]
+                        :: Display.menu DisplayEvent model.display
+                        )
                     ,   Tutorial.menu TutorialEvent model.tutorial
                     ,   Menu.Section "Topics" True
                         (   [   Menu.Content [ a
@@ -374,40 +391,31 @@ view core = let model = core.swappable in
                 (  List.filterMap identity
                     [   pre [id "helpText"] [text Math.notation] |> Helper.maybeGuard model.showHelp
                     ,   Display.historyView DisplayEvent [] model.display |> Helper.maybeGuard model.showHistory
+                    ,   model.createMode |> Maybe.map (Html.Lazy.lazy inputDiv)
                     ]
                 )
             ] |> Just
-        ,   inputDiv model |> Just
         ,   Tutorial.view TutorialEvent [] model.tutorial |> Just
         ,   core.dialog |> Maybe.map (Tuple.first >> Dialog.view)
         ,   Notification.view NotificationEvent [id "notification"] model.notification |> Just
         ]
     }
 
-inputDiv: Swappable -> Html Event
+inputDiv: Animation.DeletableElement Int Event -> Html Event
 inputDiv model =
     form
-    (   id "textbar"
-    ::  (   case model.createMode of
-            Nothing -> [class "closed", HtmlEvent.onSubmit EnterCreateMode]
-            Just eq -> [HtmlEvent.onSubmitField "equation" (SubmitEquation eq)]
-        )
+    (   [id ("textbar"++String.fromInt model.element),class "textbar", HtmlEvent.onSubmitField "equation" SubmitEquation]
+    |>  Helper.maybeAppend (Animation.class model)
     )
-    [   Icon.help [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
+    [   Icon.equation [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
     ,   input
         (   [ type_ "text"
             , name "equation"
             , id "textInput"
             , placeholder "Type an equation to solve"
             ]
-        ++  if model.resetInput then [value ""] else []
         )
         []
-    ,   Icon.cancel [Icon.class "clickable", Icon.class "cancelable", HtmlEvent.onClick CancelCreateMode]
-    ,   button [type_ "submit", Icon.class "noDefault"] [   case model.createMode of
-            Nothing -> Icon.add [Icon.class "clickable", Icon.class "submitable"]
-            Just _ -> Icon.tick [Icon.class "clickable", Icon.class "submitable"]
-        ]
     ]
 
 addTopicDialog_: Dialog.Model Event
@@ -523,6 +531,9 @@ sourceDecoder = Decode.map Source
 triplet: a -> b -> c -> (a,b,c)
 triplet x y z = (x,y,z)
 
+quarter: a -> b -> c -> d -> ((a,b),(c,d))
+quarter w x y z = ((w,x),(y,z))
+
 swappableDecoder: Decode.Decoder Swappable
 swappableDecoder = Decode.map3 triplet
     (   Decode.map3 triplet
@@ -530,21 +541,25 @@ swappableDecoder = Decode.map3 triplet
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )
-    (   Decode.map3 triplet
+    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
         (Decode.field "notification" Notification.decoder)
         (Decode.field "menu" Menu.decoder)
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
+        (Decode.maybe (Decode.field "createMode" createModeDecoder_))
     )
-    (   Decode.map5 (\a b c d e -> ((a,b),(c,d, e)))
-        (Decode.maybe <| Decode.field "createMode" <| Decode.maybe <| Decode.field "eq" Decode.int)
-        (Decode.field "resetInput" Decode.bool)
+    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
+        (Decode.field "nextCreateInt" Decode.int)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
         (Decode.field "showHistory" Decode.bool)
     )
-    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),((createMode,resetInput),(showHelp,showMenu,showHistory))) ->
-       Swappable display rules tutorial notification menu evaluator createMode resetInput showHelp showMenu showHistory
+    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp),(showMenu,showHistory))) ->
+       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory
     )
+
+createModeDecoder_: Decode.Decoder (Animation.DeletableElement Int Event)
+createModeDecoder_ = Decode.field "element" Decode.int
+    |> Decode.andThen (\id -> Animation.decoder Decode.int (uiCancelCmd_ id))
 
 evalTypeDecoder_: Decode.Decoder EvalType
 evalTypeDecoder_ = Decode.field "type" Decode.string
@@ -572,10 +587,9 @@ saveFile model = Encode.encode 0
         ,   (   "createMode"
             ,   case model.createMode of
                 Nothing -> Encode.null
-                Just Nothing -> Encode.object []
-                Just (Just num) -> Encode.object [("eq", Encode.int num)]
+                Just m -> Animation.encode Encode.int m
             )
-        ,   ("resetInput", Encode.bool model.resetInput)
+        ,   ("nextCreateInt", Encode.int model.nextCreateInt)
         ,   ("showHelp", Encode.bool model.showHelp)
         ,   ("showMenu", Encode.bool model.showMenu)
         ,   ("showHistory", Encode.bool model.showHistory)
