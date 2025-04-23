@@ -293,13 +293,10 @@ dialog svg {
     display: grid;
     column-gap: .3rem;
 } */
-.block {
+.blockRect {
     stroke: black;
     rx: 0.2;
     fill: #FFF;
-}
-.block:hover {
-    stroke: var(--color-highlight)
 }
 .blockText {
     font: 0.5pt monospace;
@@ -307,7 +304,10 @@ dialog svg {
     dominant-baseline: central;
     fill: black;
 }
-.block.selected {
+.block:hover .blockRect {
+    stroke: var(--color-highlight)
+}
+.block.selected .blockRect {
     fill: var(--color-selected);
 }
 /* History */
