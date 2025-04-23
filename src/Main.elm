@@ -10,7 +10,7 @@ import File.Download as FDownload
 import File.Select as FSelect
 import Html exposing (Html, a, button, div, form, input, pre, text)
 import Html.Attributes exposing (class, id, name, placeholder, type_, value)
-import Html.Lazy
+import Html.Keyed
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -189,14 +189,16 @@ update event core = let model = core.swappable in
                 (_, Just m) -> Animation.delete m
                     |> \(newM, cmd) -> (updateCore {model | createMode = Just newM, showHelp=False}, cmd)
                 _ -> (core, Cmd.none)
-        EnterCreateMode ->
-            (   updateCore
-                {   model
-                |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
-                ,   nextCreateInt = model.nextCreateInt + 1
-                }
-            ,   focusTextBar_ "textInput"
-            )
+        EnterCreateMode -> case model.createMode of
+            Nothing ->
+                (   updateCore
+                    {   model
+                    |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
+                    ,   nextCreateInt = model.nextCreateInt + 1
+                    }
+                ,   focusTextBar_ "textInput"
+                )
+            Just _ -> (core, focusTextBar_ "textInput")
         CancelCreateMode -> case model.createMode of
             Nothing -> (core, Cmd.none)
             Just m -> Animation.delete m
@@ -387,11 +389,11 @@ view core = let model = core.swappable in
                         )
                     ]
                 ]
-            ,   div [id "leftPane"]
+            ,   Html.Keyed.node "div" [id "leftPane"]
                 (  List.filterMap identity
-                    [   pre [id "helpText"] [text Math.notation] |> Helper.maybeGuard model.showHelp
-                    ,   Display.historyView DisplayEvent [] model.display |> Helper.maybeGuard model.showHistory
-                    ,   model.createMode |> Maybe.map (Html.Lazy.lazy inputDiv)
+                    [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
+                    ,   ("history", Display.historyView DisplayEvent [id "history"] model.display) |> Helper.maybeGuard model.showHistory
+                    ,   model.createMode |> Maybe.map (inputDiv)
                     ]
                 )
             ] |> Just
@@ -401,22 +403,24 @@ view core = let model = core.swappable in
         ]
     }
 
-inputDiv: Animation.DeletableElement Int Event -> Html Event
+inputDiv: Animation.DeletableElement Int Event -> (String, Html Event)
 inputDiv model =
-    form
-    (   [id ("textbar"++String.fromInt model.element),class "textbar", HtmlEvent.onSubmitField "equation" SubmitEquation]
-    |>  Helper.maybeAppend (Animation.class model)
-    )
-    [   Icon.equation [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
-    ,   input
-        (   [ type_ "text"
-            , name "equation"
-            , id "textInput"
-            , placeholder "Type an equation to solve"
-            ]
+    (   "textbar"++String.fromInt model.element
+    ,    form
+        (   [class "textbar", HtmlEvent.onSubmitField "equation" SubmitEquation]
+        |>  Helper.maybeAppend (Animation.class model)
         )
-        []
-    ]
+        [   Icon.equation [id "help", Icon.class "clickable", Icon.class "helpable", HtmlEvent.onClick ToggleHelp]
+        ,   input
+            (   [ type_ "text"
+                , name "equation"
+                , id "textInput"
+                , placeholder "Type an equation to solve"
+                ]
+            )
+            []
+        ]
+    )
 
 addTopicDialog_: Dialog.Model Event
 addTopicDialog_ =
