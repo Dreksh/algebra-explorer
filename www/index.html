@@ -19,7 +19,10 @@
     <script src="js/elm.js"></script>
     <script>
         var app = Elm.Main.init({
-            flags: {}
+            flags: {
+                width: window.innerWidth,
+                height: window.innerHeight
+            }
         });
         /* Add commands / subscriptions onto the app below */
         app.ports.updateMathJax.subscribe(function (val) { if (MathJax.typeset) MathJax.typeset(); });

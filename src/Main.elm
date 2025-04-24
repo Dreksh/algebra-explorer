@@ -8,8 +8,8 @@ import Dict
 import File
 import File.Download as FDownload
 import File.Select as FSelect
-import Html exposing (Html, a, button, div, form, input, pre, text)
-import Html.Attributes exposing (class, id, name, placeholder, type_, value)
+import Html exposing (Html, a, div, form, input, pre, text)
+import Html.Attributes exposing (class, id, name, placeholder, type_)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
@@ -28,6 +28,8 @@ import Components.Tutorial as Tutorial
 import Helper
 import UI.Animation as Animation
 import UI.Dialog as Dialog
+import UI.Draggable as Draggable
+import UI.HistoryView as HistoryView
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
@@ -54,6 +56,7 @@ port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 type alias Model =
     {   swappable: Swappable
     ,   query: Query.Model
+    ,   size: Draggable.Size
     ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Display.State))
     }
 
@@ -70,6 +73,7 @@ type alias Swappable =
     ,   showHelp: Bool
     ,   showMenu: Bool
     ,   showHistory: Bool
+    ,   historyBox: Draggable.Model
     }
 
 type Event =
@@ -80,6 +84,7 @@ type Event =
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
+    | HistoryEvent HistoryView.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
     | PressedKey String -- For catching "Escape"
@@ -99,6 +104,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     | ToggleHistory
+    | WindowResize Int Int
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution Int
@@ -120,7 +126,7 @@ type alias Source =
 -- Events
 
 init: Decode.Value -> Url.Url -> Nav.Key -> (Model, Cmd Event)
-init _ url key =
+init flags url key =
     let
         query = Query.parseInit url key
         (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations |> \(a, b) -> (List.reverse a, List.reverse b)
@@ -138,9 +144,15 @@ init _ url key =
             , showHelp = False
             , showMenu = False
             , showHistory = False
+            , historyBox = Draggable.Model (60, 10) (30, 80)
             }
         , query = query
         , dialog = Nothing
+        , size = Decode.decodeValue
+            (Decode.map2 Tuple.pair (Decode.field "width" Decode.float) (Decode.field "height" Decode.float))
+            flags
+            |> Result.toMaybe
+            |> Maybe.withDefault (0, 0)
         }
     ,   Cmd.batch
         [   Cmd.map NotificationEvent nCmd
@@ -163,6 +175,7 @@ subscriptions model = Sub.batch
             (Nothing, Nothing) -> Sub.none
             _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
     ,   evaluateResult EvalComplete
+    ,   BrowserEvent.onResize WindowResize
     ]
 
 {-
@@ -182,6 +195,10 @@ update event core = let model = core.swappable in
         NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
             (updateCore {model | notification = nModel}, Cmd.map NotificationEvent nCmd)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
+        HistoryEvent e -> case e of
+            HistoryView.DraggableEvent de -> (updateCore {model | historyBox = Draggable.update core.size de model.historyBox}, Cmd.none)
+            HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
+                (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         NoOp -> (core, Cmd.none)
         PressedKey str -> if str /= "Escape" then (core, Cmd.none)
             else case (core.dialog, model.createMode) of
@@ -252,6 +269,7 @@ update event core = let model = core.swappable in
                     Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
         ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
+        WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
@@ -392,7 +410,7 @@ view core = let model = core.swappable in
             ,   Html.Keyed.node "div" [id "leftPane"]
                 (  List.filterMap identity
                     [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
-                    ,   ("history", Display.historyView DisplayEvent [id "history"] model.display) |> Helper.maybeGuard model.showHistory
+                    ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
                     ,   model.createMode |> Maybe.map (inputDiv)
                     ]
                 )
@@ -551,14 +569,15 @@ swappableDecoder = Decode.map3 triplet
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
         (Decode.maybe (Decode.field "createMode" createModeDecoder_))
     )
-    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
+    (   Decode.map5 (\a b c d e -> ((a,b),(c,d, e)))
         (Decode.field "nextCreateInt" Decode.int)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
         (Decode.field "showHistory" Decode.bool)
+        (Decode.field "historyBox" Draggable.decoder)
     )
-    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp),(showMenu,showHistory))) ->
-       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory
+    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp),(showMenu,showHistory,historyBox))) ->
+       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory historyBox
     )
 
 createModeDecoder_: Decode.Decoder (Animation.DeletableElement Int Event)
@@ -597,6 +616,7 @@ saveFile model = Encode.encode 0
         ,   ("showHelp", Encode.bool model.showHelp)
         ,   ("showMenu", Encode.bool model.showMenu)
         ,   ("showHistory", Encode.bool model.showHistory)
+        ,   ("historyBox", Draggable.encode model.historyBox)
         ]
     )
     |> FDownload.string "math.json" "application/json"

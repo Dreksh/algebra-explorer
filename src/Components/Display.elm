@@ -1,5 +1,5 @@
 module Components.Display exposing (
-    Model, Event(..), State, init, update, historyView, view, menu,
+    Model, Event(..), State, init, update, view, menu,
     createState, updateState,
     addEquation, updateEquation, transformEquation, listEquations, listUnselectedEquations,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
@@ -166,11 +166,6 @@ menu convert model = Dict.toList model.equations
         ,   text (History.current eq |> .root |> Math.toString)
         ]]
     )
-
-historyView: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
-historyView converter attr model = case Maybe.andThen (\(eqNum, _) -> Dict.get eqNum model.equations) model.selected of
-    Nothing -> div attr [text "No History to view"]
-    Just eq -> History.view (HistoryEvent >> converter) (.root >> Math.toString) eq
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attr model = div attr

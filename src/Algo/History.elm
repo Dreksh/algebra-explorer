@@ -1,15 +1,12 @@
-module Algo.History exposing (Model, Event, init, update, view,
-    current, add, redo, undo,
+module Algo.History exposing (Model, Event(..), init, update,
+    current, add, redo, undo, serialize,
     encode, decoder
     )
 
 import Dict
-import Html
-import Html.Attributes exposing (class, id)
 import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
-import UI.HtmlEvent
 import Helper
 
 type alias Node_ c =
@@ -94,20 +91,14 @@ update: Event -> Model component -> Model component
 update e model = case e of
     SelectPast n -> {model | visits = n::model.visits}
 
-{-
-## View
--}
+serialize: (Int -> component -> List a -> a) -> Model component -> a
+serialize processNode model = serialize_ processNode model.nodes 0 model.root
 
-view: (Event -> msg) -> (component -> String) -> Model component -> Html.Html msg
-view convert serializer model = Html.div [id "history"] [serialize_ convert serializer model.nodes 0 model.root ]
-
-serialize_: (Event -> msg) -> (c -> String) -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> Html.Html msg
-serialize_ convert serializer nodes index n = Html.div []
-    (   Html.a [class "clickable", UI.HtmlEvent.onClick (SelectPast index |> convert) ]
-        [Html.text (serializer n.component)]
-    ::  List.filterMap (\c -> Dict.get c.index nodes
-        |> Maybe.map (serialize_ convert serializer nodes c.index)
-    ) n.children
+serialize_: (Int -> c -> List a -> a) -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> a
+serialize_ converter nodes index n = converter index n.component
+    (   List.filterMap
+        (\c -> Dict.get c.index nodes |> Maybe.map (serialize_ converter nodes c.index))
+        n.children
     )
 
 {-
