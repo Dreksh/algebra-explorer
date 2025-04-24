@@ -172,9 +172,7 @@ parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createS
 
 subscriptions: Model -> Sub Event
 subscriptions model = Sub.batch
-    [   case (model.swappable.createMode, model.dialog) of
-            (Nothing, Nothing) -> Sub.none
-            _ -> BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+    [   BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
     ]
@@ -207,17 +205,16 @@ update event core = let model = core.swappable in
                 (Just _, _) -> ({core | dialog = Nothing}, Cmd.none)
                 (_, Just m) -> Animation.delete m
                     |> \(newM, cmd) -> (updateCore {model | createMode = Just newM, showHelp=False}, cmd)
-                _ -> (core, Cmd.none)
-        EnterCreateMode -> case model.createMode of
-            Nothing ->
-                (   updateCore
+                _ -> (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
+        EnterCreateMode -> if model.createMode |> Maybe.map .deleting |> Maybe.withDefault True
+            then (  updateCore
                     {   model
                     |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
                     ,   nextCreateInt = model.nextCreateInt + 1
                     }
                 ,   focusTextBar_ "textInput"
                 )
-            Just _ -> (core, focusTextBar_ "textInput")
+            else (core, focusTextBar_ "textInput")
         CancelCreateMode -> case model.createMode of
             Nothing -> (core, Cmd.none)
             Just m -> Animation.delete m
