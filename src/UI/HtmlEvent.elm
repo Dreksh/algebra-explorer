@@ -3,8 +3,8 @@ module UI.HtmlEvent exposing (..)
 -- Event is needed to block the js events from propagating upwards
 
 import Html
-import Html.Events exposing(preventDefaultOn, stopPropagationOn)
-import Json.Decode exposing (Decoder, field, map, string, succeed)
+import Html.Events exposing(custom, preventDefaultOn, stopPropagationOn)
+import Json.Decode exposing (Decoder, Value, field, float, map, map2, string, succeed, value)
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
@@ -30,4 +30,14 @@ onSubmitForm target = preventDefaultOn "submit"
         <| target
     )
 
---onDrag: ()
+onPointerDraw: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
+onPointerDraw converter activate move deactivate =
+    let
+        positionDecoder = map2 Tuple.pair (field "screenX" float) (field "screenY" float)
+        pointerId = field "pointerId" value
+    in
+    [   custom "pointerdown" (map2 (\pid input -> {message = activate pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder )
+    ,   custom "pointermove" (map2 (\pid input -> {message = move pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder )
+    ,   custom "pointerup" (map (\pid -> {message = deactivate pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
+    ,   custom "pointercancel" (map (\pid -> {message = deactivate pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
+    ]

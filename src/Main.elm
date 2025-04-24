@@ -50,6 +50,7 @@ main = Browser.application
 port updateMathJax: () -> Cmd msg
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
+port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 
 -- Types
 
@@ -144,7 +145,7 @@ init flags url key =
             , showHelp = False
             , showMenu = False
             , showHistory = False
-            , historyBox = Draggable.Model (60, 10) (30, 80)
+            , historyBox = Draggable.init "history" (60, 10) (30, 80)
             }
         , query = query
         , dialog = Nothing
@@ -196,7 +197,8 @@ update event core = let model = core.swappable in
             (updateCore {model | notification = nModel}, Cmd.map NotificationEvent nCmd)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
         HistoryEvent e -> case e of
-            HistoryView.DraggableEvent de -> (updateCore {model | historyBox = Draggable.update core.size de model.historyBox}, Cmd.none)
+            HistoryView.DraggableEvent de -> let (newBox, action) = Draggable.update core.size de model.historyBox in
+                (updateCore {model | historyBox = newBox}, actionToCapture_ action)
             HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
                 (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         NoOp -> (core, Cmd.none)
@@ -364,6 +366,12 @@ updateQuery_ model dModel = let query = Query.setEquations (Display.listEquation
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
 
+actionToCapture_: Maybe Draggable.Action -> Cmd Event
+actionToCapture_ action = case action of
+    Nothing -> Cmd.none
+    Just (Draggable.SetCapture eId pId) -> capture {set = True, eId = eId, pId = pId}
+    Just (Draggable.ReleaseCapture eId pId) -> capture {set = False, eId = eId, pId = pId}
+
 {-
 ## UI
 -}
@@ -374,15 +382,15 @@ view core = let model = core.swappable in
     , body = List.filterMap identity
         [   Display.view DisplayEvent [id "display"] model.display |> Just
         ,   div [id "inputPane"]
-            [   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
-                [   Icon.menu (List.filterMap identity
-                        [ id "menuToggle" |> Just
-                        , HtmlEvent.onClick ToggleMenu |> Just
-                        , Icon.class "clickable" |> Just
-                        , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
-                        ]
-                    )
-                ,   Menu.view MenuEvent model.menu
+            [   Html.Keyed.node "div" [id "leftPane"]
+                (  List.filterMap identity
+                    [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
+                    ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
+                    ,   model.createMode |> Maybe.map (inputDiv)
+                    ]
+                )
+            ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
+                [   Menu.view MenuEvent model.menu
                     [   Menu.Section "Settings" True
                         [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                         ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
@@ -406,14 +414,14 @@ view core = let model = core.swappable in
                         ++  Rules.menuTopics RuleEvent model.rules (Display.selectedNode model.display)
                         )
                     ]
+                ,   Icon.menu (List.filterMap identity
+                        [ id "menuToggle" |> Just
+                        , HtmlEvent.onClick ToggleMenu |> Just
+                        , Icon.class "clickable" |> Just
+                        , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
+                        ]
+                    )
                 ]
-            ,   Html.Keyed.node "div" [id "leftPane"]
-                (  List.filterMap identity
-                    [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
-                    ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
-                    ,   model.createMode |> Maybe.map (inputDiv)
-                    ]
-                )
             ] |> Just
         ,   Tutorial.view TutorialEvent [] model.tutorial |> Just
         ,   core.dialog |> Maybe.map (Tuple.first >> Dialog.view)

@@ -16,8 +16,7 @@ type Event =
 
 view: (Event -> msg) -> Draggable.Model -> Display.Model -> Html.Html msg
 view converter dragModel model = Draggable.div
-    (DraggableEvent >> converter) dragModel
-    [id "history"]
+    (DraggableEvent >> converter) dragModel []
     [ case model.selected |> Maybe.andThen (\(eq, _) -> Dict.get eq model.equations) of
         Nothing -> Html.text "No history selected"
         Just history -> history |> History.serialize (\index c children ->
