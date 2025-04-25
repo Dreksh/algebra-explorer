@@ -1,4 +1,4 @@
-module UI.Icon exposing (class, menu, equation, tick, cancel, shown, hidden)
+module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden)
 
 import Html
 import Svg exposing (circle, defs, path, rect, svg, text, text_)
@@ -10,9 +10,15 @@ class = Svg.Attributes.class
 
 menu: List (Html.Attribute msg) -> Html.Html msg
 menu attr = svg (viewBox "0 0 24 24" :: attr)
-    [   path [d "M2 0H22Q24 0 24 2Q24 4 22 4H2Q0 4 0 2Q0 0 2 0Z", fill "currentColor", mask "url(#menuMask)"] []
-    ,   path [d "M2 10H22Q24 10 24 12Q24 14 22 14H2Q0 14 0 12Q0 10 2 10Z", fill "currentColor", mask "url(#menuMask)"] []
-    ,   path [d "M2 20H22Q24 20 24 22Q24 24 22 24H2Q0 24 0 22Q0 20 2 20Z", fill "currentColor", mask "url(#menuMask)"] []
+    [   path [d "M2 0H22Q24 0 24 2Q24 4 22 4H2Q0 4 0 2Q0 0 2 0Z", fill "currentColor", stroke "none"] []
+    ,   path [d "M2 10H22Q24 10 24 12Q24 14 22 14H2Q0 14 0 12Q0 10 2 10Z", fill "currentColor", stroke "none"] []
+    ,   path [d "M2 20H22Q24 20 24 22Q24 24 22 24H2Q0 24 0 22Q0 20 2 20Z", fill "currentColor", stroke "none"] []
+    ]
+
+download: List (Html.Attribute msg) -> Html.Html msg
+download attr = svg (viewBox "0 0 24 24" :: attr)
+    [   path [d "M12 18L6 12L10 12L10 4L14 4L14 12L18 12Z", fill "currentColor", stroke "none"] []
+    ,   path [d "M4 20H20", fill "none", stroke "currentColor", strokeWidth "4"] []
     ]
 
 equation: List (Html.Attribute msg) -> Html.Html msg

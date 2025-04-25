@@ -1,14 +1,13 @@
 module Components.Display exposing (
     Model, Event(..), State, init, update, view, menu,
     createState, updateState,
-    addEquation, updateEquation, transformEquation, listEquations, listUnselectedEquations,
+    addEquation, updateEquation, transformEquation, listEquations,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
-    selectedNode,
     encode, decoder, encodeState, stateDecoder
     )
 
 import Dict
-import Html exposing (Html, a, button, div, span, text)
+import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (class, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -35,7 +34,7 @@ type Event =
     Select Int Int
     | Unselect
     | ToggleHide Int
-    | HistoryEvent History.Event
+    | HistoryEvent Int History.Event
 
 type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
@@ -71,46 +70,26 @@ updateEquation id eq model = case Dict.get id model.equations of
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations |> Dict.map (\_ -> History.current)
 
-listUnselectedEquations: Model -> Dict.Dict Int (Matcher.Equation State)
-listUnselectedEquations model =
-    ( case model.selected of
-        Nothing -> model.equations
-        Just (eq, _) -> Dict.filter (\k _ -> k /= eq) model.equations
-    ) |> Dict.map (\_ -> History.current)
+groupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
+groupChildren eqNum root children model = case Dict.get eqNum model.equations of
+    Nothing -> Err "Equation not found"
+    Just eq -> History.current eq
+        |> Matcher.groupSubtree root children
+        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
-selectedNode: Model -> Maybe {eq: Int, root: Math.Tree (Matcher.State State), nodes: Set.Set Int, childCount: Int}
-selectedNode model = model.selected
-    |> Maybe.andThen (\(eq, ids) -> Dict.get eq model.equations
-        |> Maybe.andThen (History.current >> Matcher.selectedSubtree ids >> Result.toMaybe)
-        |> Maybe.map (\(root, nodes, count) -> {eq = eq, root = root, nodes = nodes, childCount = count})
-    )
+ungroupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
+ungroupChildren eqNum id selected model = case Dict.get eqNum model.equations of
+    Nothing -> Err "Equation not found"
+    Just eq -> History.current eq
+        |> Matcher.ungroupSubtree id selected
+        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
-groupChildren: Model -> Result String Model
-groupChildren model = case model.selected of
-    Nothing -> Err "Nothing was selected"
-    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation not found"
-        Just eq -> History.current eq
-            |> Matcher.groupSubtree ids
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
-
-ungroupChildren: Model -> Result String Model -- only ungroups one, and can be an unselected node
-ungroupChildren model = case model.selected of
-    Nothing -> Err "Nothing was selected"
-    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation not found"
-        Just eq -> History.current eq
-            |> Matcher.ungroupSubtree ids
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
-
-replaceNumber: Float -> Math.Tree () -> Model -> Result String Model
-replaceNumber target subtree model = case model.selected of
-    Nothing -> Err "Nothing was selected"
-    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation not found"
-        Just eq -> History.current eq
-            |> Matcher.replaceRealNode ids target subtree
-            |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
+replaceNumber: Int -> Int -> Float -> Math.Tree () -> Model -> Result String Model
+replaceNumber eqNum root target subtree model = case Dict.get eqNum model.equations of
+    Nothing -> Err "Equation not found"
+    Just eq -> History.current eq
+        |> Matcher.replaceRealNode root target subtree
+        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
 
 replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
 replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
@@ -149,11 +128,9 @@ update event model = case event of
     ToggleHide eq -> if Set.member eq model.hidden
         then ({model | hidden = Set.remove eq model.hidden}, Cmd.none)
         else ({model | hidden = Set.insert eq model.hidden}, Cmd.none)
-    HistoryEvent he -> model.selected
-        |> Maybe.andThen (\(num, _) -> Dict.get num model.equations
-            |> Maybe.map (\eq -> ({model | equations = Dict.insert num (History.update he eq) model.equations}, Cmd.none))
-        )
-        |> Maybe.withDefault (model, Cmd.none)
+    HistoryEvent eq he -> case Dict.get eq model.equations of
+        Nothing ->(model, Cmd.none)
+        Just his -> ({model | equations = Dict.insert eq (History.update he his) model.equations}, Cmd.none)
 
 {-
 # View-related functions
@@ -164,7 +141,7 @@ menu convert model = Dict.toList model.equations
     |> List.map (\(num, eq) -> UI.Menu.Content [a [class "clickable", UI.HtmlEvent.onClick (convert (ToggleHide num))]
         [   if Set.member num model.hidden then UI.Icon.hidden [] else UI.Icon.shown []
         ,   span [class "space"] []
-        ,   text (History.current eq |> .root |> Math.toString)
+        ,   p [] [text (History.current eq |> .root |> Math.toString)]
         ]]
     )
 

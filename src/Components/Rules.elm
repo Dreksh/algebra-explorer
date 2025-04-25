@@ -1,5 +1,5 @@
-module Components.Rules exposing (Model, Event(..), Parameters, Topic, init,
-    addTopic, deleteTopic, addSources, topicDecoder,
+module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, init,
+    addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
     replaceGlobalVar, evaluateStr,
     menuTopics,
     encode, decoder, encodeParameters, parameterDecoder
@@ -15,8 +15,9 @@ import Set
 import Helper
 import Algo.Matcher as Matcher
 import Algo.Math as Math
-import UI.Menu as Menu
 import UI.HtmlEvent as HtmlEvent
+import UI.Icon as Icon
+import UI.Menu as Menu
 
 {-
 ## Modeling rules
@@ -43,7 +44,7 @@ type alias Expression_ =
     ,   root: Matcher.Matcher
     }
 
-type alias Rule_ =
+type alias Rule =
     {   title: String
     ,   description: String
     ,   parameters: List {match: Expression_, description: String}
@@ -54,7 +55,7 @@ type alias Topic =
     {   name: String
     ,   constants: Dict.Dict String String
     ,   functions: Dict.Dict String FunctionProperties_
-    ,   rules: List Rule_
+    ,   rules: List Rule
     }
 
 type alias Parameters state =
@@ -78,12 +79,13 @@ type LoadState_ obj =
 
 type Event treeState =
     Apply (Parameters treeState)
-    | Group
-    | Ungroup
-    | NumericalSubstitution Float
-    | Substitute
+    | Group Int Int (Set.Set Int) -- eq root children
+    | Ungroup Int Int (Set.Set Int) -- eq root selected
+    | NumericalSubstitution Int Int Float -- eq root matching value
+    | Substitute Int Int -- eq root
     | Download String
-    | Evaluate
+    | Evaluate Int Int String -- eq nodeID evalString
+    | Delete String
 
 init: Model
 init =
@@ -156,6 +158,13 @@ deleteTopic name model = case Dict.get name model.topics of
             }
     _ -> model
 
+loadedTopics: Model -> List Topic
+loadedTopics model = Dict.toList model.topics
+    |> List.filterMap (\(_, state) -> case state of
+        Installed_ _ obj -> Just obj
+        _ -> Nothing
+    )
+
 addSources: Dict.Dict String String -> Model -> Model
 addSources map model =
     {   model
@@ -223,132 +232,62 @@ evaluateStr model root = (
 ## UI
 -}
 
-type alias SelectedNode_ state = {eq: Int, root: Math.Tree (Matcher.State state), nodes: Set.Set Int, childCount: Int}
-
-menuTopics: (Event state -> msg) -> Model -> Maybe (SelectedNode_ state) -> List (Menu.Part msg)
-menuTopics converter model selectedNode =
-    let
-        individualRule rule = let (display, params) = matchRule_ selectedNode rule in
-            Menu.Section rule.title display
-            [  Menu.Content
-                (   [   applyButton converter (Maybe.map Apply params)
-                    ,   h3 [] [text "Rules"]
-                    ]
-                    ++ List.map (\match -> p [] [text (match.from.name ++"→"++ match.to.name)]) rule.matches
-                    ++ [   h3 [] [text "Description"]
-                    ,   p [] [text rule.description]
+menuTopics: (Event state -> msg) -> Model -> List (Menu.Part msg)
+menuTopics converter model = Dict.foldl (\k t -> (::)
+        (case t of
+            NotInstalled_ url -> Menu.Section
+                {name = k, icon = Just (Icon.download [HtmlEvent.onClick (converter (Download url)), Icon.class "clickable"])}
+                [   Menu.Content [p [] [text "<Add text for what this topic is about>"]]
+                ]
+            Installed_ _ topic -> Menu.Section
+                {name = topic.name, icon = Just (a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable"] [text "x"])}
+                ( List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
+                    [  Menu.Content ( List.concat
+                        [ [h3 [] [text "Rules"]]
+                        , List.map (\match -> p [] [text (match.from.name ++"→"++ match.to.name)]) rule.matches
+                        , [   h3 [] [text "Description"], p [] [text rule.description]]
+                        ])
                     ]
                 )
-            ]
-    in
-    Dict.foldl (\k t -> (::)
-        (case t of
-            NotInstalled_ url -> Menu.Section k True
-                [   Menu.Content [a [HtmlEvent.onClick (converter (Download url)), class "clickable"] [text "Download"]]
-                ]
-            Installed_ _ topic -> Menu.Section topic.name True
-                ( List.map individualRule topic.rules )
+                    topic.rules
+                )
         )
     )
-    [coreTopic_ converter selectedNode]
-    model.topics
-    |> List.reverse
-
-matchRule_: Maybe (SelectedNode_ state) -> Rule_ -> (Bool, Maybe (Parameters state))
-matchRule_ selected rule = case selected of
-    Nothing -> (True, Nothing)
-    Just n -> if List.any (\m -> Matcher.matchNode m.from.root n.root) rule.matches |> not
-        then (False, Nothing)
-        else
-            let
-                matches = List.foldl (\m -> Matcher.matchSubtree n.nodes m.from.root n.root
-                    |> Maybe.map (\result -> {from = result, name = m.to.name, matcher = m.to.root})
-                    |> Helper.maybeAppend
-                    ) [] rule.matches
-            in
-                if List.isEmpty matches then (True, Nothing)
-                else (  True
-                    , Just
-                        { title = rule.title
-                        , parameters = List.map (\p ->
-                            {name = p.match.name, description = p.description, root = Matcher.getName p.match.root, args = Matcher.countChildren p.match.root}
-                        ) rule.parameters
-                        , matches = matches
-                        }
-                    )
-
-applyButton : (Event state -> msg) -> Maybe (Event state) -> Html.Html msg
-applyButton converter e = case e of
-    Nothing -> a [title "Cannot be applied"] [text "Apply"]
-    Just event -> a [HtmlEvent.onClick (converter event), class "clickable"] [text "Apply"]
-
-coreTopic_: (Event state -> msg) -> Maybe (SelectedNode_ state) -> Menu.Part msg
-coreTopic_ converter selected =
-    let
-        shouldDisplay a conv = a.empty || ( case conv a of
-                Just _ -> True
-                Nothing -> False
-            )
-        apply = let applies = {subApply = Nothing, groupApply=Nothing, ungroupApply=Nothing, numApply=Nothing, empty=False, evalApply=Just Evaluate} in
-            case selected of
-            Nothing -> {applies | empty = True, evalApply=Nothing}
-            Just val -> case val.root of
-                Math.BinaryNode n -> if not n.associative then {applies | subApply = (Just Substitute)}
-                    else
-                        let
-                            sameBinaryNode = List.any
-                                (\child -> case child of
-                                    Math.BinaryNode m -> n.name == m.name
-                                    _ -> False
-                                )
-                                n.children
-                        in
-                        {   applies
-                        |   subApply = Just Substitute
-                        ,   groupApply = if List.length n.children == val.childCount || val.childCount < 2 then Nothing else Just Group -- grouping everything is a noop
-                        ,   ungroupApply = if sameBinaryNode then Just Ungroup else Nothing
-                        }
-                Math.RealNode n -> {applies | numApply = Just (NumericalSubstitution n.value)}
-                Math.DeclarativeNode _ -> {applies | subApply = Just Substitute, evalApply = Nothing}
-                _ -> {applies | subApply = Just Substitute}
-    in
-        Menu.Section "Core" True
-        [   Menu.Section "Evaluate" (shouldDisplay apply .evalApply)
+    [   Menu.Section {name = "Core", icon = Nothing}
+        [   Menu.Section {name = "Evaluate", icon = Nothing}
             [   Menu.Content
-                [   applyButton converter apply.evalApply
-                ,   h3 [] [text "Convert expression into a single number"]
+                [   h3 [] [text "Convert expression into a single number"]
                 ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
                 ]
             ]
-        ,   Menu.Section "Number Substitution" (shouldDisplay apply .numApply)
+        ,   Menu.Section {name = "Number Substitution", icon = Nothing}
             [   Menu.Content
-                [  applyButton converter apply.numApply
-                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
+                [   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
                 ]
             ]
-        ,   Menu.Section "Substitute" (shouldDisplay apply .subApply)
+        ,   Menu.Section {name = "Substitute", icon = Nothing}
             [   Menu.Content
-                [  applyButton converter apply.subApply
-                ,   h3 [] [text "Given x=y, f(x)=f(y)"]
+                [   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
                 ]
             ]
-        ,   Menu.Section "Group" (shouldDisplay apply .groupApply)
+        ,   Menu.Section {name = "Group", icon = Nothing}
             [   Menu.Content
-                [   applyButton converter apply.groupApply
-                ,   h3 [] [text "Focus on a specific part"]
+                [   h3 [] [text "Focus on a specific part"]
                 ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
                 ]
             ]
-        ,   Menu.Section "Ungroup" (shouldDisplay apply .ungroupApply)
+        ,   Menu.Section {name = "Ungroup", icon = Nothing}
             [   Menu.Content
-                [   applyButton converter apply.ungroupApply
-                ,   h3 [] [text "Return the group with the rest"]
+                [   h3 [] [text "Return the group with the rest"]
                 ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
                 ]
             ]
         ]
+    ]
+    model.topics
+    |> List.reverse
 
 {-
 ## Topic Parser
@@ -397,7 +336,7 @@ javascriptDecoder_ = Dec.map2 Tuple.pair
         _ -> Dec.fail "Unknown type of javascript function"
     )
 
-ruleDecoder_: Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Rule_
+ruleDecoder_: Dict.Dict String FunctionProperties_ -> Dict.Dict String String -> Dec.Decoder Rule
 ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
@@ -431,7 +370,7 @@ ruleDecoder_ functions constants = Dec.map3 (\a b c -> (a,b,c))
             |> Dec.andThen (verifyMatch_ pDict)
         )
         |> Dec.field "matches"
-        |> Dec.map (Rule_ title description parameters)
+        |> Dec.map (Rule title description parameters)
     )
 
 verifyMatch_: Dict.Dict String Token_ -> ((Expression_, Dict.Dict String (Bool, Token_)), (Expression_, Dict.Dict String (Bool, Token_))) -> Dec.Decoder {from: Expression_, to: Expression_}
@@ -580,7 +519,7 @@ encodeTopic_ topic = Enc.object
     ]
 
 -- WARNING: This does not print out all of the inner state, especailly for expressions (only the name/string form is returned)
-encodeRule_: Rule_ -> Enc.Value
+encodeRule_: Rule -> Enc.Value
 encodeRule_ rule = Enc.object
     [   ("title", Enc.string rule.title)
     ,   ("description", Enc.string rule.description)

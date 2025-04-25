@@ -58,8 +58,7 @@ button.noDefault {
     background-color: var(--color-menu);
     pointer-events: auto;
     overflow: visible;
-    width: min(15rem, 30vw);
-    max-width: min(15rem, 30vw);
+    max-width: min(100%, 40rem);
     transition: max-width 0.5s ease-out;
 }
 span.space {
@@ -131,12 +130,12 @@ span.space {
     position: absolute;
     height: 1.5rem;
     top: 0.5rem;
-    left: calc(min(15rem, 30vw) - 2rem);
-    transition: left 0.5s ease-out;
+    right: 0.5rem;
+    transition: right 0.5s ease-out;
 }
 #menuToggle.closed {
-    left: 0.5rem;
-    transition: left 0.5s ease-out;
+    right: -2rem;
+    transition: right 0.5s ease-out;
 }
 #rightPane.closed {
     max-width: 0;
@@ -149,37 +148,38 @@ span.space {
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
     box-sizing: border-box;
-    overflow-x: hidden;
+    overflow-x: clip;
     overflow-y: scroll;
 }
 #menu ul {
+    display: flex;
+    flex-direction: column;
     margin: 0;
-    width: 15rem;
-    padding: 0 0 0 0.5rem;
+    padding: 0 0 0 1.5rem;
+}
+#menu * {
+    width: fit-content;
+    margin: 0;
+    padding: 0;
+}
+#menu p {
+    vertical-align: middle;
 }
 #menu li {
     list-style: none;
     overflow: hidden;
 }
 #menu svg {
-    height: 1rem;
-    vertical-align: -17%;
-}
-li.menuSection {
-    height: 0;
-    transition: height 0.5s linear;
-}
-li.menuSection.shown {
-    height: auto;
-    height: calc-size(auto); /* Only a few limited browsers support this for now */
-    transition: height 0.5s linear;
+    height: 1.5rem;
+    width: 1.5rem;
+    vertical-align: -10%;
 }
 .menuTitle::before {
     content: url(../img/arrow.svg);
     display: inline-block;
-    height: 2rem;
-    width: 2rem;
-    vertical-align: middle;
+    height: 1.5rem;
+    width: 1.5rem;
+    vertical-align: -10%;
     rotate: 0;
     transition: rotate 0.5s linear;
 }
@@ -191,6 +191,7 @@ li.menuSection.shown {
     display: inline-block;
     height: 2rem;
     vertical-align: middle;
+    text-decoration: underline;
     text-wrap: nowrap;
     margin: 0;
 }
@@ -205,11 +206,6 @@ li.menuSection.shown {
     height: auto;
     height: calc-size(auto); /* Only a few limited browsers support this for now */
     transition: height 0.5s ease-out;
-}
-.subMenu p, .subMenu li {
-    display: block;
-    margin: 0;
-    padding: 0;
 }
 /* Notifications */
 #notification {
@@ -323,4 +319,18 @@ div#history {
     position: absolute;
     display: block;
     background-color: var(--color-menu);
+}
+/* Actions */
+div#actions {
+    position: absolute;
+    top: 70vh;
+    left: 50vw;
+    height: 3rem;
+    max-width: 80%;
+    transform: translateX(-50%);
+}
+#actions > ul {
+    list-style-type: none;
+    display: flex;
+    flex-direction: row;
 }

@@ -18,6 +18,7 @@ import Set
 import Task
 import Url
 -- Our imports
+import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
 import Components.Display as Display
@@ -26,6 +27,7 @@ import Components.Query as Query
 import Components.Rules as Rules
 import Components.Tutorial as Tutorial
 import Helper
+import UI.ActionView as ActionView
 import UI.Animation as Animation
 import UI.Dialog as Dialog
 import UI.Draggable as Draggable
@@ -98,7 +100,6 @@ type Event =
     | Save
     | OpenDialog (Dialog.Model Event)
     | CloseDialog
-    | DeleteTopic String
     | ProcessTopic String (Result Http.Error Rules.Topic)
     | ProcessSource String (Result Http.Error Source)
     | FileSelect LoadableFile
@@ -108,8 +109,8 @@ type Event =
     | WindowResize Int Int
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
-    | ApplySubstitution Int
-    | ConvertSubString Float String
+    | ApplySubstitution Int Int Int -- eqNum root otherEqNum
+    | ConvertSubString Int Int Float String -- eqNum root target subExpr
     | EvalComplete {id: Int, value: Float}
 
 type LoadableFile =
@@ -117,7 +118,7 @@ type LoadableFile =
     | SaveFile
 
 type EvalType =
-    NumSubType_ Float (Math.Tree ())
+    NumSubType_ Int Int Float (Math.Tree ())
     | EvalType_ Int Int
 
 type alias Source =
@@ -242,7 +243,6 @@ update event core = let model = core.swappable in
                 Just name -> Dialog.fieldID name |> focusTextBar_
             )
         CloseDialog -> ({core | dialog = Nothing}, Cmd.none)
-        DeleteTopic name -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic name model.rules}}, Cmd.none)
         ProcessTopic url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok topic -> case Rules.addTopic topic model.rules of
@@ -275,22 +275,18 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            Rules.Group -> case Display.groupChildren model.display of
+            Rules.Group eqNum root children -> case Display.groupChildren eqNum root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
-            Rules.Ungroup -> case Display.ungroupChildren model.display of
+            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren eqNum root selected model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
-            Rules.Substitute -> ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
-            Rules.NumericalSubstitution target -> ({ core | dialog = Just (numSubDialog_ target, Nothing)}, Cmd.none)
+            Rules.Substitute eqNum root -> ({core | dialog = Just (substitutionDialog_ eqNum root model, Nothing)} , Cmd.none)
+            Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
             Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
-            Rules.Evaluate -> case Display.selectedNode model.display of
-                Nothing -> (core, Cmd.none)
-                Just n -> let id = Math.getState n.root |> Matcher.getID in
-                    case Rules.evaluateStr model.rules n.root of
-                        Err errStr -> submitNotification_ core errStr
-                        Ok evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ n.eq id) evalStr model.evaluator in
-                            (updateCore {model | evaluator = eModel}, cmd)
+            Rules.Evaluate eq id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ eq id) evalStr model.evaluator in
+                (updateCore {model | evaluator = eModel}, cmd)
+            Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ApplyParameters params -> case core.dialog of
             Just (_, Just existing) -> ( case Dict.get "_method" params of
                     Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -314,20 +310,20 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution eqNum -> ({core | dialog = Nothing}, Cmd.none)
-        ConvertSubString target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
+        ApplySubstitution origNum root eqNum -> ({core | dialog = Nothing}, Cmd.none)
+        ConvertSubString eqNum root target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
             Err errStr -> submitNotification_ core errStr
             Ok newTree -> case Rules.evaluateStr model.rules newTree of
                 Err errStr -> submitNotification_ core errStr
-                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ target newTree) evalStr model.evaluator in
+                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ eqNum root target newTree) evalStr model.evaluator in
                     (updateCore {model | evaluator = eModel}, cmd)
         EvalComplete reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
             let newCore = updateCore {model | evaluator = eModel } in
             case c of
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
-                Just (NumSubType_ target tree) -> if target /= reply.value
+                Just (NumSubType_ eqNum root target tree) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber target tree model.display of
+                    else case Display.replaceNumber eqNum root target tree model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
                 Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber eqNum id reply.value model.display of
@@ -380,6 +376,7 @@ view core = let model = core.swappable in
         (   List.filterMap identity
             [   ("display", Display.view DisplayEvent [id "display"] model.display) |> Just
             ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
+            ,   ("actions", ActionView.view RuleEvent model.rules model.display) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div" [id "leftPane"]
                     (  List.filterMap identity
@@ -389,28 +386,16 @@ view core = let model = core.swappable in
                     )
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Menu.view MenuEvent model.menu
-                        [   Menu.Section "Settings" True
+                        [   Menu.Section {name = "Settings", icon = Nothing}
                             [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                             ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
                             ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                             ]
-                        ,   Menu.Section "Equations" True
-                            (   Menu.Content [a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"]]
-                            :: Display.menu DisplayEvent model.display
-                            )
+                        ,   Menu.Section {name = "Equations", icon = Just (a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"])}
+                            (Display.menu DisplayEvent model.display)
                         ,   Tutorial.menu TutorialEvent model.tutorial
-                        ,   Menu.Section "Topics" True
-                            (   [   Menu.Content [ a
-                                        [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"]
-                                        [text "Add"]
-                                    ]
-                                ,   Menu.Content [ a
-                                        [HtmlEvent.onClick (OpenDialog deleteTopicDialog_), class "clickable"]
-                                        [text "Delete"]
-                                    ]
-                                ]
-                            ++  Rules.menuTopics RuleEvent model.rules (Display.selectedNode model.display)
-                            )
+                        ,   Menu.Section {name = "Topics", icon = Just (a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"] [text "+"])}
+                            (Rules.menuTopics RuleEvent model.rules)
                         ]
                     ,   Icon.menu (List.filterMap identity
                             [ id "menuToggle" |> Just
@@ -467,22 +452,6 @@ addTopicDialog_ =
     ,   focus = Just "url"
     }
 
-deleteTopicDialog_: Dialog.Model Event
-deleteTopicDialog_ =
-    {   title = "Delete an existing Topic"
-    ,   sections =
-        [   {   subtitle = "Name of the topic:"
-            ,   lines = [[Dialog.Text {id = "name"}]]
-            }
-        ]
-    ,   success = (\val -> case Dict.get "name" val of
-            Just (Dialog.TextValue a) -> DeleteTopic a
-            _ -> NoOp
-        )
-    ,   cancel = CloseDialog
-    ,   focus = Just "name"
-    }
-
 parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
 parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
@@ -508,36 +477,36 @@ parameterDialog_ params =
     ,   focus = Nothing
     }
 
-substitutionDialog_: Swappable -> Dialog.Model Event
-substitutionDialog_ model =
+substitutionDialog_: Int -> Int -> Swappable -> Dialog.Model Event
+substitutionDialog_ eqNum root model =
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"
         ,   lines = [[
                 Dialog.Radio
                 {   name = "eqNum"
-                ,   options = Display.listUnselectedEquations model.display
-                    |> Dict.map (\_ elem -> Math.toString elem.root)
+                ,   options = Dict.filter (\k _ -> k /= eqNum) model.display.equations
+                        |> Dict.map (\_ -> History.current >> .root >> Math.toString)
                 }
             ]]
         }]
     ,   success = (\dict -> case Dict.get "eqNum" dict of
-            Just (Dialog.IntValue a) -> ApplySubstitution a
+            Just (Dialog.IntValue a) -> ApplySubstitution eqNum root a
             _ -> NoOp
         )
     ,   cancel = CloseDialog
     ,   focus = Just "eqNum"
     }
 
-numSubDialog_: Float -> Dialog.Model Event
-numSubDialog_ target =
+numSubDialog_: Int -> Int -> Float -> Dialog.Model Event
+numSubDialog_ eqNum root target =
     {   title = "Substitute a number for an expression"
     ,   sections =
         [{  subtitle = "The expression to replace " ++ String.fromFloat target
         ,   lines = [[Dialog.Text {id="expr"}]]
         }]
     ,   success = (\dict -> case Dict.get "expr" dict of
-            Just (Dialog.TextValue val) -> ConvertSubString target val
+            Just (Dialog.TextValue val) -> ConvertSubString eqNum root target val
             _ -> NoOp
         )
     ,   cancel = CloseDialog
@@ -595,7 +564,7 @@ createModeDecoder_ = Decode.field "element" Decode.int
 evalTypeDecoder_: Decode.Decoder EvalType
 evalTypeDecoder_ = Decode.field "type" Decode.string
     |> Decode.andThen (\t -> case t of
-        "numSub" -> Decode.map2 NumSubType_ (Decode.field "target" Decode.float) (Decode.field "root" (Math.decoder (Decode.succeed ())))
+        "numSub" -> Decode.map4 NumSubType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int) (Decode.field "target" Decode.float) (Decode.field "root" (Math.decoder (Decode.succeed ())))
         "eval" -> Decode.map2 EvalType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int)
         _ -> Decode.fail "unknown type"
     )
@@ -611,7 +580,7 @@ saveFile model = Encode.encode 0
         ,   ("notification", Notification.encode model.notification)
         ,   ("menu", Menu.encode model.menu)
         ,   ("evaluator", Evaluate.encode (\t -> case t of
-                NumSubType_ f tree -> Encode.object [("target",Encode.float f),("tree",Math.encode (\_ -> Encode.null) tree),("type",Encode.string "numSub")]
+                NumSubType_ eq node f tree -> Encode.object [("eq",Encode.int eq), ("node",Encode.int node), ("target",Encode.float f),("tree",Math.encode (\_ -> Encode.null) tree),("type",Encode.string "numSub")]
                 EvalType_ eq node -> Encode.object [("eq",Encode.int eq),("node",Encode.int node),("type",Encode.string "eval")]
                 ) model.evaluator
             )
