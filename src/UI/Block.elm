@@ -3,6 +3,8 @@ module UI.Block exposing (blocks, block)
 import Html exposing (Html)
 import Svg exposing (svg, g, animate, rect, text_, text, Attribute)
 import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, fill, attributeName, values, dur, class)
+-- ours
+import Helper
 
 
 strokeWidth_: Float
