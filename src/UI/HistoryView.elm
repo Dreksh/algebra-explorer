@@ -20,12 +20,12 @@ view converter dragModel model = Draggable.div
     [ case model.selected |> Maybe.andThen (\(eq, _) -> Dict.get eq model.equations) of
         Nothing -> Html.text "No history selected"
         Just history -> history |> History.serialize (\index c children ->
-            Html.a
-            [   class "clickable"
-            ,   HtmlEvent.onClick (History.SelectPast index |> Display.HistoryEvent |> DisplayEvent |> converter)
-            ]
-            (   Html.text (c.root |> Math.toString)
+            Html.div []
+            (   Html.a
+                [   class "clickable"
+                ,   HtmlEvent.onClick (History.SelectPast index |> Display.HistoryEvent |> DisplayEvent |> converter)
+                ]
+                [Html.text (c.root |> Math.toString)]
             ::  children
-            )
-            )
+            ))
     ]

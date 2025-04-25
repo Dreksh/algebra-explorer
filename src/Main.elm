@@ -421,7 +421,7 @@ view core = let model = core.swappable in
                         )
                     ]
                 ]) |> Just
-            ,   ("tutorial", Tutorial.view TutorialEvent [] model.tutorial) |> Just
+            --,   ("tutorial", Tutorial.view TutorialEvent [] model.tutorial) |> Just
             ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view d))
             ,   ("notification", Notification.view NotificationEvent [id "notification"] model.notification) |> Just
             ]

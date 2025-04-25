@@ -22,14 +22,10 @@ body {
 }
 #body, #body > div {
     position: absolute;
-    pointer-events: none;
     top: 0;
     left: 0;
     height: 100%;
     width: 100%;
-}
-#body > div > * {
-    pointer-events: auto;
 }
 button.noDefault {
     border: 0;
@@ -44,8 +40,9 @@ button.noDefault {
     flex-direction: row-reverse;
     padding: 0;
     box-sizing: border-box;
+    pointer-events: none;
 }
-div#leftPane {
+#leftPane {
     flex-grow: 1;
     flex-shrink: 1;
     pointer-events: none;
@@ -55,10 +52,11 @@ div#leftPane {
 #leftPane > * {
     pointer-events: auto;
 }
-div#rightPane {
+#rightPane {
     display: block;
     position: relative;
     background-color: var(--color-menu);
+    pointer-events: auto;
     overflow: visible;
     width: min(15rem, 30vw);
     max-width: min(15rem, 30vw);
@@ -147,9 +145,12 @@ span.space {
 #menu {
     position: relative;
     display: block;
+    max-height: 100%;
     padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    box-sizing: border-box;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: scroll;
 }
 #menu ul {
     margin: 0;
@@ -214,6 +215,7 @@ li.menuSection.shown {
 #notification {
     height: 100%;
     display: flex;
+    pointer-events: none;
     flex-direction: column;
     justify-content: end;
     align-items: center;
@@ -236,6 +238,7 @@ li.menuSection.shown {
     border-radius: 0.5rem;
     background-color: var(--color-notification);
     animation: notificationAppear 0.5s ease forwards;
+    pointer-events: auto;
 }
 .notificationMessage.deleting {
     animation: notificationDisappear 0.5s ease forwards;
