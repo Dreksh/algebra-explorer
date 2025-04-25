@@ -30,14 +30,21 @@ onSubmitForm target = preventDefaultOn "submit"
         <| target
     )
 
-onPointerDraw: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
-onPointerDraw converter activate move deactivate =
+onPointerCapture: (event -> msg) -> (Value -> (Float, Float) -> event) -> Html.Attribute msg
+onPointerCapture converter activate = custom "pointerdown"
+    (map2 (\pid input -> {message = activate pid input |> converter, stopPropagation = True, preventDefault = True})
+        (field "pointerId" value)
+        (map2 Tuple.pair (field "clientX" float) (field "clientY" float))
+    )
+
+
+onPointerMove: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
+onPointerMove converter move cancel =
     let
         positionDecoder = map2 Tuple.pair (field "clientX" float) (field "clientY" float)
         pointerId = field "pointerId" value
     in
-    [   custom "pointerdown" (map2 (\pid input -> {message = activate pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder )
-    ,   custom "pointermove" (map2 (\pid input -> {message = move pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder )
-    ,   custom "pointerup" (map (\pid -> {message = deactivate pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
-    ,   custom "pointercancel" (map (\pid -> {message = deactivate pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
-    ]
+        [   custom "pointermove" (map2 (\pid input -> {message = move pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder)
+        ,   custom "pointerup" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
+        ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
+        ]

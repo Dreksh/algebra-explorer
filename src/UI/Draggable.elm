@@ -6,7 +6,8 @@ import Html.Attributes exposing (class, id, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
-import UI.HtmlEvent exposing (onPointerDraw)
+import UI.HtmlEvent exposing (onPointerCapture, onPointerMove)
+import UI.Icon as Icon
 
 -- These will be in raw pixel amounts (technically ints)
 type alias Size = (Float, Float)
@@ -15,7 +16,7 @@ type alias Point = Size
 
 type alias Model =
     {   coordinates: Coordinates
-    ,   drags: Dict.Dict String {direction: Maybe Direction, original: Coordinates, from: Point}
+    ,   drags: Dict.Dict String {direction: Direction, original: Coordinates, from: Point}
     ,   id: String
     }
 
@@ -44,7 +45,7 @@ type Action =
 
 -- Events are in raw px units
 type Event =
-    DragStart (Maybe Direction) Encode.Value Point
+    DragStart Direction Encode.Value Point
     | Drag Encode.Value Point
     | DragEnd Encode.Value
     | NoOp
@@ -52,44 +53,44 @@ type Event =
 div: (Event -> msg) -> Model -> List (Html.Attribute msg) -> List (Html.Html msg) -> Html.Html msg
 div converter model attrs children = Html.div (attrs ++ divAttrs_ converter model)
     ([  span
-        (   [class "border", style "left" "0", style "top" "0", style "width" "100%", style "height" "0.2rem", style "cursor" "ns-resize"]
-        ++  onPointerDraw converter (DragStart (Just Top)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart Top)
+        , style "left" "0", style "top" "0", style "width" "100%", style "height" "1rem", style "cursor" "move"
+        ]
+        [Icon.menu [style "height" "1rem"]]
+    ,   span
+        [ class "border", onPointerCapture converter (DragStart Left)
+        , style "left" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "left" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"]
-        ++  onPointerDraw converter (DragStart (Just Left)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart Bottom)
+        , style "left" "0", style "bottom" "0", style "width" "100%", style "height" "0.2rem", style "cursor" "ns-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "left" "0", style "bottom" "0", style "width" "100%", style "height" "0.2rem", style "cursor" "ns-resize"]
-        ++  onPointerDraw converter (DragStart (Just Bottom)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart Right)
+        , style "right" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "right" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"]
-        ++  onPointerDraw converter (DragStart (Just Right)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart TopLeft)
+        , style "left" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "left" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"]
-        ++  onPointerDraw converter (DragStart (Just TopLeft)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart BottomLeft)
+        , style "left" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "left" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"]
-        ++  onPointerDraw converter (DragStart (Just BottomLeft)) Drag DragEnd
-        )
+        [ class "border", onPointerCapture converter (DragStart TopRight)
+        , style "right" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"
+        ]
         []
     ,   span
-        (   [class "border", style "right" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"]
-        ++  onPointerDraw converter (DragStart (Just TopRight)) Drag DragEnd
-        )
-        []
-    ,   span
-        (   [class "border", style "right" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"]
-        ++  onPointerDraw converter (DragStart (Just BottomRight)) Drag DragEnd
-        )
+        [   class "border", onPointerCapture converter (DragStart BottomRight)
+        ,   style "right" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"
+        ]
         []
     ]
     ++  children
@@ -102,11 +103,10 @@ divAttrs_ converter model =
     ,   style "width" (String.fromFloat (model.coordinates.right - model.coordinates.left) ++ "dvw")
     ,   style "height" (String.fromFloat (model.coordinates.bottom - model.coordinates.top) ++ "dvh")
     ,   style "position" "absolute"
-    ,   style "padding" "0.2rem"
-    ,   style "cursor" "move"
+    ,   style "padding" "1rem 0.2rem 0.2rem 0.2rem"
     ,   id model.id
     ]
-    ++ onPointerDraw converter (DragStart Nothing) Drag DragEnd
+    ++ onPointerMove converter Drag DragEnd
 
 update: Size -> Event -> Model -> (Model, Maybe Action)
 update (screenX, screenY) e model = case e of
@@ -120,20 +120,19 @@ update (screenX, screenY) e model = case e of
                 (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
                 orig = start.original
             in case start.direction of
-                Nothing ->
+                Top ->
                     (   {   model
                         | coordinates = {left = orig.left + dx, right = orig.right + dx, top = orig.top + dy, bottom = orig.bottom + dy }
                         }
                     ,   Nothing
                     )
-                Just Left -> ({ model | coordinates = {orig |left = orig.left + dx |> min (orig.right - 2) } }, Nothing)
-                Just Right -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2)} }, Nothing)
-                Just Top -> ({ model | coordinates = {orig | top = orig.top + dy |> min (orig.bottom - 2)}}, Nothing)
-                Just Bottom -> ({ model | coordinates = {orig | bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
-                Just TopLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
-                Just TopRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
-                Just BottomLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
-                Just BottomRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) } }, Nothing)
+                Left -> ({ model | coordinates = {orig |left = orig.left + dx |> min (orig.right - 2) } }, Nothing)
+                Right -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2)} }, Nothing)
+                Bottom -> ({ model | coordinates = {orig | bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
+                TopLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
+                TopRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
+                BottomLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
+                BottomRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) } }, Nothing)
     DragEnd pid -> ({model | drags = Dict.remove (Encode.encode 0 pid) model.drags }, Just (ReleaseCapture model.id pid))
     NoOp -> (model, Nothing)
 
