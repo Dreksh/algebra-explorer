@@ -20,7 +20,7 @@ body {
     width: 100vw;
     background-color: var(--color-background);
 }
-body > div {
+#body, #body > div {
     position: absolute;
     pointer-events: none;
     top: 0;
@@ -28,7 +28,7 @@ body > div {
     height: 100%;
     width: 100%;
 }
-body > div > * {
+#body > div > * {
     pointer-events: auto;
 }
 button.noDefault {
@@ -45,7 +45,7 @@ button.noDefault {
     padding: 0;
     box-sizing: border-box;
 }
-#leftPane {
+div#leftPane {
     flex-grow: 1;
     flex-shrink: 1;
     pointer-events: none;
@@ -55,7 +55,7 @@ button.noDefault {
 #leftPane > * {
     pointer-events: auto;
 }
-#rightPane {
+div#rightPane {
     display: block;
     position: relative;
     background-color: var(--color-menu);
@@ -301,6 +301,9 @@ dialog svg {
 /* History */
 #history div {
     padding-left: 0.2rem;
+}
+div#history {
+    pointer-events: auto;
 }
 .border {
     position: absolute;

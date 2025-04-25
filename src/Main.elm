@@ -51,6 +51,7 @@ port updateMathJax: () -> Cmd msg
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
+port resize: ({width: Float, height: Float} -> msg) -> Sub msg
 
 -- Types
 
@@ -105,7 +106,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     | ToggleHistory
-    | WindowResize Int Int
+    | WindowResize {width: Float, height: Float}
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution Int
@@ -174,7 +175,7 @@ subscriptions: Model -> Sub Event
 subscriptions model = Sub.batch
     [   BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
     ,   evaluateResult EvalComplete
-    ,   BrowserEvent.onResize WindowResize
+    ,   resize WindowResize
     ]
 
 {-
@@ -268,7 +269,7 @@ update event core = let model = core.swappable in
                     Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
         ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
-        WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
+        WindowResize dimensions -> ({core | size = (dimensions.width, dimensions.height) |> Debug.log "resize"}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
@@ -376,54 +377,57 @@ actionToCapture_ action = case action of
 view: Model -> Browser.Document Event
 view core = let model = core.swappable in
     { title = "Maths"
-    , body = List.filterMap identity
-        [   Display.view DisplayEvent [id "display"] model.display |> Just
-        ,   div [id "inputPane"]
-            [   Html.Keyed.node "div" [id "leftPane"]
-                (  List.filterMap identity
-                    [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
-                    ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
-                    ,   model.createMode |> Maybe.map (inputDiv)
-                    ]
-                )
-            ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
-                [   Menu.view MenuEvent model.menu
-                    [   Menu.Section "Settings" True
-                        [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
-                        ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
-                        ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
-                        ]
-                    ,   Menu.Section "Equations" True
-                        (   Menu.Content [a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"]]
-                        :: Display.menu DisplayEvent model.display
-                        )
-                    ,   Tutorial.menu TutorialEvent model.tutorial
-                    ,   Menu.Section "Topics" True
-                        (   [   Menu.Content [ a
-                                    [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"]
-                                    [text "Add"]
-                                ]
-                            ,   Menu.Content [ a
-                                    [HtmlEvent.onClick (OpenDialog deleteTopicDialog_), class "clickable"]
-                                    [text "Delete"]
-                                ]
-                            ]
-                        ++  Rules.menuTopics RuleEvent model.rules (Display.selectedNode model.display)
-                        )
-                    ]
-                ,   Icon.menu (List.filterMap identity
-                        [ id "menuToggle" |> Just
-                        , HtmlEvent.onClick ToggleMenu |> Just
-                        , Icon.class "clickable" |> Just
-                        , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
+    , body = Html.Keyed.node "div" [id "body"]
+        (   List.filterMap identity
+            [   ("display", Display.view DisplayEvent [id "display"] model.display) |> Just
+            ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
+            ,   ("inputPane", div [id "inputPane"]
+                [   Html.Keyed.node "div" [id "leftPane"]
+                    (  List.filterMap identity
+                        [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
+                        ,   model.createMode |> Maybe.map (inputDiv)
                         ]
                     )
-                ]
-            ] |> Just
-        ,   Tutorial.view TutorialEvent [] model.tutorial |> Just
-        ,   core.dialog |> Maybe.map (Tuple.first >> Dialog.view)
-        ,   Notification.view NotificationEvent [id "notification"] model.notification |> Just
-        ]
+                ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
+                    [   Menu.view MenuEvent model.menu
+                        [   Menu.Section "Settings" True
+                            [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
+                            ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
+                            ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
+                            ]
+                        ,   Menu.Section "Equations" True
+                            (   Menu.Content [a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"]]
+                            :: Display.menu DisplayEvent model.display
+                            )
+                        ,   Tutorial.menu TutorialEvent model.tutorial
+                        ,   Menu.Section "Topics" True
+                            (   [   Menu.Content [ a
+                                        [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"]
+                                        [text "Add"]
+                                    ]
+                                ,   Menu.Content [ a
+                                        [HtmlEvent.onClick (OpenDialog deleteTopicDialog_), class "clickable"]
+                                        [text "Delete"]
+                                    ]
+                                ]
+                            ++  Rules.menuTopics RuleEvent model.rules (Display.selectedNode model.display)
+                            )
+                        ]
+                    ,   Icon.menu (List.filterMap identity
+                            [ id "menuToggle" |> Just
+                            , HtmlEvent.onClick ToggleMenu |> Just
+                            , Icon.class "clickable" |> Just
+                            , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
+                            ]
+                        )
+                    ]
+                ]) |> Just
+            ,   ("tutorial", Tutorial.view TutorialEvent [] model.tutorial) |> Just
+            ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view d))
+            ,   ("notification", Notification.view NotificationEvent [id "notification"] model.notification) |> Just
+            ]
+        )
+        |> List.singleton
     }
 
 inputDiv: Animation.DeletableElement Int Event -> (String, Html Event)
