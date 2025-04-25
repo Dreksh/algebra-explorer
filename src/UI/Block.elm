@@ -11,7 +11,7 @@ horizontalPad_: Float
 horizontalPad_ = 0.1
 
 scaleWidth_: Int -> Float
-scaleWidth_ width = (toFloat width - strokeWidth_) / (1-horizontalPad_) - horizontalPad_
+scaleWidth_ width = (toFloat width)*(1+horizontalPad_) - horizontalPad_ - strokeWidth_
 
 scaleHeight_: Int -> Float
 scaleHeight_ height = toFloat height - strokeWidth_
