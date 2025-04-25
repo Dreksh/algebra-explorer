@@ -42,11 +42,11 @@ block xMin xMax yMin yMax selected onClick name =
         height_ = scaleHeight_ 1
     in
     g
-    (
-        [   onClick
-        ,   class "block"
+    (  List.filterMap identity
+        [   onClick |> Just
+        ,   class "block" |> Just
+        ,   class "selected" |> Helper.maybeGuard selected
         ]
-        ++  ( if selected then [class "selected"] else [] )
     )
     [   rect
         [   x (String.fromFloat x_)
