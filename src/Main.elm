@@ -51,7 +51,6 @@ port updateMathJax: () -> Cmd msg
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
-port resize: ({width: Float, height: Float} -> msg) -> Sub msg
 
 -- Types
 
@@ -106,7 +105,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     | ToggleHistory
-    | WindowResize {width: Float, height: Float}
+    | WindowResize Int Int
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution Int
@@ -175,7 +174,7 @@ subscriptions: Model -> Sub Event
 subscriptions model = Sub.batch
     [   BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
     ,   evaluateResult EvalComplete
-    ,   resize WindowResize
+    ,   BrowserEvent.onResize WindowResize
     ]
 
 {-
@@ -269,7 +268,7 @@ update event core = let model = core.swappable in
                     Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
         ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
-        WindowResize dimensions -> ({core | size = (dimensions.width, dimensions.height) |> Debug.log "resize"}, Cmd.none)
+        WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of

@@ -33,7 +33,7 @@ onSubmitForm target = preventDefaultOn "submit"
 onPointerDraw: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
 onPointerDraw converter activate move deactivate =
     let
-        positionDecoder = map2 Tuple.pair (field "screenX" float) (field "screenY" float)
+        positionDecoder = map2 Tuple.pair (field "clientX" float) (field "clientY" float)
         pointerId = field "pointerId" value
     in
     [   custom "pointerdown" (map2 (\pid input -> {message = activate pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId positionDecoder )
