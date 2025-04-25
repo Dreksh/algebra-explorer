@@ -21,6 +21,7 @@ import Algo.Matcher as Matcher
 import UI.HtmlEvent
 import UI.Icon
 import UI.Menu
+import UI.Block
 
 type alias Model =
     {   equations: Dict.Dict Int (History.Model (Matcher.Equation State))
@@ -204,45 +205,32 @@ collapsedView_ eq highlight node = case node of
             )
 
 stackedView_: Int -> Set.Set Int -> Math.Tree (Matcher.State State) -> Html Event
-stackedView_ eq highlight node =
+stackedView_ eq highlight root =
     let
-        (width, depth, divs) = stackRecursive eq highlight 1 1 node
+        (maxWidth, maxDepth, blocks) = stackRecursive eq highlight 0 1 root
     in
-        div
-        [   class "blocks"
-        ,   style "grid-template-columns" ("repeat(" ++ String.fromInt (width - 1) ++ ", 1fr)")
-        ,   style "grid-template-rows" ("repeat(" ++ String.fromInt depth ++ ", 1fr)")
-        ] divs
+        div [] [ UI.Block.blocks maxWidth maxDepth blocks ]
 
 stackRecursive: Int -> Set.Set Int -> Int -> Int -> Math.Tree (Matcher.State State) -> (Int, Int, List (Html Event))
-stackRecursive eq highlight width depth node =
+stackRecursive eq highlight minWidth minDepth node =
     let
         children = Math.getChildren node
         id = Math.getState node |> Matcher.getID
-        (maxWidth, maxDepth, childDivs) =
+        (maxWidth, maxDepth, childBlocks) =
             if List.isEmpty children
-            then (width+1, depth, [])
+            then (minWidth+1, minDepth, [])
             else
                 children
                 |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
-                    let (w, d, divs) = stackRecursive eq highlight foldWidth (depth+1) child
+                    let (w, d, divs) = stackRecursive eq highlight foldWidth (minDepth+1) child
                     in (w, max foldDepth d, foldDivs ++ divs)
-                ) (width, depth, [])
+                ) (minWidth, minDepth, [])
+        onClick = UI.HtmlEvent.onClick (Select eq id)
+        selected = (Set.member id highlight)
     in
         (   maxWidth
         ,   maxDepth
-        ,   (   button
-                (
-                    [   class "block"
-                    ,   style "grid-column" (String.fromInt width ++ "/" ++ String.fromInt maxWidth)
-                    ,   style "grid-row" (String.fromInt -depth ++ "/" ++ String.fromInt (-depth - 1))  -- might want to allow shorter height unary tiles in the future
-                    ,   UI.HtmlEvent.onClick (Select eq id)
-                    ]
-                    ++  ( if (Set.member id highlight) then [class "selected"] else [] )
-                )
-                [   text (Math.getName node)
-                ]
-            ) :: childDivs
+        ,   ( UI.Block.block minWidth maxWidth minDepth maxDepth selected onClick (Math.getName node)) :: childBlocks
         )
 
 encode: Model -> Encode.Value
