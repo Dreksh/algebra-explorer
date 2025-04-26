@@ -227,7 +227,7 @@ matchNode matcher root = case (matcher, root) of
     _ -> False
 
 -- ## groupSubtree: make children go one more step down
-groupSubtree: Int -> Set.Set Int -> Equation state -> Result String (Equation state)
+groupSubtree: Int -> Set.Set Int -> Equation state -> Result String (Int, Equation state)
 groupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id)
     (\subEq -> case subEq.root of
         Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
@@ -236,7 +236,7 @@ groupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id)
                 if (List.length pre + List.length post == 0) || List.isEmpty group then Err "Grouping all or none does nothing"
                 else let (newS, newT) = addNode_ Nothing (getID n.state) subEq.tracker in
                     let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent group in
-                    Ok ((), {root = Math.BinaryNode
+                    Ok (getID newS, {root = Math.BinaryNode
                         {   n
                         |   children = List.reverse pre++(Math.BinaryNode {n | children = List.reverse group, state = newS}::List.reverse post)
                         }
@@ -246,7 +246,6 @@ groupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id)
         _ -> Err "Node is not associative"
     )
     eq
-    |> Result.map Tuple.second
 
 groupPartition_: (Math.Tree (State state) -> Bool) -> List (Math.Tree (State state)) -> (List (Math.Tree (State state)),List (Math.Tree (State state)),List (Math.Tree (State state)))
 groupPartition_ check = List.foldl
@@ -287,7 +286,7 @@ ungroupChild_ tracker id nodes subEq =
                     |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
         _ -> Err "Node is not associative"
 
-replaceRealNode: Int -> Float -> Math.Tree () -> Equation state -> Result String (Equation state)
+replaceRealNode: Int -> Float -> Math.Tree () -> Equation state -> Result String (Int, Equation state)
 replaceRealNode id target subtree eq = processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> case subEq.root of
         Math.RealNode n -> if target /= n.value then Err "Expression does not equal to the node's value"
             else processID_ -1 subEq.tracker subtree
@@ -296,12 +295,11 @@ replaceRealNode id target subtree eq = processSubtree_ (searchPath_ eq.tracker.p
                     parent = Dict.get id tracker.parent
                     nextTracker = {tracker | parent = Dict.remove (getID n.state) tracker.parent}
                 in
-                    Ok ((), {root = root, tracker = setParent_ root parent nextTracker})
+                    Ok ((Math.getState root |> getID), {root = root, tracker = setParent_ root parent nextTracker})
             )
         _ -> Err "Node is not a number"
     )
     eq
-    |> Result.map Tuple.second
 
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Set.Set Int -> Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
@@ -415,7 +413,7 @@ subtreeEqual_ = Math.equal
     )
 
 -- ## replaceSubtree
-replaceSubtree: Set.Set Int -> Matcher -> MatchResult state -> Equation state -> Result String (Equation state)
+replaceSubtree: Set.Set Int -> Matcher -> MatchResult state -> Equation state -> Result String (Int, Equation state)
 replaceSubtree ids into with eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Unable to find selected nodes"
     Just (id, _) ->
@@ -426,10 +424,9 @@ replaceSubtree ids into with eq = case affectedSubtree_ ids eq.tracker.parent of
                 finalTracker = Set.diff (getSubtreeIDs_ subEq.root) (getSubtreeIDs_ newRoot)
                     |> Set.foldl (\elem t -> {t | parent = Dict.remove elem t.parent}) (setParent_ newRoot pID newTracker)
             in
-            Ok ((), {root = newRoot, tracker = finalTracker})
+            Ok ((Math.getState newRoot |> getID), {root = newRoot, tracker = finalTracker})
         )
         eq
-        |> Result.map Tuple.second
 
 setParent_: Math.Tree (State state) -> Maybe Int -> Tracker_ state -> Tracker_ state
 setParent_ root parent tracker = let id = Math.getState root |> getID in

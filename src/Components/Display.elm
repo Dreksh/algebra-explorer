@@ -75,21 +75,33 @@ groupChildren eqNum root children model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just eq -> History.current eq
         |> Matcher.groupSubtree root children
-        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
+        |> Result.map (\(newSelect, newEq) ->
+            {   model
+            |   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+            ,   selected = Just (eqNum, Set.singleton newSelect)
+            })
 
 ungroupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
 ungroupChildren eqNum id selected model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just eq -> History.current eq
         |> Matcher.ungroupSubtree id selected
-        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
+        |> Result.map (\newEq ->
+            {   model
+            |   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+            ,   selected = Just (eqNum, Set.singleton id)
+            })
 
 replaceNumber: Int -> Int -> Float -> Math.Tree () -> Model -> Result String Model
 replaceNumber eqNum root target subtree model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just eq -> History.current eq
         |> Matcher.replaceRealNode root target subtree
-        |> Result.map (\newEq -> {model | equations = Dict.insert eqNum (History.add newEq eq) model.equations, selected = Nothing})
+        |> Result.map (\(newSelect, newEq) ->
+            {   model
+            |   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+            ,   selected = Just (eqNum, Set.singleton newSelect)
+            })
 
 replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
 replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
@@ -102,7 +114,11 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
         in
             History.current eq
             |> Matcher.replaceSubtree (Set.singleton id) matcher {nodes = Dict.empty, matches = Dict.empty}
-            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum (History.add newEq eq) model.equations})
+            |> Result.map (\(newSelect, newEq) ->
+                {   model
+                |   selected = Just (eqNum, Set.singleton newSelect)
+                ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+                })
 
 transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
 transformEquation matcher result model = case model.selected of
@@ -111,7 +127,11 @@ transformEquation matcher result model = case model.selected of
         Nothing -> Err "Equation is not found"
         Just eq -> History.current eq
             |> Matcher.replaceSubtree ids matcher result
-            |> Result.map (\newEq -> {model | selected = Nothing, equations = Dict.insert eqNum (History.add newEq eq) model.equations})
+            |> Result.map (\(newSelect, newEq) ->
+                {   model
+                |   selected = Just (eqNum, Set.singleton newSelect)
+                ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+                })
 
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of
@@ -130,7 +150,17 @@ update event model = case event of
         else ({model | hidden = Set.insert eq model.hidden}, Cmd.none)
     HistoryEvent eq he -> case Dict.get eq model.equations of
         Nothing ->(model, Cmd.none)
-        Just his -> ({model | equations = Dict.insert eq (History.update he his) model.equations}, Cmd.none)
+        Just his -> let newHis = History.update he his in
+            let newModel = {model | equations = Dict.insert eq (newHis) model.equations} in
+            case model.selected of
+                Nothing -> (newModel, Cmd.none)
+                Just (eqNum, selected) -> if eqNum /= eq
+                    then (newModel, Cmd.none)
+                    else ({newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))}, Cmd.none)
+
+newSelectedNodes_: Set.Set Int -> Matcher.Equation State -> Set.Set Int
+newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
+    if Set.isEmpty intersection then Set.singleton (Math.getState eq.root |> Matcher.getID) else intersection
 
 {-
 # View-related functions
