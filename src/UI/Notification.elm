@@ -51,10 +51,8 @@ update e model = case e of
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html msg
 view converter attrs model = node "div" attrs
-    (   Dict.foldl
-        (  \id val result -> notificationDiv_ converter id val::result )
-        []
-        model.notifications
+    (   Dict.toList model.notifications
+        |> List.map (\(id, val) -> notificationDiv_ converter id val)
     )
 
 notificationDiv_: (Event->msg) -> Int -> DeletableElement String Event -> (String, Html msg)

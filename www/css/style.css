@@ -213,7 +213,6 @@ span.space {
     display: flex;
     pointer-events: none;
     flex-direction: column;
-    justify-content: end;
     align-items: center;
 }
 @keyframes notificationAppear {
