@@ -42,7 +42,7 @@ undo model = case model.visits of
 redo: Model component -> Model component
 redo model = case model.undone of
     [] -> model
-    (x::others) -> {model | visits = x::others, undone = others}
+    (x::others) -> {model | visits = x::model.visits, undone = others}
 
 current: Model component -> component
 current model = List.head model.visits

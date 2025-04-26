@@ -66,7 +66,8 @@
             "description": "Terms with the same factor in a sum can be grouped",
             "matches": [
                 {"from": "-a-b", "to": "-(a+b)"},
-                {"from": "ma+mb", "to": "m(a+b)"}
+                {"from": "ma+mb", "to": "m(a+b)"},
+                {"from": "ma-mb", "to": "m(a-b)"}
             ]
         },
         {

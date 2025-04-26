@@ -1,6 +1,6 @@
 module Components.Display exposing (
     Model, Event(..), State, init, update, view, menu,
-    createState, updateState,
+    createState, updateState, undo, redo,
     addEquation, updateEquation, transformEquation, listEquations,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder, encodeState, stateDecoder
@@ -66,6 +66,30 @@ updateEquation: Int -> Matcher.Equation State -> Model -> Model
 updateEquation id eq model = case Dict.get id model.equations of
     Nothing -> {model | equations = Dict.insert id (History.init eq) model.equations}
     Just hisModel -> {model | equations = Dict.insert id (History.add eq hisModel) model.equations}
+
+undo: Model -> Result String Model
+undo model = case model.selected of
+    Nothing -> Err "No equation selected to undo"
+    Just (eqNum, selected) -> case Dict.get eqNum model.equations of
+        Nothing -> Err "Equation not found to undo"
+        Just his -> let newHis = History.undo his in
+            Ok
+            {   model
+            |   equations = Dict.insert eqNum newHis model.equations
+            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))
+            }
+
+redo: Model -> Result String Model
+redo model = case model.selected of
+    Nothing -> Err "No equation selected to redo"
+    Just (eqNum, selected) -> case Dict.get eqNum model.equations of
+        Nothing -> Err "Equation not found to redo"
+        Just his -> let newHis = History.redo his in
+            Ok
+            {   model
+            |   equations = Dict.insert eqNum newHis model.equations
+            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))
+            }
 
 listEquations: Model -> Dict.Dict Int (Matcher.Equation State)
 listEquations model = model.equations |> Dict.map (\_ -> History.current)

@@ -53,6 +53,7 @@ port updateMathJax: () -> Cmd msg
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
+port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
 
 -- Types
 
@@ -90,7 +91,7 @@ type Event =
     | HistoryEvent HistoryView.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
-    | PressedKey String -- For catching "Escape"
+    | PressedKey {ctrl: Bool, shift: Bool, key: String}
     | EnterCreateMode
     | CancelCreateMode
     | DeleteCreateMode Int
@@ -173,7 +174,7 @@ parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createS
 
 subscriptions: Model -> Sub Event
 subscriptions model = Sub.batch
-    [   BrowserEvent.onKeyPress (Decode.field "key" Decode.string |> Decode.map PressedKey)
+    [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
     ]
@@ -201,12 +202,19 @@ update event core = let model = core.swappable in
             HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
                 (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         NoOp -> (core, Cmd.none)
-        PressedKey str -> if str /= "Escape" then (core, Cmd.none)
-            else case (core.dialog, model.createMode) of
+        PressedKey input -> case (input.ctrl, input.shift, input.key) |> Debug.log "received key" of
+            (_, _, "Escape") -> case (core.dialog, model.createMode) of
                 (Just _, _) -> ({core | dialog = Nothing}, Cmd.none)
                 (_, Just m) -> Animation.delete m
                     |> \(newM, cmd) -> (updateCore {model | createMode = Just newM, showHelp=False}, cmd)
                 _ -> (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
+            (True, False, "z") -> case Display.undo model.display of
+                Err errStr -> submitNotification_ core errStr
+                Ok display -> (updateCore {model | display = display}, Cmd.none)
+            (True, True, "z") -> case Display.redo model.display of
+                Err errStr -> submitNotification_ core errStr
+                Ok display -> (updateCore {model | display = display}, Cmd.none)
+            _ -> (core, Cmd.none)
         EnterCreateMode -> if model.createMode |> Maybe.map .deleting |> Maybe.withDefault True
             then (  updateCore
                     {   model
