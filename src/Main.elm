@@ -202,7 +202,7 @@ update event core = let model = core.swappable in
             HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
                 (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         NoOp -> (core, Cmd.none)
-        PressedKey input -> case (input.ctrl, input.shift, input.key) |> Debug.log "received key" of
+        PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case (core.dialog, model.createMode) of
                 (Just _, _) -> ({core | dialog = Nothing}, Cmd.none)
                 (_, Just m) -> Animation.delete m
