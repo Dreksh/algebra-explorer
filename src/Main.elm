@@ -119,7 +119,7 @@ type LoadableFile =
     | SaveFile
 
 type EvalType =
-    NumSubType_ Int Int Float (Math.Tree ())
+    NumSubType_ Int Int Float Matcher.Replacement
     | EvalType_ Int Int
 
 type alias Source =
@@ -132,7 +132,7 @@ init: Decode.Value -> Url.Url -> Nav.Key -> (Model, Cmd Event)
 init flags url key =
     let
         query = Query.parseInit url key
-        (eqs, errs) = List.foldl parseEquations_ ([], []) query.equations |> \(a, b) -> (List.reverse a, List.reverse b)
+        (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations |> \(a, b) -> (List.reverse a, List.reverse b)
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
@@ -167,8 +167,8 @@ init flags url key =
 uiCancelCmd_: Int -> () -> Cmd Event
 uiCancelCmd_ num _ = Animation.delayEvent 500 (DeleteCreateMode num)
 
-parseEquations_: String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
-parseEquations_ elem (result, errs) = case Matcher.parseEquation Display.createState Display.updateState elem of
+parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
+parseEquations_ model elem (result, errs) = case Math.parse elem |> Result.andThen (Rules.replaceGlobalVar model) |> Result.map (Matcher.parseEquation Display.createState Display.updateState) of
     Result.Ok root -> (root :: result, errs)
     Result.Err err -> (result, err :: errs )
 
@@ -233,7 +233,7 @@ update event core = let model = core.swappable in
             Just m -> if m.element /= num then (core, Cmd.none)
                 else (updateCore {model | createMode = Nothing}, Cmd.none)
         SubmitEquation str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
-            else case Matcher.parseEquation Display.createState Display.updateState str of
+            else case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) |> Result.map (Matcher.parseEquation Display.createState Display.updateState) of
                 Result.Ok root -> Display.addEquation root model.display
                     |> (\dModel ->
                         (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False}
@@ -278,7 +278,7 @@ update event core = let model = core.swappable in
         ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         RuleEvent e -> case e of
-            Rules.Apply p -> if List.length p.matches == 1 && List.isEmpty p.parameters
+            Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
@@ -303,12 +303,15 @@ update event core = let model = core.swappable in
                 |> Result.fromMaybe "Unable to find the match"
                 |>  Result.andThen (\prev -> Helper.resultDict (\k v r -> if k == "_method" then Ok r
                         else case v of
-                            Dialog.TextValue val -> Math.parse val |> Result.map (\tree -> {r | from = Matcher.addMatch k Dict.empty tree r.from})
+                            Dialog.TextValue val -> Matcher.toReplacement (Rules.functionProperties model.rules) Dict.empty val
+                                |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
                             Dialog.FunctionValue args val -> List.indexedMap Tuple.pair args
-                                |> Helper.resultList (\(i, name) dict -> Math.validVariable name |> Result.map (\n -> Dict.insert n i dict) ) Dict.empty
-                                |> Result.andThen (\argDict -> Math.parse val
-                                    |> Result.map (\tree -> {r | from = Matcher.addMatch k argDict tree r.from})
-                                )
+                                |> Helper.resultList (\(i, name) dict -> if Dict.member name dict
+                                        then Err "Function arguments need to be unique in the function definition"
+                                        else Math.validVariable name |> Result.map (\n -> Dict.insert n (0, i) dict)
+                                    ) Dict.empty
+                                |> Result.andThen (\argDict -> Matcher.toReplacement (Rules.functionProperties model.rules) argDict val)
+                                |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
                             _ -> Ok r
                         )
                     prev params
@@ -319,19 +322,19 @@ update event core = let model = core.swappable in
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
         ApplySubstitution origNum root eqNum -> ({core | dialog = Nothing}, Cmd.none)
-        ConvertSubString eqNum root target str -> case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) of
+        ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) Dict.empty str of
             Err errStr -> submitNotification_ core errStr
-            Ok newTree -> case Rules.evaluateStr model.rules newTree of
+            Ok replacement -> case Rules.evaluateStr model.rules replacement of
                 Err errStr -> submitNotification_ core errStr
-                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ eqNum root target newTree) evalStr model.evaluator in
+                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ eqNum root target replacement) evalStr model.evaluator in
                     (updateCore {model | evaluator = eModel}, cmd)
         EvalComplete reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
             let newCore = updateCore {model | evaluator = eModel } in
             case c of
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
-                Just (NumSubType_ eqNum root target tree) -> if target /= reply.value
+                Just (NumSubType_ eqNum root target replacement) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber eqNum root target tree model.display of
+                    else case Display.replaceNumber eqNum root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
                 Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber eqNum id reply.value model.display of
@@ -340,9 +343,9 @@ update event core = let model = core.swappable in
 
 
 -- TODO
-applyChange_: {from: Matcher.MatchResult Display.State, name: String, matcher: Matcher.Matcher} -> Model -> (Model, Cmd Event)
+applyChange_: {from: Matcher.MatchResult Display.State, name: String, replacement: Matcher.Replacement} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
-    case Display.transformEquation params.matcher params.from swappable.display of
+    case Display.transformEquation params.replacement params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ model newDisplay)
 
@@ -465,10 +468,10 @@ parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
     ,   sections =
             [{   subtitle = "Fill in the parameters"
-            ,   lines = params.parameters
-                    |> List.map (\param -> if param.args == 0
+            ,   lines = Dict.toList params.parameters
+                    |> List.map (\(key, param) -> if param.arguments == 0
                         then [Dialog.Info {text = param.name ++ "= "}, Dialog.Text {id = param.name}, Dialog.Info {text = param.description}]
-                        else [Dialog.Function {name = param.root, arguments = param.args}, Dialog.Info {text = param.description}]
+                        else [Dialog.Function {name = key, arguments = param.arguments}, Dialog.Info {text = param.description}]
                     )
             }]
             |> (\sections -> if List.length params.matches <= 1 then sections
@@ -572,7 +575,7 @@ createModeDecoder_ = Decode.field "element" Decode.int
 evalTypeDecoder_: Decode.Decoder EvalType
 evalTypeDecoder_ = Decode.field "type" Decode.string
     |> Decode.andThen (\t -> case t of
-        "numSub" -> Decode.map4 NumSubType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int) (Decode.field "target" Decode.float) (Decode.field "root" (Math.decoder (Decode.succeed ())))
+        "numSub" -> Decode.map4 NumSubType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int) (Decode.field "target" Decode.float) (Decode.field "replacement" Matcher.replacementDecoder)
         "eval" -> Decode.map2 EvalType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int)
         _ -> Decode.fail "unknown type"
     )
@@ -588,7 +591,7 @@ saveFile model = Encode.encode 0
         ,   ("notification", Notification.encode model.notification)
         ,   ("menu", Menu.encode model.menu)
         ,   ("evaluator", Evaluate.encode (\t -> case t of
-                NumSubType_ eq node f tree -> Encode.object [("eq",Encode.int eq), ("node",Encode.int node), ("target",Encode.float f),("tree",Math.encode (\_ -> Encode.null) tree),("type",Encode.string "numSub")]
+                NumSubType_ eq node f replacement -> Encode.object [("eq",Encode.int eq), ("node",Encode.int node), ("target",Encode.float f),("replacement",Matcher.encodeReplacement replacement),("type",Encode.string "numSub")]
                 EvalType_ eq node -> Encode.object [("eq",Encode.int eq),("node",Encode.int node),("type",Encode.string "eval")]
                 ) model.evaluator
             )

@@ -30,13 +30,13 @@ maybeList process start = List.foldl (\elem res -> Maybe.andThen (process elem) 
 maybeDict: (k -> v -> b -> Maybe b) -> b -> Dict.Dict k v -> Maybe b
 maybeDict process start = Dict.foldl (\key value result -> Maybe.andThen (process key value) result) (Just start)
 
-resultList: (a -> b -> Result String b) -> b -> List a -> Result String b
+resultList: (a -> b -> Result error b) -> b -> List a -> Result error b
 resultList process start = List.foldl (\elem res -> Result.andThen (process elem) res) (Ok start)
 
-resultDict: (k -> v -> b -> Result String b) -> b -> Dict.Dict k v -> Result String b
+resultDict: (k -> v -> b -> Result error b) -> b -> Dict.Dict k v -> Result error b
 resultDict process start = Dict.foldl (\key value result -> Result.andThen (process key value) result) (Ok start)
 
-resultSet: (a -> b -> Result String b) -> b -> Set.Set a -> Result String b
+resultSet: (a -> b -> Result error b) -> b -> Set.Set a -> Result error b
 resultSet process start = Set.foldl (\elem res -> Result.andThen (process elem) res) (Ok start)
 
 resultToDecoder: Result String a -> Decode.Decoder a

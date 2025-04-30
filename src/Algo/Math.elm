@@ -1,6 +1,6 @@
 module Algo.Math exposing (Tree(..), Symbol(..),
     equal, validVariable,
-    getChildren, getState, getName,
+    getChildren, getState, getName, map,
     notation, parse, symbolicate, toString,
     encode, decoder
     )
@@ -46,6 +46,27 @@ getName root = case root of
     BinaryNode n -> n.name
     GenericNode n -> n.name
     DeclarativeNode n -> n.name
+
+map: (Maybe newState -> Tree state -> global -> (newState, global)) -> global -> Tree state -> (Tree newState, global)
+map transition glob root = map_ transition Nothing glob root
+
+map_: (Maybe newState -> Tree state -> global -> (newState, global)) -> Maybe newState -> global -> Tree state -> (Tree newState, global)
+map_ transition parent glob root =
+    let
+        (finS, nextG) = transition parent root glob
+        processChildren nextGlob = List.foldl (\child (list, g) -> map_ transition (Just finS) g child |> \(c, finG) -> (c::list, finG)) ([], nextGlob)
+    in
+        case root of
+            RealNode n -> (RealNode {state = finS, value = n.value}, nextG)
+            VariableNode n -> (VariableNode {state = finS, name = n.name}, nextG)
+            UnaryNode n -> map_ transition (Just finS) nextG n.child
+                |> \(finChild, finGlob) -> (UnaryNode {state = finS, name = n.name, child = finChild}, finGlob)
+            BinaryNode n -> processChildren nextG n.children
+                |> \(finChildren, finGlob) -> (BinaryNode {state = finS, name = n.name, associative = n.associative, commutative = n.commutative, children = List.reverse finChildren}, finGlob)
+            GenericNode n -> processChildren nextG n.children
+                |> \(finChildren, finGlob) -> (GenericNode {state = finS, name = n.name, children = List.reverse finChildren}, finGlob)
+            DeclarativeNode n -> processChildren nextG n.children
+                |> \(finChildren, finGlob) -> (DeclarativeNode {state = finS, name = n.name, children = List.reverse finChildren}, finGlob)
 
 equal: (a -> b -> Bool) -> Tree a -> Tree b -> Bool
 equal check left right = case (left, right) of

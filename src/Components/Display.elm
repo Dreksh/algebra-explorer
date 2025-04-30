@@ -116,11 +116,11 @@ ungroupChildren eqNum id selected model = case Dict.get eqNum model.equations of
             ,   selected = Just (eqNum, Set.singleton id)
             })
 
-replaceNumber: Int -> Int -> Float -> Math.Tree () -> Model -> Result String Model
-replaceNumber eqNum root target subtree model = case Dict.get eqNum model.equations of
+replaceNumber: Int -> Int -> Float -> Matcher.Replacement -> Model -> Result String Model
+replaceNumber eqNum root target replacement model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just eq -> History.current eq
-        |> Matcher.replaceRealNode root target subtree
+        |> Matcher.replaceRealNode root target replacement
         |> Result.map (\(newSelect, newEq) ->
             {   model
             |   equations = Dict.insert eqNum (History.add newEq eq) model.equations
@@ -132,25 +132,25 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
     Nothing -> Err "Equation not found"
     Just eq ->
         let
-            matcher = if number < 0
-                then Matcher.ExactMatcher {name = "-", arguments = [Matcher.RealMatcher {value = -number}]}
-                else Matcher.RealMatcher {value = number}
+            replacement = if number < 0
+                then Math.UnaryNode {state = Nothing, name = "-", child = Math.RealNode {state = Nothing, value = -number}}
+                else Math.RealNode {state = Nothing, value = number}
         in
             History.current eq
-            |> Matcher.replaceSubtree (Set.singleton id) matcher {nodes = Dict.empty, matches = Dict.empty}
+            |> Matcher.replaceSubtree (Set.singleton id) replacement Dict.empty
             |> Result.map (\(newSelect, newEq) ->
                 {   model
                 |   selected = Just (eqNum, Set.singleton newSelect)
                 ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
                 })
 
-transformEquation: Matcher.Matcher -> Matcher.MatchResult State -> Model -> Result String Model
-transformEquation matcher result model = case model.selected of
+transformEquation: Matcher.Replacement -> Matcher.MatchResult State -> Model -> Result String Model
+transformEquation replacement result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation is not found"
         Just eq -> History.current eq
-            |> Matcher.replaceSubtree ids matcher result
+            |> Matcher.replaceSubtree ids replacement result
             |> Result.map (\(newSelect, newEq) ->
                 {   model
                 |   selected = Just (eqNum, Set.singleton newSelect)
