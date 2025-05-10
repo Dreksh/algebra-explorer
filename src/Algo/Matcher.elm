@@ -4,7 +4,8 @@ module Algo.Matcher exposing (
     Matcher(..), FunctionProperties, parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
     MatchResult, addMatch, matchNode,
-    groupSubtree, ungroupSubtree, selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode
+    groupSubtree, ungroupSubtree, selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode,
+    replaceAllOccurrences
     )
 
 import Dict
@@ -97,9 +98,13 @@ countChildren m = case m of
 
 parseMatcher: (String -> Int -> b -> Result String b) -> Dict.Dict String FunctionProperties -> b -> String -> Result String (Matcher, b)
 parseMatcher checker knownProps state = Math.parse
-    >> Result.andThen (treeToMatcher_ checker knownProps state)
+    >> Result.andThen (treeToMatcher_ checker (KnownFuncs_ knownProps) state)
 
-treeToMatcher_: (String -> Int -> b -> Result String b) -> Dict.Dict String FunctionProperties -> b -> Math.Tree a -> Result String (Matcher, b)
+type SearchType_ =
+    KnownFuncs_ (Dict.Dict String FunctionProperties)
+    | KnownArgs_ (Dict.Dict String (Int, Int))
+
+treeToMatcher_: (String -> Int -> b -> Result String b) -> SearchType_ -> b -> Math.Tree a -> Result String (Matcher, b)
 treeToMatcher_ checker knownProps state root =
     let
         processChildren = Helper.resultList (\child (list, s) -> treeToMatcher_ checker knownProps s child
@@ -109,11 +114,15 @@ treeToMatcher_ checker knownProps state root =
     in
     case root of
         Math.RealNode s -> Ok (RealMatcher {value = s.value}, state)
-        Math.VariableNode s -> case Dict.get s.name knownProps of
-            Nothing -> checker s.name 0 state
-                |> Result.map (\newS -> (AnyMatcher {name = s.name, arguments = []}, newS))
-            Just p -> if p.arguments /= 0 then Err (s.name ++ " cannot be used as a variable")
-                else Ok (ExactMatcher {name = s.name, arguments = []}, state)
+        Math.VariableNode s -> case knownProps of
+            KnownArgs_ argMap -> case Dict.get s.name argMap of
+                Nothing -> Ok (ExactMatcher {name = s.name, arguments = []}, state)
+                Just _ -> Ok (AnyMatcher {name = s.name, arguments = []}, state)
+            KnownFuncs_ kp -> case Dict.get s.name kp of
+                Nothing -> checker s.name 0 state
+                    |> Result.map (\newS -> (AnyMatcher {name = s.name, arguments = []}, newS))
+                Just p -> if p.arguments /= 0 then Err (s.name ++ " cannot be used as a variable")
+                    else Ok (ExactMatcher {name = s.name, arguments = []}, state)
         Math.UnaryNode s -> treeToMatcher_ checker knownProps state s.child
             |> Result.map (\(childMatcher, newS) -> (ExactMatcher {name = s.name, arguments = [childMatcher]}, newS))
         Math.BinaryNode s -> if s.commutative
@@ -123,21 +132,23 @@ treeToMatcher_ checker knownProps state root =
                 |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = List.reverse children}, newS))
         Math.DeclarativeNode s -> processChildren s.children
             |> Result.map (\(children, newS) -> (DeclarativeMatcher {name = s.name, commutative = True, arguments = List.reverse children}, newS)) -- TODO: Not all of them are commutative (like <)
-        Math.GenericNode s -> case Dict.get s.name knownProps of
-            Nothing -> checker s.name (List.length s.children) state
-                |> Result.andThen (\newState -> Helper.resultList (\child (list, seen, newS) -> case child of
-                        Math.VariableNode n -> if Set.member n.name seen then Err "Function argument can only match on unique variables"
-                            else checker n.name 0 newS
-                                |> Result.map (\finalS -> (n.name :: list, Set.insert n.name seen, finalS))
-                        _ -> Err "Only variables are supported in function arguments"
+        Math.GenericNode s -> case knownProps of
+            KnownArgs_ _ -> processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = children}, newS))
+            KnownFuncs_ kp -> case Dict.get s.name kp of
+                Nothing -> checker s.name (List.length s.children) state
+                    |> Result.andThen (\newState -> Helper.resultList (\child (list, seen, newS) -> case child of
+                            Math.VariableNode n -> if Set.member n.name seen then Err "Function argument can only match on unique variables"
+                                else checker n.name 0 newS
+                                    |> Result.map (\finalS -> (n.name :: list, Set.insert n.name seen, finalS))
+                            _ -> Err "Only variables are supported in function arguments"
+                        )
+                        ([], Set.empty, newState)
+                        s.children
                     )
-                    ([], Set.empty, newState)
-                    s.children
-                )
-                |> Result.map (\(children, _, newState) -> (AnyMatcher {name = s.name, arguments = List.reverse children}, newState))
-            Just prop -> if prop.arguments /= (List.length s.children) then Err (s.name ++ " has an unexpected function signature")
-                else if prop.commutative then processChildren s.children |> Result.map (\(children, newS) -> (CommutativeMatcher {name = s.name, arguments = children, others = Nothing}, newS))
-                else processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = children}, newS))
+                    |> Result.map (\(children, _, newState) -> (AnyMatcher {name = s.name, arguments = List.reverse children}, newState))
+                Just prop -> if prop.arguments /= (List.length s.children) then Err (s.name ++ " has an unexpected function signature")
+                    else if prop.commutative then processChildren s.children |> Result.map (\(children, newS) -> (CommutativeMatcher {name = s.name, arguments = children, others = Nothing}, newS))
+                    else processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = children}, newS))
 
 matchNode: Matcher -> Math.Tree (State state) -> Bool
 matchNode matcher root = case (matcher, root) of
@@ -157,18 +168,29 @@ Replacement are bluerpints to reconstruct equations
 type alias Replacement = Math.Tree (Maybe Int)
 
 toReplacement: Dict.Dict String FunctionProperties -> Dict.Dict String (Int, Int) -> String -> Result String Replacement
-toReplacement funcProps argDict =
+toReplacement funcProps argDict = Math.parse >> Result.andThen (toReplacement_ (Just funcProps) argDict)
+
+toReplacement_: Maybe (Dict.Dict String FunctionProperties) -> Dict.Dict String (Int, Int) -> Math.Tree a -> Result String Replacement
+toReplacement_ funcProps argDict =
     let
+        getFuncProp name = case funcProps of
+            Nothing -> Ok Nothing
+            Just fp -> case Dict.get name fp of
+                Nothing -> Err ("Unable to construct " ++ name)
+                Just p -> Ok (Just p)
+
         -- Can't use Math.map since GenericNode can turn into BinaryNode
         convert node = case node of
             Math.RealNode s -> Ok (Math.RealNode {state = Nothing, value = s.value})
             Math.VariableNode s -> case Dict.get s.name argDict of
                 Just (args, index) -> if args /= 0 then Err (s.name ++ " is not a variable")
                     else Ok (Math.VariableNode {state = Just index, name = ""})
-                Nothing -> case Dict.get s.name funcProps of
-                    Nothing -> Err ("Unable to construct variable " ++ s.name)
-                    Just p -> if p.arguments /= 0 then Err (s.name ++ " is not a variable")
-                        else Ok (Math.VariableNode {state = Nothing, name = s.name})
+                Nothing -> getFuncProp s.name
+                    |> Result.andThen (\fp -> case fp of
+                        Nothing -> Ok (Math.VariableNode {state = Nothing, name = s.name})
+                        Just p -> if p.arguments /= 0 then Err (s.name ++ " is not a variable")
+                            else Ok (Math.VariableNode {state = Nothing, name = s.name})
+                    )
             Math.UnaryNode s -> convert s.child
                 |> Result.map (\child -> Math.UnaryNode {state = Nothing, name = s.name, child = child})
             Math.BinaryNode s -> Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
@@ -177,17 +199,20 @@ toReplacement funcProps argDict =
                 Just (args, index) -> if args /= List.length s.children then Err (s.name ++ " has the wrong number of inputs")
                     else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
                         |> Result.map (\children -> Math.GenericNode {state = Just index, name = "", children = children})
-                Nothing -> case Dict.get s.name funcProps of
-                    Nothing -> Err ("Unable to construct function " ++ s.name)
-                    Just p -> if p.arguments == 2 && (p.commutative || p.associative) then Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
-                            |> Result.map (\children -> Math.BinaryNode {state = Nothing, name=s.name, associative = p.associative, commutative = p.commutative, children = List.reverse children})
-                        else if p.arguments /= List.length s.children then Err (s.name ++ " has the wrong number of inputs")
-                        else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
+                Nothing -> getFuncProp s.name
+                    |> Result.andThen (\fp -> case fp of
+                        Nothing -> Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
                             |> Result.map (\children -> Math.GenericNode {state = Nothing, name = s.name, children = List.reverse children})
+                        Just p -> if p.arguments == 2 && (p.commutative || p.associative) then Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
+                                |> Result.map (\children -> Math.BinaryNode {state = Nothing, name=s.name, associative = p.associative, commutative = p.commutative, children = List.reverse children})
+                            else if p.arguments /= List.length s.children then Err (s.name ++ " has the wrong number of inputs")
+                            else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
+                                |> Result.map (\children -> Math.GenericNode {state = Nothing, name = s.name, children = List.reverse children})
+                    )
             Math.DeclarativeNode s -> Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
                 |> Result.map (\children -> Math.DeclarativeNode {state = Nothing, name = s.name, children = List.reverse children})
     in
-        Math.parse >> Result.andThen convert
+        convert
 
 {--
 MatchResult is the result of extracting patterns using Matcher, or with replacements from external sources
@@ -448,21 +473,21 @@ subtreeEqual_ = Math.equal
 replaceSubtree: Set.Set Int -> Replacement -> MatchResult state -> Equation state -> Result String (Int, Equation state)
 replaceSubtree ids replacement with eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Unable to find selected nodes"
-    Just (id, _) ->
-        processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq ->
-            let args = Dict.toList with |> List.indexedMap (\index (_, val) -> (index, val)) |> Dict.fromList in
-            constructFromReplacement_ -1 subEq.tracker args replacement
-            |> Result.map (\(r, t, _) ->
-                let
-                    (newRoot, newTracker) = replacedToTree_ 0 t r
-                    pID = Dict.get (Math.getState subEq.root |> getID) subEq.tracker.parent
-                    finalTracker = Set.diff (getSubtreeIDs_ subEq.root) (getSubtreeIDs_ newRoot)
-                        |> Set.foldl (\elem childT -> {childT | parent = Dict.remove elem childT.parent}) (setParent_ newRoot pID newTracker)
-                in
-                ((Math.getState newRoot |> getID), {root = newRoot, tracker = finalTracker})
-            )
-        )
-        eq
+    Just (id, _) -> processSubtree_ (searchPath_ eq.tracker.parent id) (replaceSubtree_ replacement with) eq
+
+replaceSubtree_: Replacement -> MatchResult state -> Equation state -> Result String (Int, Equation state)
+replaceSubtree_ replacement result eq =
+    let args = Dict.toList result |> List.indexedMap (\index (_, val) -> (index, val)) |> Dict.fromList in
+    constructFromReplacement_ -1 eq.tracker args replacement
+    |> Result.map (\(r, t, _) ->
+        let
+            (newRoot, newTracker) = replacedToTree_ 0 t r
+            pID = Dict.get (Math.getState eq.root |> getID) eq.tracker.parent
+            finalTracker = Set.diff (getSubtreeIDs_ eq.root) (getSubtreeIDs_ newRoot)
+                |> Set.foldl (\elem childT -> {childT | parent = Dict.remove elem childT.parent}) (setParent_ newRoot pID newTracker)
+        in
+        ((Math.getState newRoot |> getID), {root = newRoot, tracker = finalTracker})
+    )
 
 type Replaced_ state =
     SingleNodeReplaced_ (Math.Tree (State state))
@@ -664,6 +689,54 @@ constructFromValue_ parent tracker args value = case value of
 duplicateTree_: Int -> Tracker_ state -> Math.Tree (State state) -> (Math.Tree (State state), Tracker_ state)
 duplicateTree_ parent tracker root = Math.map (\p s t -> addNode_ (Math.getState s |> Just) (Maybe.map getID p |> Maybe.withDefault parent) t) tracker root
     |> \(finalRoot, finalT) -> (finalRoot, {finalT | parent = Dict.insert (Math.getState finalRoot |> getID) parent finalT.parent})
+
+-- ## replaceAllOccurences: Using the Equation, switch between LHS<->RHS if it matches
+replaceAllOccurrences: Dict.Dict String FunctionProperties -> Set.Set Int -> Equation state -> Equation state -> Result String (Set.Set Int, Equation state)
+replaceAllOccurrences funcs roots with on = case with.root of
+    Math.DeclarativeNode withN -> if withN.name /= "=" then Err "Chosen substitution equation is not an equation"
+        else case withN.children of
+            [left, right] -> createMatcherPair_ funcs left right
+                |> Result.andThen (\pairs -> Set.foldl (replaceOnNode_ pairs) (Set.empty, on) roots
+                    |> \(newRoots, newEq) -> if Set.isEmpty newRoots then Err "No selected nodes can be substituted"
+                        else Ok (newRoots, newEq)
+                )
+            _ -> Err "Ambiguous equation. Ensure that it only equates 2 statements"
+    _ -> Err "Chosen substitution equation is not an equation"
+
+createMatcherPair_: Dict.Dict String FunctionProperties -> Math.Tree (State state) -> Math.Tree (State state) -> Result String (List (Matcher, Replacement))
+createMatcherPair_ funcs left right =
+    let
+        toMatcherPair (from, to) = case treeToMatcher_ (\_ _ -> Ok) (KnownFuncs_ funcs) () from of
+            Ok (AnyMatcher n, _) -> let args = List.indexedMap (\index var -> (var, (0, index))) n.arguments |> Dict.fromList in
+                toReplacement_ Nothing args to
+                |> Result.map (\toR -> treeToMatcher_ (\_ _ -> Ok) (KnownArgs_ args) () to
+                    |> Result.andThen (\(toM, _) -> toReplacement_ Nothing args from
+                        |> Result.map (\fromR -> [(toM, fromR)])
+                    )
+                    |> Result.toMaybe |> Maybe.withDefault []
+                    |> (::) (ExactMatcher {name = n.name, arguments = List.map (\name -> AnyMatcher {name = name, arguments = []}) n.arguments}, toR)
+                )
+                |> Result.toMaybe |> Maybe.withDefault []
+            _ -> []
+    in
+        List.concatMap toMatcherPair [(left, right), (right, left)]
+        |> \res -> if List.isEmpty res then Err "Substitution requires the equation to be a variable or function definition"
+            else Ok res
+
+replaceOnNode_: List (Matcher, Replacement) -> Int -> (Set.Set Int, Equation state) -> (Set.Set Int, Equation state)
+replaceOnNode_ matches id (selected, eq) = processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq ->
+        List.foldl (\(matcher, replacement) result -> case result of
+            Just _ -> result
+            Nothing -> extractPattern_ Set.empty matcher subEq.root (Backtrack.init Dict.empty)
+                |> Maybe.andThen Backtrack.getState
+                |> Maybe.andThen (\matchRes -> replaceSubtree_ replacement matchRes subEq |> Result.toMaybe )
+        ) Nothing matches
+        |> Result.fromMaybe "No matches"
+    )
+    eq
+    |> \res -> case res of
+        Ok (newRoot, newEq) -> (Set.insert newRoot selected, newEq)
+        _ -> (selected, eq)
 
 {-
 ## Encoding and Decoding

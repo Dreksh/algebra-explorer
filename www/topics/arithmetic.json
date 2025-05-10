@@ -13,27 +13,20 @@
             "description": "Combining with their inverse, values can be cancelled out",
             "matches": [
                 {"from": "a-a", "to": "0"},
-                {"from": "a/a", "to": "1"}
+                {"from": "a/a", "to": "1"},
+                {"from": "--a", "to": "a"},
+                {"from": "b/(c/a)", "to": "a*b/c"}
             ]
         },
         {
-            "title": "<name>",
-            "description": "<descr>",
-            "parameters": {
-                "a": "The value to introduce"
-            },
-            "matches": [
-                {"from": "0", "to": "a-a"},
-                {"from": "1", "to": "a/a"}
-            ]
+            "title": "Multiply by 1",
+            "description": "Multiplying by 1 does not change the value",
+            "matches": [{"from": "a", "to": "a*1"}]
         },
         {
-            "title": "Apply identity",
-            "description": "Combining with the identity does not affect the value",
-            "matches": [
-                {"from": "a", "to": "a+0"},
-                {"from": "a", "to": "a*1"}
-            ]
+            "title": "Add 0",
+            "description": "Adding 0 does not change the value",
+            "matches": [{"from": "a", "to": "a+0"}]
         },
         {
             "title": "Remove identity",
@@ -46,19 +39,13 @@
             ]
         },
         {
-            "title": "Cancel inverses",
-            "description": "Doubling inverses cancels itself out",
-            "matches": [
-                {"from": "--a", "to": "a"},
-                {"from": "b/(c/a)", "to": "a*b/c"}
-            ]
-        },
-        {
             "title": "Expand brackets",
             "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
             "matches": [
                 {"from": "-(a+b)", "to": "-a-b"},
-                {"from": "m(a+b)", "to": "ma+mb"}
+                {"from": "-(a-b)", "to": "-a+b"},
+                {"from": "m(a+b)", "to": "ma+mb"},
+                {"from": "m(a-b)", "to": "ma-mb"}
             ]
         },
         {
@@ -67,6 +54,8 @@
             "matches": [
                 {"from": "-a-b", "to": "-(a+b)"},
                 {"from": "ma+mb", "to": "m(a+b)"},
+                {"from": "ma+m", "to": "m(a+1)"},
+                {"from": "ma-m", "to": "m(a-1)"},
                 {"from": "ma-mb", "to": "m(a-b)"}
             ]
         },

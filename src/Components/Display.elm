@@ -1,7 +1,7 @@
 module Components.Display exposing (
     Model, Event(..), State, init, update, view, menu,
-    createState, updateState, undo, redo,
-    addEquation, updateEquation, transformEquation, listEquations,
+    createState, updateState, undo, redo, listEquations,
+    addEquation, updateEquation, transformEquation, substitute,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder, encodeState, stateDecoder
     )
@@ -156,6 +156,20 @@ transformEquation replacement result model = case model.selected of
                 |   selected = Just (eqNum, Set.singleton newSelect)
                 ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
                 })
+
+substitute: Dict.Dict String Matcher.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
+substitute funcs origNum selected eqNum model = case Dict.get eqNum model.equations of
+    Nothing -> Err "Substitution equation not found"
+    Just subHis -> case Dict.get origNum model.equations of
+        Nothing -> Err "Target equation not found"
+        Just origHis -> let origEq = History.current origHis in
+            Matcher.replaceAllOccurrences funcs selected (History.current subHis) origEq
+            |> Result.map (\(newSelected, newEq) ->
+                {   model
+                |   selected = Just (origNum, newSelected)
+                ,   equations = Dict.insert origNum (History.add newEq origHis) model.equations
+                }
+            )
 
 update: Event -> Model -> (Model, Cmd Event)
 update event model = case event of

@@ -82,7 +82,7 @@ type Event treeState =
     | Group Int Int (Set.Set Int) -- eq root children
     | Ungroup Int Int (Set.Set Int) -- eq root selected
     | NumericalSubstitution Int Int Float -- eq root matching value
-    | Substitute Int Int -- eq root
+    | Substitute Int (Set.Set Int) -- eq selected
     | Download String
     | Evaluate Int Int String -- eq nodeID evalString
     | Delete String

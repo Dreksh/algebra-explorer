@@ -110,7 +110,7 @@ type Event =
     | WindowResize Int Int
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
-    | ApplySubstitution Int Int Int -- eqNum root otherEqNum
+    | ApplySubstitution Int (Set.Set Int) Int -- eqNum root otherEqNum
     | ConvertSubString Int Int Float String -- eqNum root target subExpr
     | EvalComplete {id: Int, value: Float}
 
@@ -289,7 +289,8 @@ update event core = let model = core.swappable in
             Rules.Ungroup eqNum root selected -> case Display.ungroupChildren eqNum root selected model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
-            Rules.Substitute eqNum root -> ({core | dialog = Just (substitutionDialog_ eqNum root model, Nothing)} , Cmd.none)
+            Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
+                else ({core | dialog = Just (substitutionDialog_ eqNum selected model, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
             Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
             Rules.Evaluate eq id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ eq id) evalStr model.evaluator in
@@ -321,7 +322,9 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution origNum root eqNum -> ({core | dialog = Nothing}, Cmd.none)
+        ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.functionProperties model.rules) origNum selected eqNum model.display of
+            Err errStr -> submitNotification_ core errStr
+            Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ core dModel)
         ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) Dict.empty str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
@@ -488,8 +491,8 @@ parameterDialog_ params =
     ,   focus = Nothing
     }
 
-substitutionDialog_: Int -> Int -> Swappable -> Dialog.Model Event
-substitutionDialog_ eqNum root model =
+substitutionDialog_: Int -> Set.Set Int -> Swappable -> Dialog.Model Event
+substitutionDialog_ eqNum selected model =
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"
@@ -502,7 +505,7 @@ substitutionDialog_ eqNum root model =
             ]]
         }]
     ,   success = (\dict -> case Dict.get "eqNum" dict of
-            Just (Dialog.IntValue a) -> ApplySubstitution eqNum root a
+            Just (Dialog.IntValue a) -> ApplySubstitution eqNum selected a
             _ -> NoOp
         )
     ,   cancel = CloseDialog

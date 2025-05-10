@@ -22,6 +22,7 @@ type alias SelectedNode_ =
     {   eq: Int
     ,   root: Int
     ,   tree: Math.Tree (Matcher.State Display.State)
+    ,   selected: Set.Set Int
     ,   nodes: Set.Set Int
     }
 
@@ -57,7 +58,7 @@ selectedNode_: Display.Model -> Maybe SelectedNode_
 selectedNode_ model = model.selected
     |> Maybe.andThen (\(eqNum, ids) -> Dict.get eqNum model.equations
         |> Maybe.andThen (History.current >> Matcher.selectedSubtree ids >> Result.toMaybe)
-        |> Maybe.map (\(root, nodes, tree) -> {eq = eqNum, root = root, nodes = nodes, tree = tree})
+        |> Maybe.map (\(root, nodes, tree) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = tree})
     )
 
 type alias CoreTopicState =
@@ -76,7 +77,7 @@ coreTopic_ rModel selection = case selection of
             evaluateState = case Rules.evaluateStr rModel selected.tree of
                 Err _ -> Disallowed
                 Ok str -> Rules.Evaluate selected.eq selected.root str |> Allowed
-            result = CoreTopicState (Rules.Substitute selected.eq selected.root |> Allowed) Disallowed Disallowed Disallowed evaluateState
+            result = CoreTopicState (Rules.Substitute selected.eq selected.selected |> Allowed) Disallowed Disallowed Disallowed evaluateState
         in
         case selected.tree of
             Math.BinaryNode n -> if not n.associative then result
