@@ -12,51 +12,51 @@
             "title": "Cancel out",
             "description": "Combining with their inverse, values can be cancelled out",
             "matches": [
-                {"from": "a-a", "to": "0"},
-                {"from": "a/a", "to": "1"},
-                {"from": "--a", "to": "a"},
-                {"from": "b/(c/a)", "to": "a*b/c"}
+                {"from": "a-a", "to": ["0"]},
+                {"from": "a/a", "to": ["1"]},
+                {"from": "--a", "to": ["a"]},
+                {"from": "b/(c/a)", "to": ["a*b/c"]}
             ]
         },
         {
             "title": "Multiply by 1",
             "description": "Multiplying by 1 does not change the value",
-            "matches": [{"from": "a", "to": "a*1"}]
+            "matches": [{"from": "a", "to": ["a*1"]}]
         },
         {
             "title": "Add 0",
             "description": "Adding 0 does not change the value",
-            "matches": [{"from": "a", "to": "a+0"}]
+            "matches": [{"from": "a", "to": ["a+0"]}]
         },
         {
             "title": "Remove identity",
             "description": "Removing the identity does not affect the value",
             "matches": [
-                {"from": "a+0", "to": "a"},
-                {"from": "a-0", "to": "a"},
-                {"from": "a*1", "to": "a"},
-                {"from": "a/1", "to": "a"}
+                {"from": "a+0", "to": ["a"]},
+                {"from": "a-0", "to": ["a"]},
+                {"from": "a*1", "to": ["a"]},
+                {"from": "a/1", "to": ["a"]}
             ]
         },
         {
             "title": "Expand brackets",
             "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
             "matches": [
-                {"from": "-(a+b)", "to": "-a-b"},
-                {"from": "-(a-b)", "to": "-a+b"},
-                {"from": "m(a+b)", "to": "ma+mb"},
-                {"from": "m(a-b)", "to": "ma-mb"}
+                {"from": "-(a+b)", "to": ["-a-b"]},
+                {"from": "-(a-b)", "to": ["-a+b"]},
+                {"from": "m(a+b)", "to": ["ma+mb"]},
+                {"from": "m(a-b)", "to": ["ma-mb"]}
             ]
         },
         {
             "title": "Factorise",
             "description": "Terms with the same factor in a sum can be grouped",
             "matches": [
-                {"from": "-a-b", "to": "-(a+b)"},
-                {"from": "ma+mb", "to": "m(a+b)"},
-                {"from": "ma+m", "to": "m(a+1)"},
-                {"from": "ma-m", "to": "m(a-1)"},
-                {"from": "ma-mb", "to": "m(a-b)"}
+                {"from": "-a-b", "to": ["-(a+b)"]},
+                {"from": "ma+mb", "to": ["m(a+b)"]},
+                {"from": "ma+m", "to": ["m(a+1)"]},
+                {"from": "ma-m", "to": ["m(a-1)"]},
+                {"from": "ma-mb", "to": ["m(a-b)"]}
             ]
         },
         {
@@ -66,7 +66,14 @@
                 "\\f(x)": "The function to apply on both sides of the equation"
             },
             "matches": [
-                {"from": "a=b", "to": "\\f(a)=\\f(b)"}
+                {"from": "a=b", "to": ["\\f(a)=\\f(b)"]}
+            ]
+        },
+        {
+            "title": "Find Zeros",
+            "description": "If multiple things multiply to 0, it would be true if any of them are 0",
+            "matches": [
+                {"from": "a*b=0", "to": ["a=0", "b=0"]}
             ]
         }
     ]

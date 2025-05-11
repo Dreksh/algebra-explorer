@@ -113,7 +113,7 @@ matchRule_ selected rule = (rule.title,
         Just n ->
             let
                 matches = List.filterMap (\m -> Matcher.matchSubtree n.nodes m.from.root n.tree
-                    |> Maybe.map (\result -> {from = result, name = m.to.name, replacement = m.to.root})
+                    |> Maybe.map (\result -> {from = result, replacements = m.to})
                     ) rule.matches
             in
                 if List.isEmpty matches then Disallowed

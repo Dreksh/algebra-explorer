@@ -1,5 +1,5 @@
 module Algo.History exposing (Model, Event(..), init, update,
-    current, add, redo, undo, serialize,
+    current, add, addAll, redo, undo, serialize,
     encode, decoder
     )
 
@@ -60,6 +60,15 @@ add c model = let id = currentNode_ model in
     |> Dict.insert nextID {parent = id, component = c, children = []}
     |> (\nodes -> updateNodeValues_ id {index = nextID, height=1, width = 1} {model | nodes = nodes})
     |> (\newModel -> { newModel | visits = nextID::model.visits, undone = []} )
+
+addAll: List component -> Model component -> Model component
+addAll list model = let id = currentNode_ model in
+    List.foldl (\c m -> let nextID = (Dict.size m.nodes) + 1 in
+        m.nodes
+        |> Dict.insert nextID {parent = id, component = c, children = []}
+        |> \nodes -> updateNodeValues_ id {index = nextID, height=1, width = 1} {m | nodes = nodes}
+    ) model list
+    |> \newModel -> { newModel | visits = Dict.size newModel.nodes ::model.visits, undone = []}
 
 -- Algorithm assumes that runtime will reuse cached result, and not recalculate each time
 updateNodeValues_: Int -> {index: Int, height: Int, width: Int} -> Model component -> Model component

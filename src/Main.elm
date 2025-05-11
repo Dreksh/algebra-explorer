@@ -346,9 +346,9 @@ update event core = let model = core.swappable in
 
 
 -- TODO
-applyChange_: {from: Matcher.MatchResult Display.State, name: String, replacement: Matcher.Replacement} -> Model -> (Model, Cmd Event)
+applyChange_: {from: Matcher.MatchResult Display.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
-    case Display.transformEquation params.replacement params.from swappable.display of
+    case Display.transformEquation params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ model newDisplay)
 
@@ -481,7 +481,7 @@ parameterDialog_ params =
                 else { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]
-                        ,   [Dialog.Radio {name = "_method", options = List.indexedMap (\k m -> (k, m.name)) params.matches |> Dict.fromList}]
+                        ,   [Dialog.Radio {name = "_method", options = List.indexedMap (\k m -> (k, List.map (.name) m.replacements |> String.join ", ")) params.matches |> Dict.fromList}]
                         ]
                     }
                     :: sections

@@ -48,7 +48,7 @@ type alias Rule =
     {   title: String
     ,   description: String
     ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: {name: String, root: Matcher.Matcher}, to: {name: String, root: Matcher.Replacement}}
+    ,   matches: List {from: {name: String, root: Matcher.Matcher}, to: List {name: String, root: Matcher.Replacement}}
     }
 
 type alias Topic =
@@ -61,7 +61,7 @@ type alias Topic =
 type alias Parameters state =
     {   title: String
     ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: Matcher.MatchResult state, name: String, replacement: Matcher.Replacement}
+    ,   matches: List {from: Matcher.MatchResult state, replacements: List {name: String, root: Matcher.Replacement}}
     }
 
 {-
@@ -250,7 +250,7 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
                 ( List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
                     [  Menu.Content ( List.concat
                         [ [h3 [] [text "Rules"]]
-                        , List.map (\match -> p [] [text (match.from.name ++"→"++ match.to.name)]) rule.matches
+                        , List.map (\match -> p [] [text (match.from.name ++"→"++ (List.map .name match.to |> String.join ", "))]) rule.matches
                         , [   h3 [] [text "Description"], p [] [text rule.description]]
                         ])
                     ]
@@ -380,7 +380,8 @@ ruleDecoder_ knownFuncs = Dec.map3 (\a b c -> (a,b,c))
         Dec.list (
             (Dec.field "from" (expressionDecoder_ knownFuncs args))
             |> Dec.andThen (\(from, newArgs) ->
-                Dec.field "to" (replacementDecoder_ knownFuncs newArgs)
+                Dec.field "to"
+                (replacementDecoder_ knownFuncs newArgs |> Dec.list)
                 |> Dec.map (\to -> let otherSet = Dict.toList newArgs |> List.filter (\(_, (_, oneUse)) -> oneUse) |> List.map Tuple.first |> Set.fromList in
                     {from = {from | root = setOthers_ otherSet from.root}, to = to}
                 )
@@ -485,7 +486,7 @@ encodeRule_ rule = Enc.object
     [   ("title", Enc.string rule.title)
     ,   ("description", Enc.string rule.description)
     ,   ("parameters", Enc.dict identity encodeParameter_ rule.parameters)
-    ,   ("matches", Enc.list (\match -> Enc.object [("from", Enc.string match.from.name), ("to", Enc.string match.to.name)]) rule.matches)
+    ,   ("matches", Enc.list (\match -> Enc.object [("from", Enc.string match.from.name), ("to", Enc.list (.name >> Enc.string) match.to)]) rule.matches)
     ]
 
 encodeParameter_: Parameter -> Enc.Value

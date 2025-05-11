@@ -144,17 +144,19 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
                 ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
                 })
 
-transformEquation: Matcher.Replacement -> Matcher.MatchResult State -> Model -> Result String Model
+transformEquation: List {a | root: Matcher.Replacement} -> Matcher.MatchResult State -> Model -> Result String Model
 transformEquation replacement result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation is not found"
         Just eq -> History.current eq
-            |> Matcher.replaceSubtree ids replacement result
+            |> \current -> Helper.resultList (\r (_, list) -> Matcher.replaceSubtree ids r.root result current
+                |> Result.map (\(num, newEq) -> (num, newEq :: list))
+                ) (0, []) replacement
             |> Result.map (\(newSelect, newEq) ->
                 {   model
                 |   selected = Just (eqNum, Set.singleton newSelect)
-                ,   equations = Dict.insert eqNum (History.add newEq eq) model.equations
+                ,   equations = Dict.insert eqNum (History.addAll (List.reverse newEq) eq) model.equations
                 })
 
 substitute: Dict.Dict String Matcher.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
