@@ -319,6 +319,9 @@ div#history {
     display: block;
     background-color: var(--color-menu);
 }
+#history .selected {
+    color: var(--color-highlight);
+}
 /* Actions */
 div#actions {
     position: absolute;

@@ -89,15 +89,16 @@ updateNode_ child n = List.filter (\elem -> elem.index /= child.index) n.childre
 
 update: Event -> Model component -> Model component
 update e model = case e of
-    SelectPast n -> {model | visits = n::model.visits}
+    SelectPast n -> {model | visits = n::model.visits, undone = []}
 
-serialize: (Int -> component -> List a -> a) -> Model component -> a
-serialize processNode model = serialize_ processNode model.nodes 0 model.root
+-- processNode is Current, ID, Value, Children as argument
+serialize: (Bool -> Int -> component -> List a -> a) -> Model component -> a
+serialize processNode model = serialize_ processNode (currentNode_ model) model.nodes 0 model.root
 
-serialize_: (Int -> c -> List a -> a) -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> a
-serialize_ converter nodes index n = converter index n.component
+serialize_: (Bool -> Int -> c -> List a -> a) -> Int -> Dict.Dict Int (Node_ c) -> Int -> Node_ c -> a
+serialize_ converter selectedID nodes index n = converter (selectedID == index) index n.component
     (   List.filterMap
-        (\c -> Dict.get c.index nodes |> Maybe.map (serialize_ converter nodes c.index))
+        (\c -> Dict.get c.index nodes |> Maybe.map (serialize_ converter selectedID nodes c.index))
         n.children
     )
 

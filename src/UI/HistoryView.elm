@@ -19,12 +19,14 @@ view converter dragModel model = Draggable.div
     (DraggableEvent >> converter) dragModel []
     [ model.selected
     |> Maybe.andThen (\(eq, _) -> Dict.get eq model.equations
-        |> Maybe.map (History.serialize (\index c children ->
+        |> Maybe.map (History.serialize (\current index c children ->
             Html.div []
             (   Html.a
-                [   class "clickable"
-                ,   HtmlEvent.onClick (History.SelectPast index |> Display.HistoryEvent eq |> DisplayEvent |> converter)
-                ]
+                (   if current then [class "selected"]
+                    else [   class "clickable"
+                        ,   HtmlEvent.onClick (History.SelectPast index |> Display.HistoryEvent eq |> DisplayEvent |> converter)
+                    ]
+                )
                 [Html.text (c.root |> Math.toString)]
             ::  children
             )
