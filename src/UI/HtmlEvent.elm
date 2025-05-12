@@ -9,6 +9,9 @@ import Json.Decode exposing (Decoder, Value, field, float, map, map2, string, su
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
 
+onClickThrough: msg -> Html.Attribute msg
+onClickThrough = Html.Events.onClick
+
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit
 

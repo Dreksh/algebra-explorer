@@ -45,11 +45,8 @@ button.noDefault {
 #leftPane {
     flex-grow: 1;
     flex-shrink: 1;
-    pointer-events: none;
     position: relative;
     overflow: none;
-}
-#leftPane > * {
     pointer-events: auto;
 }
 #rightPane {

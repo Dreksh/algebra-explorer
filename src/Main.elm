@@ -220,10 +220,11 @@ update event core = let model = core.swappable in
                     {   model
                     |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
                     ,   nextCreateInt = model.nextCreateInt + 1
+                    ,   showMenu = False
                     }
                 ,   focusTextBar_ "textInput"
                 )
-            else (core, focusTextBar_ "textInput")
+            else (updateCore {model | showMenu = False}, focusTextBar_ "textInput")
         CancelCreateMode -> case model.createMode of
             Nothing -> (core, Cmd.none)
             Just m -> Animation.delete m
@@ -392,7 +393,8 @@ view core = let model = core.swappable in
             ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
             ,   ("actions", ActionView.view RuleEvent model.rules model.display) |> Just
             ,   ("inputPane", div [id "inputPane"]
-                [   Html.Keyed.node "div" [id "leftPane"]
+                [   Html.Keyed.node "div"
+                    [id "leftPane", HtmlEvent.onClickThrough (if model.showMenu then ToggleMenu else NoOp)]
                     (  List.filterMap identity
                         [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
                         ,   model.createMode |> Maybe.map (inputDiv)
