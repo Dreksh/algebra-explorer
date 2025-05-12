@@ -52,6 +52,9 @@ button.noDefault {
 #leftPane.closed {
     pointer-events: none;
 }
+#leftPane > * {
+    pointer-events: auto;
+}
 #rightPane {
     display: block;
     position: relative;
