@@ -394,7 +394,7 @@ view core = let model = core.swappable in
             ,   ("actions", ActionView.view RuleEvent model.rules model.display) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
-                    [id "leftPane", HtmlEvent.onClickThrough (if model.showMenu then ToggleMenu else NoOp)]
+                    (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
                     (  List.filterMap identity
                         [   ("helpText", pre [id "helpText"] [text Math.notation]) |> Helper.maybeGuard model.showHelp
                         ,   model.createMode |> Maybe.map (inputDiv)

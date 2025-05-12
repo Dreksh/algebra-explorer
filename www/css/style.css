@@ -49,6 +49,9 @@ button.noDefault {
     overflow: none;
     pointer-events: auto;
 }
+#leftPane.closed {
+    pointer-events: none;
+}
 #rightPane {
     display: block;
     position: relative;
