@@ -238,6 +238,7 @@ view converter attr model = div attr
         )
         []
         model.equations
+    |> List.reverse
     )
 
 collapsedView_: Int -> Set.Set Int -> Math.Symbol (Matcher.State State) -> Html Event

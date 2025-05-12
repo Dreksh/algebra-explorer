@@ -167,17 +167,16 @@ Replacement are bluerpints to reconstruct equations
 
 type alias Replacement = Math.Tree (Maybe Int)
 
-toReplacement: Dict.Dict String FunctionProperties -> Dict.Dict String (Int, Int) -> String -> Result String Replacement
-toReplacement funcProps argDict = Math.parse >> Result.andThen (toReplacement_ (Just funcProps) argDict)
+toReplacement: Dict.Dict String FunctionProperties -> Bool -> Dict.Dict String (Int, Int) -> String -> Result String Replacement
+toReplacement funcProps strict argDict = Math.parse >> Result.andThen (toReplacement_ funcProps strict argDict)
 
-toReplacement_: Maybe (Dict.Dict String FunctionProperties) -> Dict.Dict String (Int, Int) -> Math.Tree a -> Result String Replacement
-toReplacement_ funcProps argDict =
+toReplacement_: Dict.Dict String FunctionProperties -> Bool -> Dict.Dict String (Int, Int) -> Math.Tree a -> Result String Replacement
+toReplacement_ funcProps strict argDict =
     let
-        getFuncProp name = case funcProps of
-            Nothing -> Ok Nothing
-            Just fp -> case Dict.get name fp of
-                Nothing -> Err ("Unable to construct " ++ name)
-                Just p -> Ok (Just p)
+        getFuncProp name = case Dict.get name funcProps of
+            Nothing -> if strict then Err ("Unable to construct " ++ name)
+                else Ok Nothing
+            Just p -> Ok (Just p)
 
         -- Can't use Math.map since GenericNode can turn into BinaryNode
         convert node = case node of
@@ -708,9 +707,9 @@ createMatcherPair_ funcs left right =
     let
         toMatcherPair (from, to) = case treeToMatcher_ (\_ _ -> Ok) (KnownFuncs_ funcs) () from of
             Ok (AnyMatcher n, _) -> let args = List.indexedMap (\index var -> (var, (0, index))) n.arguments |> Dict.fromList in
-                toReplacement_ Nothing args to
+                toReplacement_ Dict.empty False args to
                 |> Result.map (\toR -> treeToMatcher_ (\_ _ -> Ok) (KnownArgs_ args) () to
-                    |> Result.andThen (\(toM, _) -> toReplacement_ Nothing args from
+                    |> Result.andThen (\(toM, _) -> toReplacement_ Dict.empty False args from
                         |> Result.map (\fromR -> [(toM, fromR)])
                     )
                     |> Result.toMaybe |> Maybe.withDefault []

@@ -15,7 +15,8 @@
                 {"from": "a-a", "to": ["0"]},
                 {"from": "a/a", "to": ["1"]},
                 {"from": "--a", "to": ["a"]},
-                {"from": "b/(c/a)", "to": ["a*b/c"]}
+                {"from": "b/(c/a)", "to": ["a*b/c"]},
+                {"from": "-(-a*b)", "to": ["a*b"]}
             ]
         },
         {
@@ -43,9 +44,8 @@
             "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
             "matches": [
                 {"from": "-(a+b)", "to": ["-a-b"]},
-                {"from": "-(a-b)", "to": ["-a+b"]},
                 {"from": "m(a+b)", "to": ["ma+mb"]},
-                {"from": "m(a-b)", "to": ["ma-mb"]}
+                {"from": "-(a*b)", "to": ["-a*b"]}
             ]
         },
         {
@@ -53,10 +53,10 @@
             "description": "Terms with the same factor in a sum can be grouped",
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
+                {"from": "a-b", "to": ["-(-a+b)"]},
                 {"from": "ma+mb", "to": ["m(a+b)"]},
-                {"from": "ma+m", "to": ["m(a+1)"]},
-                {"from": "ma-m", "to": ["m(a-1)"]},
-                {"from": "ma-mb", "to": ["m(a-b)"]}
+                {"from": "ma-mb", "to": ["m(a-b)"]},
+                {"from": "-a*b", "to": ["-(ab)"]}
             ]
         },
         {

@@ -132,7 +132,7 @@ init: Decode.Value -> Url.Url -> Nav.Key -> (Model, Cmd Event)
 init flags url key =
     let
         query = Query.parseInit url key
-        (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations |> \(a, b) -> (List.reverse a, List.reverse b)
+        (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
@@ -305,14 +305,14 @@ update event core = let model = core.swappable in
                 |> Result.fromMaybe "Unable to find the match"
                 |>  Result.andThen (\prev -> Helper.resultDict (\k v r -> if k == "_method" then Ok r
                         else case v of
-                            Dialog.TextValue val -> Matcher.toReplacement (Rules.functionProperties model.rules) Dict.empty val
+                            Dialog.TextValue val -> Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty val
                                 |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
                             Dialog.FunctionValue args val -> List.indexedMap Tuple.pair args
                                 |> Helper.resultList (\(i, name) dict -> if Dict.member name dict
                                         then Err "Function arguments need to be unique in the function definition"
                                         else Math.validVariable name |> Result.map (\n -> Dict.insert n (0, i) dict)
                                     ) Dict.empty
-                                |> Result.andThen (\argDict -> Matcher.toReplacement (Rules.functionProperties model.rules) argDict val)
+                                |> Result.andThen (\argDict -> Matcher.toReplacement (Rules.functionProperties model.rules) False argDict val)
                                 |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
                             _ -> Ok r
                         )
@@ -326,7 +326,7 @@ update event core = let model = core.swappable in
         ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.functionProperties model.rules) origNum selected eqNum model.display of
             Err errStr -> submitNotification_ core errStr
             Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ core dModel)
-        ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) Dict.empty str of
+        ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
                 Err errStr -> submitNotification_ core errStr

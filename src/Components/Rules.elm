@@ -435,7 +435,7 @@ replacementDecoder_ knownFunc args = Dec.string
     |> Dec.andThen (\str ->
         Dict.toList args
         |> List.indexedMap (\index (var, (argNum, _)) -> (var, (argNum, index)))
-        |> \argMap -> Matcher.toReplacement knownFunc (Dict.fromList argMap) str
+        |> \argMap -> Matcher.toReplacement knownFunc True (Dict.fromList argMap) str
         |> Result.map (\replacement -> {name = str, root = replacement})
         |> Helper.resultToDecoder
     )
