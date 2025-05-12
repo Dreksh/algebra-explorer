@@ -316,6 +316,7 @@ dialog svg {
 }
 div#history {
     pointer-events: auto;
+    overflow: scroll;
 }
 .border {
     position: absolute;
@@ -328,30 +329,73 @@ div#history {
 /* Actions */
 div#actions {
     position: absolute;
+    display: flex;
+    flex-direction: row;
     top: 80vh;
     left: 50vw;
     height: 3rem;
     max-width: 80%;
+    width: auto;
     transform: translateX(-50%);
     overflow-y: visible;
+    border-radius: 1.5rem;
+    background-color: var(--color-menu);
+}
+#actions > svg {
+    height: 100%;
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+#actions > svg:last-child {
+    justify-self: flex-end;
+    margin-left: auto;
 }
 #actions > ul {
     height: 100%;
     list-style-type: none;
     display: flex;
     margin: 0;
+    padding: 0;
     gap: 1rem;
     flex-direction: row;
 }
 #actions > ul > li {
-    display: flex;
-    flex-direction: column-reverse;
+    position: relative;
+    height: 100%;
 }
 #actions > ul > li > h2 {
+    display: block;
     margin: 0;
-    height: 100%;
+    position: relative;
+    top: 50%;
+    transform: translateY(-50%);
+}
+#actions > ul > li > h2.selected {
+    color: var(--color-highlight);
 }
 #actions > ul > li > div {
     display: flex;
+    position: absolute;
+    padding: 1rem 1rem 0rem 1rem;
+    box-sizing: border-box;
+    border-radius: 1rem 1rem 0 0;
+    background-color: var(--color-menu);
+    bottom: 100%;
+    left: -1rem;
+    width: fit-content;
     flex-direction: column;
+    overflow: hidden;
+    height: auto;
+    height: calc-size(auto); /* Only a few limited browsers support this for now */
+    transition: height 0.5s ease-out;
+}
+#actions > ul > li > div.closed {
+    height: 0;
+    padding-top: 0;
+    transition: height 0.5s ease-out, padding-top 0.5s ease-out;
+}
+#actions > ul > li > div > a.disallowed {
+    text-decoration: line-through;
+    pointer-events: none;
+    color: var(--color-background);
 }

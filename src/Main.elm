@@ -78,6 +78,7 @@ type alias Swappable =
     ,   showMenu: Bool
     ,   showHistory: Bool
     ,   historyBox: Draggable.Model
+    ,   actionView: ActionView.Model
     }
 
 type Event =
@@ -89,6 +90,7 @@ type Event =
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
     | HistoryEvent HistoryView.Event
+    | ActionEvent ActionView.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
     | PressedKey {ctrl: Bool, shift: Bool, key: String}
@@ -148,6 +150,7 @@ init flags url key =
             , showMenu = False
             , showHistory = False
             , historyBox = Draggable.init "history" (60, 10) (30, 80)
+            , actionView = ActionView.init
             }
         , query = query
         , dialog = Nothing
@@ -201,6 +204,7 @@ update event core = let model = core.swappable in
                 (updateCore {model | historyBox = newBox}, actionToCapture_ action)
             HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
                 (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
+        ActionEvent e -> (updateCore {model | actionView = ActionView.update e model.actionView}, Cmd.none)
         NoOp -> (core, Cmd.none)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case (core.dialog, model.createMode) of
@@ -391,7 +395,7 @@ view core = let model = core.swappable in
         (   List.filterMap identity
             [   ("display", Display.view DisplayEvent [id "display"] model.display) |> Just
             ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
-            ,   ("actions", ActionView.view RuleEvent model.rules model.display) |> Just
+            ,   ("actions", ActionView.view RuleEvent ActionEvent model.rules model.display model.actionView) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
@@ -562,15 +566,16 @@ swappableDecoder = Decode.map3 triplet
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
         (Decode.maybe (Decode.field "createMode" createModeDecoder_))
     )
-    (   Decode.map5 (\a b c d e -> ((a,b),(c,d, e)))
+    (   Decode.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
         (Decode.field "nextCreateInt" Decode.int)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
         (Decode.field "showHistory" Decode.bool)
         (Decode.field "historyBox" Draggable.decoder)
+        (Decode.field "actionView" ActionView.decoder)
     )
-    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp),(showMenu,showHistory,historyBox))) ->
-       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory historyBox
+    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp,showMenu),(showHistory,historyBox,actionView))) ->
+       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory historyBox actionView
     )
 
 createModeDecoder_: Decode.Decoder (Animation.DeletableElement Int Event)
@@ -610,6 +615,7 @@ saveFile model = Encode.encode 0
         ,   ("showMenu", Encode.bool model.showMenu)
         ,   ("showHistory", Encode.bool model.showHistory)
         ,   ("historyBox", Draggable.encode model.historyBox)
+        ,   ("actionView", ActionView.encode model.actionView)
         ]
     )
     |> FDownload.string "math.json" "application/json"

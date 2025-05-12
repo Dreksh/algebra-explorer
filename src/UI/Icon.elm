@@ -1,4 +1,4 @@
-module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden)
+module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right)
 
 import Html
 import Svg exposing (circle, defs, path, rect, svg, text, text_)
@@ -60,3 +60,13 @@ shown attr = svg (viewBox "0 0 24 24" :: attr) eye_
 hidden: List (Html.Attribute msg) -> Html.Html msg
 hidden attr = svg (viewBox "0 0 24 24" :: attr)
     (path [d "M2 22 L 22 2", stroke "currentColor", strokeWidth "1", fill "none"] [] :: eye_)
+
+left: List (Html.Attribute msg) -> Html.Html msg
+left attr = svg (viewBox "0 0 24 24" :: attr)
+    [   path [d "M8 12L16 6V18Z", stroke "none", fill "currentColor"] []
+    ]
+
+right: List (Html.Attribute msg) -> Html.Html msg
+right attr = svg (viewBox "0 0 24 24" :: attr)
+    [   path [d "M16 12L8 6V18Z", stroke "none", fill "currentColor"] []
+    ]

@@ -1,9 +1,11 @@
-module UI.ActionView exposing (view)
+module UI.ActionView exposing (Model, Event(..), init, update, view, encode, decoder)
 
 import Dict
 import Html
 import Html.Attributes exposing (attribute, id, class)
 import Html.Keyed exposing (node)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Set
 -- Ours
 import Algo.History as History
@@ -12,6 +14,26 @@ import Algo.Math as Math
 import Components.Display as Display
 import Components.Rules as Rules
 import UI.HtmlEvent as HtmlEvent
+import UI.Icon as Icon
+
+type Event =
+    Next Int
+    | Toggle Int
+
+type Model =
+    Current Int Bool
+
+init: Model
+init = Current 0 False
+
+update: Event -> Model -> Model
+update e m = case e of
+    Next num -> Current num True
+    Toggle num -> case m of
+        Current cNum show -> if cNum == num then Current cNum (not show)
+            else Current num True
+
+-- UI-related
 
 type State =
     DisplayOnly
@@ -26,27 +48,41 @@ type alias SelectedNode_ =
     ,   nodes: Set.Set Int
     }
 
-view: (Rules.Event Display.State -> msg) -> Rules.Model -> Display.Model -> Html.Html msg
-view converter rModel dModel = let selectedNode = selectedNode_ dModel in
+view: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Rules.Model -> Display.Model -> Model -> Html.Html msg
+view ruleConvert eventConvert rModel dModel vModel =
+    let
+        selectedNode = selectedNode_ dModel
+        loadedTopics = Rules.loadedTopics rModel
+        (current, show) = case vModel of
+            Current c s -> (min c (List.length loadedTopics), s)
+    in
     Html.div [id "actions"]
-    [   node "ul" []
-        (   ("Core", coreTopic_ rModel selectedNode |> coreToList_ |> displayTopic_ "Core")
-        ::  (   Rules.loadedTopics rModel
-            |> List.map (\topic -> (topic.name, List.map (matchRule_ selectedNode) topic.rules |> displayTopic_ topic.name) )
+    [    Icon.left ( if current <= 0 then [] else [HtmlEvent.onClick (Next (current - 1) |> eventConvert), Icon.class "clickable"])
+    ,   node "ul" []
+        (   ("Core", coreTopic_ rModel selectedNode |> coreToList_ |> displayTopic_ ruleConvert eventConvert current show "Core" 0)
+        ::  (   List.indexedMap (\i topic ->
+                (   topic.name
+                ,   List.map (matchRule_ selectedNode) topic.rules
+                    |> displayTopic_ ruleConvert eventConvert current show topic.name (i+1)
+                )
+                )
+                loadedTopics
             )
         )
+    ,   Icon.right ( if current >= List.length loadedTopics then [] else [HtmlEvent.onClick (Next (current + 1) |> eventConvert), Icon.class "clickable"])
     ]
-    |> Html.map converter
 
-displayTopic_: String -> List (String, State) -> Html.Html (Rules.Event Display.State)
-displayTopic_ title actions = Html.li []
-    [   Html.h2 [] [Html.text title]
-    ,   Html.div []
+displayTopic_: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Int -> Bool -> String -> Int -> List (String, State) -> Html.Html msg
+displayTopic_ ruleConvert eventConvert selected show title current actions = Html.li []
+    [   Html.h2
+        ((if current == selected then [class "selected"] else []) ++ [class "clickable", HtmlEvent.onClick (Toggle current |> eventConvert)])
+        [Html.text title]
+    ,   Html.div (if current == selected && show then [] else [class "closed"])
         (   List.map (\(name, state) -> Html.a
                 (case state of
                     DisplayOnly -> []
-                    Disallowed -> [attribute "disabled" ""]
-                    Allowed event -> [HtmlEvent.onClick event, class "clickable"]
+                    Disallowed -> [class "disallowed"]
+                    Allowed event -> [HtmlEvent.onClick (ruleConvert event), class "clickable"]
                 )
                 [Html.text name]
             )
@@ -125,3 +161,14 @@ matchRule_ selected rule = (rule.title,
                     }
                     |> Allowed
     )
+
+{- Encoding and Decoding -}
+
+encode: Model -> Encode.Value
+encode model = case model of
+    Current cNum show -> Encode.object [("current", Encode.int cNum),("show", Encode.bool show)]
+
+decoder: Decode.Decoder Model
+decoder = Decode.map2 Current
+    (Decode.field "current" Decode.int)
+    (Decode.field "show" Decode.bool)
