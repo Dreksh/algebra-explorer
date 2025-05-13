@@ -444,17 +444,9 @@ encodeRule_: Rule -> Enc.Value
 encodeRule_ rule = Enc.object
     [   ("title", Enc.string rule.title)
     ,   ("description", Enc.string rule.description)
-    ,   ("parameters", Enc.dict identity encodeParameter_ rule.parameters)
+    ,   ("parameters", Enc.object (Dict.toList rule.parameters |> List.map (\(_, p) -> (p.name, Enc.string p.description) )))
     ,   ("matches", Enc.list (\match -> Enc.object [("from", Enc.string match.from.name), ("to", Enc.list (.name >> Enc.string) match.to)]) rule.matches)
     ]
-
-encodeParameter_: Parameter -> Enc.Value
-encodeParameter_ param = Enc.object
-    [   ("usage", Enc.string param.name)
-    ,   ("arguments", Enc.int param.arguments)
-    ,   ("description", Enc.string param.description)
-    ]
-
 
 decoder: Dec.Decoder Model
 decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})

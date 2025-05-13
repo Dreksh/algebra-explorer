@@ -311,8 +311,31 @@ dialog svg {
     fill: var(--color-selected);
 }
 /* History */
-#history > div div {
-    padding-left: 0.2rem;
+#history div {
+    padding-left: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+#history a {
+    position: relative;
+    padding-left: 1rem;
+}
+#history > div *::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    content: "├"
+}
+#history > div a:first-child:before, #history > div div:first-child:before {
+    content: "┬"
+}
+#history > div *:last-child:before {
+    content: "└"
+}
+#history > div a:first-child:last-child:before, #history > div div:first-child:last-child:before {
+    content: "─"
 }
 #history > div {
     pointer-events: auto;
