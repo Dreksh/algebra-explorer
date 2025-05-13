@@ -1,8 +1,8 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "+": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "+"}},
-        "*": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "*"}},
+        "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}},
+        "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}},
         "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}},
         "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}}
     },
@@ -12,13 +12,14 @@
             "title": "Cancel out",
             "description": "Combining with their inverse, values can be cancelled out",
             "matches": [
-                {"from": "a-a", "to": ["0"]},
-                {"from": "a/a", "to": ["1"]},
                 {"from": "--a", "to": ["a"]},
                 {"from": "a-a+b", "to": ["b"]},
+                {"from": "a/a*b", "to": ["b"]},
                 {"from": "b/(c/a)", "to": ["a*b/c"]},
                 {"from": "-(-a*b)", "to": ["a*b"]},
-                {"from": "-a*-b", "to": ["a*b"]}
+                {"from": "-(a/-b)", "to": ["a/b"]},
+                {"from": "-a*-b", "to": ["a*b"]},
+                {"from": "-a/-b", "to": ["a/b"]}
             ]
         },
         {
@@ -55,10 +56,10 @@
             "description": "Terms with the same factor in a sum can be grouped",
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
-                {"from": "a-b", "to": ["-(-a+b)"]},
                 {"from": "ma+mb", "to": ["m(a+b)"]},
                 {"from": "ma-mb", "to": ["m(a-b)"]},
-                {"from": "-a*b", "to": ["-(ab)"]}
+                {"from": "-a*b", "to": ["-(ab)"]},
+                {"from": "a/-b", "to": ["-(a/b)"]}
             ]
         },
         {

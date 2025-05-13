@@ -171,7 +171,7 @@ uiCancelCmd_: Int -> () -> Cmd Event
 uiCancelCmd_ num _ = Animation.delayEvent 500 (DeleteCreateMode num)
 
 parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
-parseEquations_ model elem (result, errs) = case Math.parse elem |> Result.andThen (Rules.replaceGlobalVar model) |> Result.map (Matcher.parseEquation Display.createState Display.updateState) of
+parseEquations_ model elem (result, errs) = case Matcher.parseEquation (Rules.functionProperties model) Display.createState Display.updateState elem of
     Result.Ok root -> (root :: result, errs)
     Result.Err err -> (result, err :: errs )
 
@@ -238,7 +238,7 @@ update event core = let model = core.swappable in
             Just m -> if m.element /= num then (core, Cmd.none)
                 else (updateCore {model | createMode = Nothing}, Cmd.none)
         SubmitEquation str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
-            else case Math.parse str |> Result.andThen (Rules.replaceGlobalVar model.rules) |> Result.map (Matcher.parseEquation Display.createState Display.updateState) of
+            else case Matcher.parseEquation (Rules.functionProperties model.rules) Display.createState Display.updateState str of
                 Result.Ok root -> Display.addEquation root model.display
                     |> (\dModel ->
                         (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False}

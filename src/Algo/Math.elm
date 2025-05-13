@@ -1,10 +1,12 @@
-module Algo.Math exposing (Tree(..), Symbol(..),
-    equal, validVariable,
-    getChildren, getState, getName, map,
-    notation, parse, symbolicate, toString,
+module Algo.Math exposing (
+    Tree(..), equal, getChildren, getState, getName, map,
+    Symbol(..),symbolicate, toString,
+    FunctionProperty, FunctionProperties, functionPropertyDecoder, addConstant, encodeFunctionProperty,
+    notation, parse,validVariable,
     encode, decoder
     )
 
+import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Parser exposing ((|.), (|=))
@@ -14,10 +16,10 @@ import Algo.Backtrack as Backtrack
 
 type Tree s =
     RealNode {state: s, value: Float}
-    | VariableNode {state: s, name: String}
+    | VariableNode {state: s, constant: Bool, name: String}
     | UnaryNode {state: s, name: String, child: Tree s}
-    | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, children: List (Tree s)}
-    | GenericNode {state: s, name: String, children: List (Tree s)} -- Order matters
+    | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, identity: Float, children: List (Tree s)}
+    | GenericNode {state: s, name: String, arguments: Maybe Int, children: List (Tree s)} -- Order matters
     | DeclarativeNode {state: s, name: String, children: List (Tree s)} -- Can be strung together, but cannot be nested, assumed to be commutative for now
 
 getState: Tree state -> state
@@ -58,13 +60,13 @@ map_ transition parent glob root =
     in
         case root of
             RealNode n -> (RealNode {state = finS, value = n.value}, nextG)
-            VariableNode n -> (VariableNode {state = finS, name = n.name}, nextG)
+            VariableNode n -> (VariableNode {state = finS, constant = n.constant, name = n.name}, nextG)
             UnaryNode n -> map_ transition (Just finS) nextG n.child
                 |> \(finChild, finGlob) -> (UnaryNode {state = finS, name = n.name, child = finChild}, finGlob)
             BinaryNode n -> processChildren nextG n.children
-                |> \(finChildren, finGlob) -> (BinaryNode {state = finS, name = n.name, associative = n.associative, commutative = n.commutative, children = List.reverse finChildren}, finGlob)
+                |> \(finChildren, finGlob) -> (BinaryNode {state = finS, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = List.reverse finChildren}, finGlob)
             GenericNode n -> processChildren nextG n.children
-                |> \(finChildren, finGlob) -> (GenericNode {state = finS, name = n.name, children = List.reverse finChildren}, finGlob)
+                |> \(finChildren, finGlob) -> (GenericNode {state = finS, name = n.name, arguments = n.arguments, children = List.reverse finChildren}, finGlob)
             DeclarativeNode n -> processChildren nextG n.children
                 |> \(finChildren, finGlob) -> (DeclarativeNode {state = finS, name = n.name, children = List.reverse finChildren}, finGlob)
 
@@ -163,6 +165,48 @@ symbolicateRecursive_ parent multiplicativeFirst root = (
             else Node {state = getState root, children = tokens}
     )
 
+type alias FunctionProperty = Tree ()
+type alias FunctionProperties = Dict.Dict String FunctionProperty
+
+functionPropertyDecoder: Decode.Decoder FunctionProperty
+functionPropertyDecoder = Decode.field "arguments" Decode.int
+    |> Decode.andThen (\arguments -> if arguments <= 0
+        then Decode.fail "Functions must contain a positive number of integers"
+        else if arguments == 1 then Decode.succeed (UnaryNode {state = (), name = "", child = RealNode {state = (), value = 0}})
+        else if arguments == 2 then Decode.map3 (\c a i -> (Maybe.withDefault False c, Maybe.withDefault False a, i))
+            (Decode.field "commutative" Decode.bool |> Decode.maybe)
+            (Decode.field "associative" Decode.bool |> Decode.maybe)
+            (Decode.field "identity" Decode.float |> Decode.maybe)
+            |> Decode.andThen (\(c, a, i) ->
+                if not c && not a
+                then Decode.succeed (GenericNode {state = (), name = "", arguments = Just arguments, children = []})
+                else case i of
+                    Nothing -> Decode.fail "Missing identity for binary function"
+                    Just iden -> Decode.succeed (BinaryNode {state = (), name="", associative = a, commutative = c, identity = iden, children = []})
+            )
+        else Decode.succeed (GenericNode {state = (), name = "", arguments = Just arguments, children = []})
+    )
+
+encodeFunctionProperty: FunctionProperty -> List (String, Encode.Value)
+encodeFunctionProperty fp = case fp of
+    UnaryNode _ -> [("arguments", Encode.int 1)]
+    BinaryNode n ->
+        [   ("arguments", Encode.int 2)
+        ,   ("commutative", Encode.bool n.commutative)
+        ,   ("associative", Encode.bool n.associative)
+        ,   ("identity", Encode.float n.identity)
+        ]
+    GenericNode n ->
+        [   ("arguments", case n.arguments of
+            Nothing -> Encode.int 0
+            Just num -> Encode.int num
+            )
+        ]
+    _ -> []
+
+addConstant: String -> FunctionProperties -> FunctionProperties
+addConstant key = Dict.insert key (VariableNode {state = (), name = key, constant = True})
+
 notation: String
 notation = """
 a - a variable called "a"
@@ -172,16 +216,16 @@ ab - a variable "a" multiplied by a variable "b"
 """
 
 -- Parser implementation
-parse: String -> Result String (Tree ())
-parse input = Parser.run (equation_ |. Parser.end) input |> Result.mapError (createErrorMessage_ input)
+parse: FunctionProperties -> String -> Result String (Tree ())
+parse funcProps input = Parser.run (equation_ funcProps |. Parser.end) input |> Result.mapError (createErrorMessage_ input)
 
-equation_: Parser.Parser (Tree ())
-equation_ = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |. Parser.spaces |= expression_ |. Parser.spaces
+equation_: FunctionProperties -> Parser.Parser (Tree ())
+equation_ funcProps = Parser.loop []
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |. Parser.spaces |= expression_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. Parser.symbol "="
-                |= expression_
+                |= expression_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -192,40 +236,40 @@ equation_ = Parser.loop []
         _ -> DeclarativeNode {state = (), name = "=", children = children}
     )
 
-expression_: Parser.Parser (Tree ())
-expression_ = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= multiple_ |. Parser.spaces
+expression_: FunctionProperties -> Parser.Parser (Tree ())
+expression_ funcProps = Parser.loop []
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= multiple_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. Parser.symbol "+"
-                |= multiple_
+                |= multiple_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop ((UnaryNode {state = (), name = "-", child = elem}) :: list))
                 |. Parser.symbol "-"
-                |= multiple_
+                |= multiple_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
     ) |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> BinaryNode {state = (), name = "+", associative = True, commutative = True, children = children}
+        _ -> BinaryNode {state = (), name = "+", associative = True, commutative = True, identity = 0, children = children}
     )
 
-multiple_: Parser.Parser (Tree ())
-multiple_ = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ |. Parser.spaces
+multiple_: FunctionProperties -> Parser.Parser (Tree ())
+multiple_ funcProps = Parser.loop []
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. Parser.symbol "*"
-                |= negatable_
+                |= negatable_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (UnaryNode {state = (), name = "/", child = elem} :: list))
                 |. Parser.symbol "/"
-                |= negatable_
+                |= negatable_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |= term_
+                |= term_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -233,40 +277,58 @@ multiple_ = Parser.loop []
     )
     |> Parser.map (\children -> case children of
         [x] -> x
-        _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, children = children}
+        _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
 
-negatable_: Parser.Parser (Tree ())
-negatable_ = Parser.oneOf
-    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. Parser.symbol "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_)
-    ,   Parser.succeed identity |= term_
+negatable_: FunctionProperties -> Parser.Parser (Tree ())
+negatable_ funcProps = Parser.oneOf
+    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. Parser.symbol "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps)
+    ,   Parser.succeed identity |= term_ funcProps
     ]
 
-term_: Parser.Parser (Tree ())
-term_ = Parser.oneOf
-    [   Parser.succeed identity |. Parser.symbol "(" |= expression_ |. Parser.spaces |. Parser.symbol ")"
+term_: FunctionProperties -> Parser.Parser (Tree ())
+term_ funcProps = Parser.oneOf
+    [   Parser.succeed identity |. Parser.symbol "(" |= expression_ funcProps |. Parser.spaces |. Parser.symbol ")"
     ,   tokenNumber_
-    ,   Parser.succeed (\a b -> (a, b)) |. Parser.symbol "\\" |= tokenLongName_ |= varOrFunc_
-        |> Parser.map (\(name, props) -> case props of
-            Nothing -> VariableNode {state = (), name = name}
-            Just children -> GenericNode {state = (), name = name, children = children}
+    ,   Parser.succeed (\a b -> (a, b)) |. Parser.symbol "\\" |= tokenLongName_ |= varOrFunc_ funcProps
+        |> Parser.andThen (\(name, props) -> case (Dict.get name funcProps, props) of
+            (Nothing, Nothing) -> VariableNode {state = (), constant = False, name = name} |> Parser.succeed
+            (Nothing, Just children) -> GenericNode {state = (), name = name, arguments = Nothing, children = children} |> Parser.succeed
+            (Just p, Nothing) -> case p of
+                VariableNode _ -> VariableNode {state = (), constant = True, name = name} |> Parser.succeed
+                _ -> Parser.problem (name ++ " is not a constant, but a function")
+            (Just p, Just children) -> case p of
+                UnaryNode _ -> case children of
+                    [child] -> Parser.succeed (UnaryNode {state = (), name = name, child = child})
+                    _ -> Parser.problem (name ++ " only takes 1 argument")
+                GenericNode n -> case n.arguments of
+                    Nothing -> Parser.problem (name ++ " did not specify the number of arguments")
+                    Just args -> if args /= List.length children then Parser.problem (name ++ " has incorrect number of arguments")
+                        else Parser.succeed (GenericNode {state = (), name = name, arguments = Just args, children = children})
+                BinaryNode n -> if List.length children < 2 then Parser.problem (name ++ " has less than 2 children")
+                    else Parser.succeed (BinaryNode {state = (), name = name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
+                _ -> Parser.problem (name ++ " is not a function")
         )
-    ,   Parser.succeed (\name -> VariableNode {state = (), name = name}) |= tokenShortName_
+    ,   Parser.andThen (\name -> case Dict.get name funcProps of
+            Nothing -> Parser.succeed (VariableNode {state = (), name = name, constant = False})
+            Just (VariableNode _) -> Parser.succeed (VariableNode {state = (), name = name, constant = True})
+            _ -> Parser.problem (name ++ " is not a constant")
+        ) tokenShortName_
     ]
 
-varOrFunc_: Parser.Parser (Maybe (List (Tree ())))
-varOrFunc_ = Parser.oneOf
-    [   Parser.succeed Just |. Parser.symbol "(" |= argsList_ |. Parser.symbol ")"
+varOrFunc_: FunctionProperties -> Parser.Parser (Maybe (List (Tree ())))
+varOrFunc_ funcProps = Parser.oneOf
+    [   Parser.succeed Just |. Parser.symbol "(" |= argsList_ funcProps |. Parser.symbol ")"
     ,   Parser.succeed Nothing
     ]
 
-argsList_: Parser.Parser (List (Tree ()))
-argsList_ = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= expression_ |. Parser.spaces
+argsList_: FunctionProperties -> Parser.Parser (List (Tree ()))
+argsList_ funcProps = Parser.loop []
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= expression_ funcProps |. Parser.spaces
         else Parser.oneOf
         [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
             |. Parser.symbol ","
-            |= expression_
+            |= expression_ funcProps
             |. Parser.spaces
         ,   Parser.succeed ()
             |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -341,11 +403,16 @@ encode converter root = case root of
     RealNode s -> Encode.object
         [("state", converter s.state),("value", Encode.float s.value),("type", Encode.string "real")]
     VariableNode s -> Encode.object
-        [("state", converter s.state),("name", Encode.string s.name),("type", Encode.string "variable")]
+        [("state", converter s.state),("name", Encode.string s.name),("type", Encode.string "variable"),("constant", Encode.bool s.constant)]
     UnaryNode s -> Encode.object
         [("state", converter s.state),("name", Encode.string s.name),("child", encode converter s.child),("type", Encode.string "unary")]
     GenericNode s -> Encode.object
-        [("state", converter s.state),("name", Encode.string s.name),("children", Encode.list (encode converter) s.children),("type", Encode.string "generic")]
+        [("state", converter s.state),("name", Encode.string s.name),("children", Encode.list (encode converter) s.children),("type", Encode.string "generic")
+        , ("arguments", case s.arguments of
+            Nothing -> Encode.null
+            Just num -> Encode.int num
+        )
+        ]
     DeclarativeNode s -> Encode.object
         [("state", converter s.state),("name", Encode.string s.name),("children", Encode.list (encode converter) s.children),("type", Encode.string "declarative")]
     BinaryNode s -> Encode.object
@@ -353,6 +420,7 @@ encode converter root = case root of
         ,   ("name", Encode.string s.name)
         ,   ("associative", Encode.bool s.associative)
         ,   ("commutative", Encode.bool s.commutative)
+        ,   ("identity", Encode.float s.identity)
         ,   ("children", Encode.list (encode converter) s.children)
         ,   ("type", Encode.string "binary")
         ]
@@ -362,14 +430,16 @@ decoder stateDecoder = Decode.field "type" Decode.string
     |> Decode.andThen (\t -> let sDec = Decode.field "state" stateDecoder in
         case t of
             "real" -> Decode.map2 (\s v -> RealNode {state = s, value = v}) sDec (Decode.field "value" Decode.float)
-            "variable" -> Decode.map2 (\s n -> VariableNode {state = s, name = n}) sDec (Decode.field "name" Decode.string)
+            "variable" -> Decode.map3 (\s n c -> VariableNode {state = s, constant = c, name = n}) sDec (Decode.field "name" Decode.string) (Decode.field "constant" Decode.bool)
             "unary" -> Decode.map3 (\s n c -> UnaryNode {state = s, name = n, child = c})
                 sDec (Decode.field "name" Decode.string) (Decode.field "child" <| Decode.lazy (\_ -> decoder stateDecoder))
-            "binary" -> Decode.map5 (\s n a c children -> BinaryNode {state = s, name = n, associative = a, commutative = c, children = children})
+            "binary" -> Decode.map6 (\s n a c i children -> BinaryNode {state = s, name = n, associative = a, commutative = c, identity = i, children = children})
                 sDec (Decode.field "name" Decode.string) (Decode.field "associative" Decode.bool)
-                (Decode.field "commutative" Decode.bool) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
-            "generic" -> Decode.map3 (\s n c -> GenericNode {state = s, name = n, children = c} )
+                (Decode.field "commutative" Decode.bool) (Decode.field "identity" Decode.float)
+                (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
+            "generic" -> Decode.map4 (\s n c a -> GenericNode {state = s, name = n, arguments = a, children = c} )
                 sDec (Decode.field "name" Decode.string) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
+                (Decode.maybe (Decode.field "arguments" Decode.int))
             "declarative" -> Decode.map3 (\s n c -> DeclarativeNode {state = s, name = n, children = c} )
                 sDec (Decode.field "name" Decode.string) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
             _ -> Decode.fail ("Unexpected type of node: " ++ t)

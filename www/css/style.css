@@ -311,10 +311,10 @@ dialog svg {
     fill: var(--color-selected);
 }
 /* History */
-#history div {
+#history > div div {
     padding-left: 0.2rem;
 }
-div#history {
+#history > div {
     pointer-events: auto;
     overflow: scroll;
 }

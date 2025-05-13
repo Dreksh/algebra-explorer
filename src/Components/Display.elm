@@ -159,7 +159,7 @@ transformEquation replacement result model = case model.selected of
                 ,   equations = Dict.insert eqNum (History.addAll (List.reverse newEq) eq) model.equations
                 })
 
-substitute: Dict.Dict String Matcher.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
+substitute: Math.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
 substitute funcs origNum selected eqNum model = case Dict.get eqNum model.equations of
     Nothing -> Err "Substitution equation not found"
     Just subHis -> case Dict.get origNum model.equations of

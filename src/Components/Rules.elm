@@ -1,8 +1,6 @@
 module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, init,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics, functionProperties,
-    replaceGlobalVar, evaluateStr,
-    menuTopics,
-    encode, decoder
+    evaluateStr, menuTopics, encode, decoder
     )
 
 import Dict
@@ -18,18 +16,13 @@ import Algo.Math as Math
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
-import Algo.Matcher as Matcher
-import Algo.Matcher as Matcher
-import Algo.Math as Math
-import Algo.Math as Math
-import Algo.Matcher as Matcher
 
 {-
 ## Modeling rules
 -}
 
 type alias FunctionProperties_ =
-    {   properties: Matcher.FunctionProperties
+    {   properties: Math.FunctionProperty
     ,   javascript: Javascript_
     }
 
@@ -90,18 +83,18 @@ type Event treeState =
 init: Model
 init =
     {   functions = Dict.fromList
-            [   ("+",({properties= {arguments = 2, associative = True, commutative = True}, javascript = InfixOp "+"},1))
-            ,   ("*",({properties= {arguments = 2, associative = True, commutative = True}, javascript = InfixOp "*"},1))
-            ,   ("-",({properties= {arguments = 1, associative = False, commutative = False}, javascript = PrefixOp "-"},1))
-            ,   ("/",({properties= {arguments = 1, associative = False, commutative = False}, javascript = PrefixOp "1/"},1))
+            [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+"},1))
+            ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*"},1))
+            ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-"},1))
+            ,   ("/",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "1/"},1))
             ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty
     }
 
-functionProperties: Model -> Dict.Dict String Matcher.FunctionProperties
+functionProperties: Model -> Math.FunctionProperties
 functionProperties model = Dict.map (\_ (f, _) -> f.properties) model.functions
-    |> \dict -> Dict.foldl (\k _ -> Dict.insert k {arguments = 0, associative = False, commutative = False}) dict model.constants
+    |> \dict -> Dict.foldl (\k _ -> Math.addConstant k) dict model.constants
 
 {-
 ## Topics
@@ -112,9 +105,7 @@ addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing top
     topic.functions
     |> Helper.resultDict (\name props dict -> case Dict.get name dict of
         Nothing -> Ok (Dict.insert name (props, 1) dict)
-        Just (p, count) -> if p.properties.arguments == props.properties.arguments
-                && p.properties.associative == props.properties.associative
-                && p.properties.commutative == props.properties.commutative
+        Just (p, count) -> if Math.equal (\_ _ -> True) p.properties props.properties && p.javascript == props.javascript
             then Ok (Dict.insert name (p, count + 1) dict)
             else Err ("'" ++ name ++ "' differs from existing definition from other topics")
     )
@@ -188,27 +179,6 @@ addSources map model =
 {-
 ## Verification
 -}
-
-replaceGlobalVar: Model -> Math.Tree state -> Result String (Math.Tree state)
-replaceGlobalVar model root =
-    let
-        processChildren = Helper.resultList (\child list -> replaceGlobalVar model child |> Result.map (\c -> c::list)) []
-            >> Result.map List.reverse
-    in
-    case root of
-        Math.UnaryNode s -> replaceGlobalVar model s.child |> Result.map (\child -> Math.UnaryNode {s | child = child})
-        Math.BinaryNode s -> processChildren s.children |> Result.map (\children -> Math.BinaryNode {s | children = children})
-        Math.DeclarativeNode s -> processChildren s.children |> Result.map (\children -> Math.DeclarativeNode {s | children = children})
-        Math.GenericNode s -> processChildren s.children |> Result.andThen (\children -> case Dict.get s.name model.functions of
-            Nothing -> Ok (Math.GenericNode {s | children = children})
-            Just (f, _) -> if f.properties.arguments == 2 && (f.properties.associative || f.properties.commutative)
-                then Ok (Math.BinaryNode {state = s.state, name = s.name, associative = f.properties.associative, commutative = f.properties.commutative, children = children})
-                else if List.length s.children /= f.properties.arguments then Err ("Unexpected number of arguments in " ++ s.name)
-                else case children of
-                    [child] -> Ok (Math.UnaryNode {state = s.state, name = s.name, child = child})
-                    _ -> Ok (Math.GenericNode {s | children = children})
-            )
-        _ -> Ok root
 
 toJavascriptString_: Model -> String -> List String -> Result String String
 toJavascriptString_ model name children = case Dict.get name model.functions of
@@ -310,24 +280,15 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     ))))
     |> Dec.andThen ( \(name, functions, vars) ->
         if Dict.size (Dict.diff vars functions) /= Dict.size vars then Dec.fail "Can't have a variable named as a function as well"
-        else let knownProps = Dict.map (\_ -> .properties) functions |> \dict -> Dict.foldl (\k _ -> Dict.insert k {arguments = 0, associative = False, commutative = False}) dict vars in
+        else let knownProps = Dict.map (\_ -> .properties) functions |> \dict -> Dict.foldl (\k _ -> Math.addConstant k) dict vars in
             Dec.field "actions" (Dec.list (ruleDecoder_ knownProps))
             |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
 functionDecoder_: Dec.Decoder FunctionProperties_
-functionDecoder_ = Dec.map4 (\args assoc comm -> FunctionProperties_ (Matcher.FunctionProperties args assoc comm))
-    (Dec.field "arguments" Dec.int)
-    (Dec.oneOf [Dec.field "associative" Dec.bool, Dec.succeed False])
-    (Dec.oneOf [Dec.field "commutative" Dec.bool, Dec.succeed False])
+functionDecoder_ = Dec.map2 FunctionProperties_
+    Math.functionPropertyDecoder
     (Dec.field "javascript" javascriptDecoder_)
-    |> Dec.andThen (\f ->
-        if (f.properties.associative || f.properties.commutative) && f.properties.arguments /= 2
-        then Dec.fail "Associative and Commutative properties only apply to binary functions"
-        else if f.properties.associative && not f.properties.commutative
-        then Dec.fail "Only associative binary nodes is not supported yet"
-        else Dec.succeed f
-    )
 
 javascriptDecoder_: Dec.Decoder Javascript_
 javascriptDecoder_ = Dec.map2 Tuple.pair
@@ -344,9 +305,9 @@ javascriptDecoder_ = Dec.map2 Tuple.pair
         _ -> Dec.fail "Unknown type of javascript function"
     )
 
-parameterDecoder_: Dict.Dict String Matcher.FunctionProperties -> Dec.Decoder (Dict.Dict String Parameter, Dict.Dict String (Int, Bool))
+parameterDecoder_: Math.FunctionProperties -> Dec.Decoder (Dict.Dict String Parameter, Dict.Dict String (Int, Bool))
 parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
-    |> Dec.andThen ( Helper.resultList (\(key, description) (others, dict) -> Math.parse key
+    |> Dec.andThen ( Helper.resultList (\(key, description) (others, dict) -> Math.parse Dict.empty key
             |> Result.andThen (\tree -> case tree of
                 Math.VariableNode m -> case Dict.get m.name dict of
                     Just _ -> Err "Parameters are duplicated"
@@ -371,7 +332,7 @@ parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
         >> Helper.resultToDecoder
     )
 
-ruleDecoder_: Dict.Dict String Matcher.FunctionProperties -> Dec.Decoder Rule
+ruleDecoder_: Math.FunctionProperties -> Dec.Decoder Rule
 ruleDecoder_ knownFuncs = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
@@ -414,7 +375,7 @@ setOthers_ others m = case m of
                     }
             )
 
-expressionDecoder_: Dict.Dict String Matcher.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder ({name: String, root: Matcher.Matcher}, Dict.Dict String (Int, Bool))
+expressionDecoder_: Math.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder ({name: String, root: Matcher.Matcher}, Dict.Dict String (Int, Bool))
 expressionDecoder_ funcProps args =
     let
         checkUnknowns name numArgs dict = case Dict.get name dict of
@@ -430,7 +391,7 @@ expressionDecoder_ funcProps args =
     )
     Dec.string
 
-replacementDecoder_: Dict.Dict String Matcher.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement}
+replacementDecoder_: Math.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement}
 replacementDecoder_ knownFunc args = Dec.string
     |> Dec.andThen (\str ->
         Dict.toList args
@@ -462,15 +423,13 @@ encode model = Enc.object
 
 encodeFProp_: FunctionProperties_ -> Enc.Value
 encodeFProp_ prop = Enc.object
-    [   ("arguments", Enc.int prop.properties.arguments)
-    ,   ("associative", Enc.bool prop.properties.associative)
-    ,   ("commutative", Enc.bool prop.properties.commutative)
-    ,   ("javascript", case prop.javascript of
+    ( ("javascript", case prop.javascript of
             InfixOp js -> Enc.object [("type", Enc.string "infix"),("symbol",Enc.string js)]
             PrefixOp js ->Enc.object [("type", Enc.string "prefix"),("symbol",Enc.string js)]
             FuncOp js ->Enc.object [("type", Enc.string "function"),("symbol",Enc.string js)]
         )
-    ]
+    ::  Math.encodeFunctionProperty prop.properties
+    )
 
 encodeTopic_: Topic -> Enc.Value
 encodeTopic_ topic = Enc.object
