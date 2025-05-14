@@ -9,7 +9,7 @@ module Algo.Math exposing (
 import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Parser exposing ((|.), (|=))
+import Parser.Advanced as Parser exposing ((|.), (|=))
 import Set
 -- Ours
 import Algo.Backtrack as Backtrack
@@ -216,16 +216,72 @@ ab - a variable "a" multiplied by a variable "b"
 """
 
 -- Parser implementation
-parse: FunctionProperties -> String -> Result String (Tree ())
-parse funcProps input = Parser.run (equation_ funcProps |. Parser.end) input |> Result.mapError (createErrorMessage_ input)
 
-equation_: FunctionProperties -> Parser.Parser (Tree ())
+type Context_ =
+    PrevStr_ String
+type Problem_ =
+    EOF_
+    | ArgMismatch_ {name: String, got: Int, expect: Int}
+    | UnknownArguments_ String
+    | ExpectingVariableName_
+    | ExpectingFunction_ String
+    | ExpectingConstant_ String
+    | ExpectingDigits_
+
+type alias Parser_ a = Parser.Parser Context_ Problem_ a
+
+parserErrorToText: String -> List (Parser.DeadEnd Context_ Problem_) -> String
+parserErrorToText input stack = let _ = Debug.log "error" stack in
+    case List.head stack of
+        Nothing -> "No error found, unable to determine the cause"
+        Just end -> case end.problem of
+            EOF_ -> case List.head end.contextStack of
+                Nothing -> case String.left 1 input of
+                    "+" -> "Cannot use '+' without having an expression to the left"
+                    "/" -> "Cannot use '/' without having an expression to the left"
+                    "*" -> "Cannot use '*' without having an expression to the left"
+                    "=" -> "Cannot use '=' without having an expression to the left"
+                    n -> "Symbol is not allowed: '" ++ n ++ "'"
+                Just ctx -> case ctx.context of
+                    PrevStr_ "+" -> "Got a dangling '+', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    PrevStr_ "-" -> "Got a dangling '-', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    PrevStr_ "*" -> "Got a dangling '*', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    PrevStr_ "/" -> "Got a dangling '/', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    PrevStr_ "(" -> "Got a dangling '(', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    _ -> "No idea what happened!"
+            ArgMismatch_ a -> "Function '\\" ++ a.name ++ "' is defined with " ++ String.fromInt a.expect ++ " arguments, got " ++ String.fromInt a.got
+            UnknownArguments_ name -> "Function '\\" ++ name ++ "' did not specify the number of arguments"
+            ExpectingVariableName_ -> "Expecting a valid variable name at: " ++ inputExtract_ end.col input
+            ExpectingFunction_ name -> name ++ " is a function. Cannot be used as a constant"
+            ExpectingConstant_ name -> name ++ " is a constant. Cannot be used as a function"
+            ExpectingDigits_ -> "Expecting digits at: " ++ inputExtract_ end.col input
+
+-- Show 6 before (or ellipses & 5) + 3 after (or ellipses & 2)
+inputExtract_: Int -> String -> String
+inputExtract_ col input =
+    let
+
+        right = (if String.length input <= col + 2 then input else String.left (col+1) input ++ "…")
+            |> String.dropLeft (col - 1)
+    in
+
+        String.left (col-1) input
+        |> (\str -> if col > 7 then "…" ++ String.dropLeft (col-6) str else str)
+        |> \final -> final ++ "▒" ++ right
+
+parse: FunctionProperties -> String -> Result String (Tree ())
+parse funcProps input = Parser.run (equation_ funcProps |. Parser.end EOF_) input |> Result.mapError (parserErrorToText input)
+
+expectSymbol_: String -> Parser_ ()
+expectSymbol_ name = Parser.symbol (Parser.Token name EOF_)
+
+equation_: FunctionProperties -> Parser_ (Tree ())
 equation_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |. Parser.spaces |= expression_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |. Parser.symbol "="
-                |= expression_ funcProps
+                |. expectSymbol_ "="
+                |= (expression_ funcProps |> Parser.inContext (PrevStr_ "="))
                 |. Parser.spaces
             ,   Parser.succeed()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -236,17 +292,17 @@ equation_ funcProps = Parser.loop []
         _ -> DeclarativeNode {state = (), name = "=", children = children}
     )
 
-expression_: FunctionProperties -> Parser.Parser (Tree ())
+expression_: FunctionProperties -> Parser_ (Tree ())
 expression_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= multiple_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |. Parser.symbol "+"
-                |= multiple_ funcProps
+                |. expectSymbol_ "+"
+                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "+"))
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop ((UnaryNode {state = (), name = "-", child = elem}) :: list))
-                |. Parser.symbol "-"
-                |= multiple_ funcProps
+                |. expectSymbol_ "-"
+                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "-"))
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -256,17 +312,17 @@ expression_ funcProps = Parser.loop []
         _ -> BinaryNode {state = (), name = "+", associative = True, commutative = True, identity = 0, children = children}
     )
 
-multiple_: FunctionProperties -> Parser.Parser (Tree ())
+multiple_: FunctionProperties -> Parser_ (Tree ())
 multiple_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |. Parser.symbol "*"
-                |= negatable_ funcProps
+                |. expectSymbol_ "*"
+                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "*"))
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (UnaryNode {state = (), name = "/", child = elem} :: list))
-                |. Parser.symbol "/"
-                |= negatable_ funcProps
+                |. expectSymbol_ "/"
+                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "/"))
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |= term_ funcProps
@@ -280,123 +336,100 @@ multiple_ funcProps = Parser.loop []
         _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
 
-negatable_: FunctionProperties -> Parser.Parser (Tree ())
+negatable_: FunctionProperties -> Parser_ (Tree ())
 negatable_ funcProps = Parser.oneOf
-    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. Parser.symbol "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps)
+    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps |> Parser.inContext (PrevStr_ "-"))
     ,   Parser.succeed identity |= term_ funcProps
     ]
 
-term_: FunctionProperties -> Parser.Parser (Tree ())
+term_: FunctionProperties -> Parser_ (Tree ())
 term_ funcProps = Parser.oneOf
-    [   Parser.succeed identity |. Parser.symbol "(" |= expression_ funcProps |. Parser.spaces |. Parser.symbol ")"
+    [   Parser.succeed identity |. expectSymbol_ "(" |= (expression_ funcProps |> Parser.inContext (PrevStr_ "("))|. Parser.spaces |. expectSymbol_ ")"
     ,   tokenNumber_
-    ,   Parser.succeed (\a b -> (a, b)) |. Parser.symbol "\\" |= tokenLongName_ |= varOrFunc_ funcProps
+    ,   Parser.succeed (\a b -> (a, b)) |. expectSymbol_ "\\" |= tokenLongName_ |= varOrFunc_ funcProps
         |> Parser.andThen (\(name, props) -> case (Dict.get name funcProps, props) of
             (Nothing, Nothing) -> VariableNode {state = (), constant = False, name = name} |> Parser.succeed
             (Nothing, Just children) -> GenericNode {state = (), name = name, arguments = Nothing, children = children} |> Parser.succeed
             (Just p, Nothing) -> case p of
                 VariableNode _ -> VariableNode {state = (), constant = True, name = name} |> Parser.succeed
-                _ -> Parser.problem (name ++ " is not a constant, but a function")
+                _ -> Parser.problem (ExpectingFunction_ name)
             (Just p, Just children) -> case p of
                 UnaryNode _ -> case children of
                     [child] -> Parser.succeed (UnaryNode {state = (), name = name, child = child})
-                    _ -> Parser.problem (name ++ " only takes 1 argument")
+                    _ -> Parser.problem (ArgMismatch_ {name = name, got = List.length children, expect = 1})
                 GenericNode n -> case n.arguments of
-                    Nothing -> Parser.problem (name ++ " did not specify the number of arguments")
-                    Just args -> if args /= List.length children then Parser.problem (name ++ " has incorrect number of arguments")
+                    Nothing -> Parser.problem (UnknownArguments_ name)
+                    Just args -> if args /= List.length children then Parser.problem (ArgMismatch_ {name = name, got = List.length children, expect = args})
                         else Parser.succeed (GenericNode {state = (), name = name, arguments = Just args, children = children})
-                BinaryNode n -> if List.length children < 2 then Parser.problem (name ++ " has less than 2 children")
+                BinaryNode n -> if List.length children < 2 then Parser.problem (ArgMismatch_ {name = name, got = List.length children, expect = 2})
                     else Parser.succeed (BinaryNode {state = (), name = name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
-                _ -> Parser.problem (name ++ " is not a function")
+                _ -> Parser.problem (ExpectingConstant_ name)
         )
     ,   Parser.andThen (\name -> case Dict.get name funcProps of
             Nothing -> Parser.succeed (VariableNode {state = (), name = name, constant = False})
             Just (VariableNode _) -> Parser.succeed (VariableNode {state = (), name = name, constant = True})
-            _ -> Parser.problem (name ++ " is not a constant")
+            _ -> Parser.problem (ExpectingFunction_ name)
         ) tokenShortName_
     ]
 
-varOrFunc_: FunctionProperties -> Parser.Parser (Maybe (List (Tree ())))
+varOrFunc_: FunctionProperties -> Parser_ (Maybe (List (Tree ())))
 varOrFunc_ funcProps = Parser.oneOf
-    [   Parser.succeed Just |. Parser.symbol "(" |= argsList_ funcProps |. Parser.symbol ")"
+    [   Parser.succeed Just |. expectSymbol_ "(" |= argsList_ funcProps |. expectSymbol_ ")"
     ,   Parser.succeed Nothing
     ]
 
-argsList_: FunctionProperties -> Parser.Parser (List (Tree ()))
+argsList_: FunctionProperties -> Parser_ (List (Tree ()))
 argsList_ funcProps = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= expression_ funcProps |. Parser.spaces
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= (expression_ funcProps |> Parser.inContext (PrevStr_ "(")) |. Parser.spaces
         else Parser.oneOf
         [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-            |. Parser.symbol ","
-            |= expression_ funcProps
+            |. expectSymbol_ ","
+            |= (expression_ funcProps |> Parser.inContext (PrevStr_ ","))
             |. Parser.spaces
         ,   Parser.succeed ()
             |> Parser.map (\_ -> Parser.Done (List.reverse list))
         ]
     )
 
-tokenNumber_: Parser.Parser (Tree ())
-tokenNumber_ = Parser.succeed (\a b -> a ++ b) |= tokenDigit_ |= Parser.oneOf [Parser.succeed (\b -> "." ++ b) |. Parser.symbol "." |= tokenDigit_ , Parser.succeed ""]
+tokenNumber_: Parser_ (Tree ())
+tokenNumber_ = Parser.succeed (\a b -> a ++ b) |= tokenDigit_ |= Parser.oneOf [Parser.succeed (\b -> "." ++ b) |. expectSymbol_ "." |= tokenDigit_ , Parser.succeed ""]
     |> Parser.andThen (\str -> case String.toFloat str of
-        Nothing -> Parser.problem (str ++ " is not a valid number")
+        Nothing -> Parser.problem ExpectingDigits_
         Just f -> Parser.succeed (RealNode {state = (), value = f})
     )
 
-tokenDigit_: Parser.Parser String
+tokenDigit_: Parser_ String
 tokenDigit_ = Parser.variable
     {   start = Char.isDigit
     ,   inner = Char.isDigit
     ,   reserved = Set.empty
+    ,   expecting = ExpectingDigits_
     }
 
 validVariable: String -> Result String String
 validVariable str = Parser.run
-    (Parser.oneOf [Parser.succeed identity |. Parser.token "\\" |= tokenLongName_, tokenShortName_])
+    (Parser.oneOf [Parser.succeed identity |. expectSymbol_ "\\" |= tokenLongName_, tokenShortName_])
     str
     |> Result.mapError (\_ -> "Inavlid variable name")
 
 validVarStart_: Char -> Bool
 validVarStart_ char = not (String.contains (String.fromChar char) " ~+-=*/\\.()[],;%!:;<>0123456789^&|$↔→")
 
-tokenLongName_: Parser.Parser String
+tokenLongName_: Parser_ String
 tokenLongName_ = Parser.variable
     {   start = validVarStart_
     ,   inner = (\c -> validVarStart_ c || Char.isAlphaNum c )
     ,   reserved = Set.empty
+    ,   expecting = ExpectingVariableName_
     }
 
-tokenShortName_: Parser.Parser String
+tokenShortName_: Parser_ String
 tokenShortName_ = Parser.variable
     {   start = validVarStart_
     ,   inner = (\_ -> False)
     ,   reserved = Set.empty
+    ,   expecting = ExpectingVariableName_
     }
-
-createErrorMessage_: String -> List Parser.DeadEnd -> String
-createErrorMessage_ str err = "Error parsing \"" ++ str ++ "\":\n" ++ deadEndToString_ err
-
-deadEndToString_: List Parser.DeadEnd -> String
-deadEndToString_ = List.map
-    (\deadEnd ->
-        (   case deadEnd.problem of
-                Parser.Expecting str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingInt -> "Expecting a whole number"
-                Parser.ExpectingHex -> "Expecting a hex number"
-                Parser.ExpectingOctal -> "Expecting an octal number"
-                Parser.ExpectingBinary -> "Expecting a binary number"
-                Parser.ExpectingFloat -> "Expecting a decimal number"
-                Parser.ExpectingNumber -> "Expecting a number"
-                Parser.ExpectingVariable -> "Expecting a variable"
-                Parser.ExpectingSymbol str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingKeyword str -> "Expecting '" ++ str ++ "'"
-                Parser.ExpectingEnd -> "Expecting no more characters"
-                Parser.UnexpectedChar -> "Unknown symbol"
-                Parser.Problem str -> str
-                Parser.BadRepeat -> "Bad repeat"
-        )
-        |> (\str -> str ++ ", at position: " ++ String.fromInt deadEnd.col)
-    )
-    >> String.join "\n"
 
 encode: (state -> Encode.Value) -> Tree state -> Encode.Value
 encode converter root = case root of
