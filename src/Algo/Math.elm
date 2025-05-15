@@ -231,12 +231,12 @@ type Problem_ =
 type alias Parser_ a = Parser.Parser Context_ Problem_ a
 
 parserErrorToText: String -> List (Parser.DeadEnd Context_ Problem_) -> String
-parserErrorToText input stack = let _ = Debug.log "error" stack in
+parserErrorToText input stack =
     case List.head stack of
         Nothing -> "No error found, unable to determine the cause"
         Just end -> case end.problem of
             EOF_ -> case List.head end.contextStack of
-                Nothing -> case String.left 1 input of
+                Nothing -> case String.dropLeft (end.col - 1) input |> String.left 1 of
                     "+" -> "Cannot use '+' without having an expression to the left"
                     "/" -> "Cannot use '/' without having an expression to the left"
                     "*" -> "Cannot use '*' without having an expression to the left"
