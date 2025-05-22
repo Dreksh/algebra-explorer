@@ -1,5 +1,5 @@
 module Algo.Backtrack exposing (Continuation, Evaluator,
-    fail, init, return, getState, run,
+    fail, init, return, map, getState, run,
     orderedStack, unorderedStack
     )
 import Helper
@@ -28,6 +28,10 @@ return: (state -> Maybe state) -> Continuation state -> Maybe (Continuation stat
 return func token = case token.progress of
     Nothing -> func token.initial |> Maybe.map (\newS -> {token | progress = Just (newS, Match_)})
     _ -> Nothing
+
+-- This only supplies additional information to the continuation, overwriting the initial state
+map: (state -> state) -> Continuation state -> Continuation state
+map func token = {token | initial = func token.initial}
 
 getState: Continuation state -> Maybe state
 getState c = Maybe.map Tuple.first c.progress

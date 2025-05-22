@@ -137,7 +137,7 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
                 else Math.RealNode {state = Nothing, value = number}
         in
             History.current eq
-            |> Matcher.replaceSubtree (Set.singleton id) replacement Dict.empty
+            |> Matcher.replaceSubtree (Set.singleton id) replacement Matcher.newResult
             |> Result.map (\(newSelect, newEq) ->
                 {   model
                 |   selected = Just (eqNum, Set.singleton newSelect)

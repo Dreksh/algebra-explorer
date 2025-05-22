@@ -3,7 +3,7 @@ module Algo.Matcher exposing (
     Equation, parseEquation, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
-    MatchResult, addMatch, matchNode,
+    MatchResult, newResult, addMatch, matchNode,
     groupSubtree, ungroupSubtree, selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode,
     replaceAllOccurrences
     )
@@ -192,7 +192,10 @@ toReplacement_ strict argDict =
 MatchResult is the result of extracting patterns using Matcher, or with replacements from external sources
 --}
 
-type alias MatchResult state = Dict.Dict String (Value_ state)
+type alias MatchResult state =
+    {   var: Dict.Dict String (Value_ state) -- Stores values of the variables / function replacements
+    ,   exact: Dict.Dict String (List (State state)) -- Stores operations that were observed, in reverse order
+    }
 type alias InternalReplacement_ state = Math.Tree (State state, Maybe Int)
 
 type Value_ state =
@@ -201,8 +204,21 @@ type Value_ state =
     | MultiValue_ {op: String, arguments: Int, associative: Bool, commutative: Bool, identity: Float, pre: List (InternalReplacement_ state), post: List (InternalReplacement_ state)}
     | AsIsValue_ Bool (Math.Tree (State state)) -- 'used' and then 'tree'
 
+newResult: MatchResult state
+newResult = MatchResult Dict.empty Dict.empty
+
+addExactState_: {a | name: String, state: State s} -> MatchResult s -> MatchResult s
+addExactState_ node res =
+    {   res
+    |   exact = Dict.update node.name (\prev -> case prev of
+            Nothing -> Just [node.state]
+            Just list -> Just (node.state :: list)
+        )
+        res.exact
+    }
+
 addMatch: String -> Replacement -> MatchResult state -> MatchResult state
-addMatch key replacement = Dict.insert key (ExternalValue_ replacement)
+addMatch key replacement result = {result | var = Dict.insert key (ExternalValue_ replacement) result.var}
 
 toInternalReplacement_: Dict.Dict String Int -> Math.Tree (State state) -> InternalReplacement_ state
 toInternalReplacement_ argDict = Math.map (\_ node _ -> case node of
@@ -366,36 +382,36 @@ replaceRealNode id target subtree eq = processSubtree_ (searchPath_ eq.tracker.p
 -- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Set.Set Int -> Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
 matchSubtree priority matcher root =
-    extractPattern_ priority matcher root (Backtrack.init Dict.empty)
+    extractPattern_ priority matcher root (Backtrack.init newResult)
     |> Maybe.andThen Backtrack.getState
 
 extractPattern_: Set.Set Int -> Matcher -> Math.Tree (State state) -> Backtrack.Continuation (MatchResult state) -> Maybe (Backtrack.Continuation (MatchResult state))
 extractPattern_ priority from root token = case from of
     RealMatcher s -> case root of
-        Math.RealNode n -> if n.value == s.value then Backtrack.return Just token else Backtrack.fail
+        Math.RealNode n -> if n.value == s.value then Backtrack.return (addExactState_ {name = String.fromFloat n.value, state = n.state} >> Just) token else Backtrack.fail
         _ -> Backtrack.fail
     AnyMatcher s -> case root of
         Math.DeclarativeNode _ -> Backtrack.fail
         _ -> Backtrack.return (\result -> List.indexedMap (\a b -> (b, a)) s.arguments
             |> Dict.fromList
             |> (\varDict -> let newSubtree = toInternalReplacement_ varDict root in
-                case Dict.get s.name result of
+                case Dict.get s.name result.var of
                     Just (InternalValue_ existing) -> if subtreeEqual_ newSubtree existing then Just result else Nothing
-                    Nothing -> Just (Dict.insert s.name (InternalValue_ newSubtree) result)
+                    Nothing -> Just {result | var = Dict.insert s.name (InternalValue_ newSubtree) result.var}
                     _ -> Nothing
                 )
             ) token
     ExactMatcher s -> if List.isEmpty s.arguments
         then case root of
-            Math.VariableNode n -> if n.name == s.name then Backtrack.return Just token else Backtrack.fail
+            Math.VariableNode n -> if n.name == s.name then Backtrack.return (addExactState_ n >> Just) token else Backtrack.fail
             _ -> Backtrack.fail
         else case root of
             Math.GenericNode n -> if n.name /= s.name || (List.length s.arguments /= List.length n.children)
                 then Backtrack.fail
-                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) n.children token
+                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) n.children (Backtrack.map (addExactState_ n) token)
             Math.UnaryNode n -> if n.name /= s.name then Backtrack.fail
                 else case s.arguments of
-                    [arg] -> extractPattern_ priority arg n.child token
+                    [arg] -> extractPattern_ priority arg n.child (Backtrack.map (addExactState_ n) token)
                     _ -> Backtrack.fail
             _ -> Backtrack.fail
     CommutativeMatcher s -> case root of
@@ -403,21 +419,21 @@ extractPattern_ priority from root token = case from of
             else case s.others of
                 Nothing -> let priorityList = priorityList_ priority n.children in
                     if List.length s.arguments /= List.length priorityList then Backtrack.fail
-                    else Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList token
+                    else Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList (Backtrack.map (addExactState_ n) token)
                 Just o -> List.indexedMap Tuple.pair n.children
                     |> List.partition (\(_, childN) -> Set.member (Math.getState childN |> getID) priority)
                     |> (\(a,b) -> Backtrack.run
                         (   Backtrack.unorderedStack (\slot (_, c) -> extractPattern_ priority slot c) s.arguments
                         ++  [ otherMatchEvaluator_ s.name n o ]
                         )
-                        (a++b) token
+                        (a++b) (Backtrack.map (addExactState_ n) token)
                     )
         _ -> Backtrack.fail
     DeclarativeMatcher s -> case root of
         Math.DeclarativeNode n -> if s.name /= n.name || (List.length s.arguments /= List.length n.children) then Backtrack.fail
             else let priorityList = priorityList_ priority n.children in
-                if s.commutative then Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList token
-                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) priorityList token
+                if s.commutative then Backtrack.run (Backtrack.unorderedStack (extractPattern_ priority) s.arguments) priorityList (Backtrack.map (addExactState_ n) token)
+                else Backtrack.run (Backtrack.orderedStack (extractPattern_ priority) s.arguments) priorityList (Backtrack.map (addExactState_ n) token)
         _ -> Backtrack.fail
 
 priorityList_: Set.Set Int -> List (Math.Tree (State state)) -> List (Math.Tree (State state))
@@ -425,14 +441,17 @@ priorityList_ set = List.partition (\n -> Set.member (Math.getState n |> getID) 
 
 otherMatchEvaluator_: String -> {a | associative: Bool, commutative: Bool, identity: Float} -> String -> Backtrack.Evaluator (MatchResult state) (Int, Math.Tree (State state))
 otherMatchEvaluator_ op props key nodes = Backtrack.return (\result -> if List.isEmpty nodes
-    then Just (Dict.insert key (Math.RealNode {value = props.identity, state = Nothing}|> ExternalValue_) result)
+    then Just {result | var = Dict.insert key (Math.RealNode {value = props.identity, state = Nothing}|> ExternalValue_) result.var}
     else if List.length nodes == 1 then List.head nodes
-        |> Maybe.map (\(_, node) -> Dict.insert key (toInternalReplacement_ Dict.empty node |> InternalValue_) result)
+        |> Maybe.map (\(_, node) -> {result | var = Dict.insert key (toInternalReplacement_ Dict.empty node |> InternalValue_) result.var})
     else List.sortBy Tuple.first nodes
         |> List.indexedMap Tuple.pair
         |> List.partition (\(index, (preIndex, _)) -> index == preIndex)
         |> (\(a,b)-> let processChildren = List.map (\(_, (_, n)) -> toInternalReplacement_ Dict.empty n) in
-            Just (Dict.insert key (MultiValue_ {arguments = 0, op = op, associative = props.associative, commutative = props.commutative, identity = props.identity, pre = processChildren a, post = processChildren b}) result)
+            Just
+            {   result
+            |   var = Dict.insert key (MultiValue_ {arguments = 0, op = op, associative = props.associative, commutative = props.commutative, identity = props.identity, pre = processChildren a, post = processChildren b}) result.var
+            }
         )
     )
 
@@ -448,12 +467,15 @@ subtreeEqual_ = Math.equal
 replaceSubtree: Set.Set Int -> Replacement -> MatchResult state -> Equation state -> Result String (Int, Equation state)
 replaceSubtree ids replacement with eq = case affectedSubtree_ ids eq.tracker.parent of
     Nothing -> Err "Unable to find selected nodes"
-    Just (id, _) -> processSubtree_ (searchPath_ eq.tracker.parent id) (replaceSubtree_ replacement with) eq
+    Just (id, _) -> processSubtree_
+        (searchPath_ eq.tracker.parent id)
+        (replaceSubtree_ replacement {with | exact = Dict.map (\_ -> List.reverse) with.exact})
+        eq
 
 replaceSubtree_: Replacement -> MatchResult state -> Equation state -> Result String (Int, Equation state)
 replaceSubtree_ replacement result eq =
-    let args = Dict.toList result |> List.indexedMap (\index (_, val) -> (index, val)) |> Dict.fromList in
-    constructFromReplacement_ -1 eq.tracker args replacement
+    let args = Dict.toList result.var |> List.indexedMap (\index (_, val) -> (index, val)) |> Dict.fromList in
+    constructFromReplacement_ -1 eq.tracker {args = args, exact = result.exact} replacement
     |> Result.map (\(r, t, _) ->
         let
             (newRoot, newTracker) = replacedToTree_ 0 t r
@@ -464,6 +486,10 @@ replaceSubtree_ replacement result eq =
         ((Math.getState newRoot |> getID), {root = newRoot, tracker = finalTracker})
     )
 
+type alias ArgResult_ state =
+    {   args: Dict.Dict Int (Value_ state)
+    ,   exact: Dict.Dict String (List (State state))
+    }
 type Replaced_ state =
     SingleNodeReplaced_ (Math.Tree (State state))
     | MultiNodeReplaced_ {name: String, associative: Bool, commutative: Bool, identity: Float} (List (Math.Tree (State state))) (List (Math.Tree (State state)))
@@ -495,34 +521,41 @@ getSubtreeIDs_ root = case root of
     Math.GenericNode s -> List.foldl (\e -> Set.union (getSubtreeIDs_ e)) (Set.singleton (getID s.state)) s.children
     Math.DeclarativeNode s -> List.foldl (\e -> Set.union (getSubtreeIDs_ e)) (Set.singleton (getID s.state)) s.children
 
-constructFromReplacement_: Int -> Tracker_ state -> Dict.Dict Int (Value_ state) -> Replacement -> Result String (Replaced_ state, Tracker_ state, Dict.Dict Int (Value_ state))
+constructFromReplacement_: Int -> Tracker_ state -> ArgResult_ state -> Replacement -> Result String (Replaced_ state, Tracker_ state, ArgResult_ state)
 constructFromReplacement_ parent tracker arguments replaceNode =
     let
         id = tracker.nextID
-        (s, t) = addNode_ Nothing parent tracker
-        constructChildren name firstT = Helper.resultList (\child (list, oT, args) ->
+        createState name = case Dict.get name arguments.exact of
+            Just [x] -> addNode_ (Just x) parent tracker |> \(a,b) -> (a,b,arguments)
+            Just (x::others) -> addNode_ (Just x) parent tracker |> \(a,b) -> (a,b,{arguments | exact = Dict.insert name others arguments.exact})
+            _ -> addNode_ Nothing parent tracker |> \(a,b) -> (a,b,arguments)
+        constructChildren name firstT firstArgs = Helper.resultList (\child (list, oT, args) ->
                 constructFromReplacement_ id oT args child
                 |> Result.map (\(newChild, newT, newRes) -> (newChild :: list, newT, newRes))
             )
-            ([], firstT, arguments)
+            ([], firstT, firstArgs)
             >> Result.andThen (\(children, newT, a) -> toReplacementList_ id name newT children
                 |> Result.map (\(rList, finalT) -> (rList, finalT, a))
             )
     in
         case replaceNode of
-            Math.RealNode n -> Ok (SingleNodeReplaced_ (Math.RealNode {state = s, value = n.value}), t, arguments)
-            Math.UnaryNode n -> constructFromReplacement_ id t arguments n.child
+            Math.RealNode n -> let (s, t, a) = createState (String.fromFloat n.value) in
+                Ok (SingleNodeReplaced_ (Math.RealNode {state = s, value = n.value}), t, a)
+            Math.UnaryNode n -> let (s, t, a) = createState n.name in
+                constructFromReplacement_ id t a n.child
                 |> Result.map (\(newChild, newT, newArg) -> replacedToTree_ id newT newChild
                     |> \(tree, finalT) -> (SingleNodeReplaced_ (Math.UnaryNode {state = s, name = n.name, child = tree}), finalT, newArg)
                 )
-            Math.BinaryNode n -> constructChildren n.name t n.children
+            Math.BinaryNode n -> let (s, t, a) = createState n.name in
+                constructChildren n.name t a n.children
                 |> Result.map (\(res, newT, newArg) ->
                     (   case res of
                         RList_ children -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
                         FList_ _ pre post -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = pre ++ post})
                     ,   newT, newArg)
                 )
-            Math.DeclarativeNode n -> constructChildren n.name t n.children
+            Math.DeclarativeNode n -> let (s, t, a) = createState n.name in
+                constructChildren n.name t a n.children
                 |> Result.map (\(res, newT, newArg) ->
                     (   case res of
                         RList_ children -> SingleNodeReplaced_ (Math.DeclarativeNode {state = s, name = n.name, children = children})
@@ -530,15 +563,17 @@ constructFromReplacement_ parent tracker arguments replaceNode =
                     ,   newT, newArg)
                 )
             Math.VariableNode n -> case n.state of
-                Nothing -> Ok (SingleNodeReplaced_ (Math.VariableNode {state = s, name = n.name, constant = n.constant}), t, arguments)
-                Just argNum -> case Dict.get argNum arguments of
+                Nothing -> let (s, t, a) = createState n.name in
+                    Ok (SingleNodeReplaced_ (Math.VariableNode {state = s, name = n.name, constant = n.constant}), t, a)
+                Just argNum -> case Dict.get argNum arguments.args of
                     Nothing -> Err "Couldn't find value to replace"
-                    Just value -> constructFromValue_ parent tracker Dict.empty value
+                    Just value -> constructFromValue_ parent tracker {args = Dict.empty, exact = Dict.empty} value
                         |> Result.map (\(replaced, newT, val) -> replacedToTree_ parent newT replaced
-                            |> \(tree, finalT) -> (SingleNodeReplaced_ tree, finalT, Dict.insert argNum val arguments)
+                            |> \(tree, finalT) -> (SingleNodeReplaced_ tree, finalT, {arguments | args = Dict.insert argNum val arguments.args})
                         )
             Math.GenericNode n -> case n.state of
-                Nothing -> constructChildren "" t n.children
+                Nothing -> let (s, t, a) = createState n.name in
+                    constructChildren "" t a n.children
                     |> Result.map (\(res, newT, newArg) ->
                         (   case res of
                                 RList_ children -> SingleNodeReplaced_ (Math.GenericNode {state = s, name = n.name, arguments = n.arguments, children = children})
@@ -547,17 +582,17 @@ constructFromReplacement_ parent tracker arguments replaceNode =
                         ,   newArg
                         )
                     )
-                Just argNum -> case Dict.get argNum arguments of
+                Just argNum -> case Dict.get argNum arguments.args of
                     Nothing -> Err "Couldn't find the function to replace"
-                    Just value -> constructChildren "" tracker n.children
+                    Just value -> constructChildren "" tracker arguments n.children
                         |> Result.andThen (\(res, newT, newArg) -> case res of
                             FList_ _ _ _ -> Err "Something went wrong: Grouping detected"
                             RList_ children -> List.indexedMap (\num child -> (num, AsIsValue_ False child)) children
-                                |> \childArgs -> constructFromValue_ parent newT (Dict.fromList childArgs) value
-                                |> Result.map (\(finalNode, finalT, newVal) -> (finalNode, finalT, Dict.insert argNum newVal newArg))
+                                |> \childArgs -> constructFromValue_ parent newT {args = Dict.fromList childArgs, exact = Dict.empty} value
+                                |> Result.map (\(finalNode, finalT, newVal) -> (finalNode, finalT, {newArg | args = Dict.insert argNum newVal newArg.args}))
                         )
 
-constructFromInternalReplacement_: Int -> Tracker_ state -> Dict.Dict Int (Value_ state) -> InternalReplacement_ state -> Result String (Replaced_ state, Tracker_ state, Dict.Dict Int (Value_ state))
+constructFromInternalReplacement_: Int -> Tracker_ state -> ArgResult_ state -> InternalReplacement_ state -> Result String (Replaced_ state, Tracker_ state, ArgResult_ state)
 constructFromInternalReplacement_ parent tracker arguments replaceNode =
     let
         id = tracker.nextID
@@ -597,11 +632,11 @@ constructFromInternalReplacement_ parent tracker arguments replaceNode =
                     ,   {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent}
                     ,   arguments
                     )
-                (_, Just argNum) -> case Dict.get argNum arguments of
+                (_, Just argNum) -> case Dict.get argNum arguments.args of
                     Nothing -> Err "Couldn't find value to replace"
-                    Just value -> constructFromValue_ parent tracker Dict.empty value
+                    Just value -> constructFromValue_ parent tracker {args = Dict.empty, exact = Dict.empty} value
                         |> Result.map (\(replaced, newT, newVal) -> replacedToTree_ parent newT replaced
-                            |> \(tree, finalT) -> (SingleNodeReplaced_ tree, finalT, Dict.insert argNum newVal arguments)
+                            |> \(tree, finalT) -> (SingleNodeReplaced_ tree, finalT, {arguments | args = Dict.insert argNum newVal arguments.args})
                         )
             Math.GenericNode n -> case n.state of
                 (oldS, Nothing) -> constructChildren "" t n.children
@@ -612,14 +647,14 @@ constructFromInternalReplacement_ parent tracker arguments replaceNode =
                         , newT, newArg
                         )
                     )
-                (_, Just argNum) -> case Dict.get argNum arguments of
+                (_, Just argNum) -> case Dict.get argNum arguments.args of
                     Nothing -> Err "Couldn't find the function to replace"
                     Just value -> constructChildren "" tracker n.children
                         |> Result.andThen (\(res, newT, newArg) -> case res of
                             FList_ _ _ _ -> Err "Something went wrong: Grouping detected"
                             RList_ children -> List.indexedMap (\num child -> (num, AsIsValue_ False child)) children
-                                |> \childArgs -> constructFromValue_ parent newT (Dict.fromList childArgs) value
-                                |> Result.map (\(finalNode, finalT, newVal) -> (finalNode, finalT, Dict.insert argNum newVal newArg))
+                                |> \childArgs -> constructFromValue_ parent newT {args = Dict.fromList childArgs, exact = Dict.empty} value
+                                |> Result.map (\(finalNode, finalT, newVal) -> (finalNode, finalT, {newArg | args = Dict.insert argNum newVal newArg.args}))
                         )
 
 toReplacementList_: Int -> String -> Tracker_ state -> List (Replaced_ state) -> Result String (ReplacementList_ state, Tracker_ state)
@@ -643,7 +678,7 @@ toReplacementList_ parent name tracker = List.foldl (\child (list, oT) -> case (
         Just r -> Ok (r, t)
     )
 
-constructFromValue_: Int -> Tracker_ state -> Dict.Dict Int (Value_ state) -> Value_ state -> Result String (Replaced_ state, Tracker_ state, Value_ state)
+constructFromValue_: Int -> Tracker_ state -> ArgResult_ state -> Value_ state -> Result String (Replaced_ state, Tracker_ state, Value_ state)
 constructFromValue_ parent tracker args value = case value of
     ExternalValue_ r -> constructFromReplacement_ parent tracker args r
         |> Result.map (\(newChild, newT, newArgs) -> (newChild, newT, value))
@@ -702,7 +737,7 @@ replaceOnNode_: List (Matcher, Replacement) -> Int -> (Set.Set Int, Equation sta
 replaceOnNode_ matches id (selected, eq) = processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq ->
         List.foldl (\(matcher, replacement) result -> case result of
             Just _ -> result
-            Nothing -> extractPattern_ Set.empty matcher subEq.root (Backtrack.init Dict.empty)
+            Nothing -> extractPattern_ Set.empty matcher subEq.root (Backtrack.init newResult)
                 |> Maybe.andThen Backtrack.getState
                 |> Maybe.andThen (\matchRes -> replaceSubtree_ replacement matchRes subEq |> Result.toMaybe )
         ) Nothing matches
