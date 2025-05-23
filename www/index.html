@@ -32,8 +32,11 @@
             else document.getElementById(val["eId"]).releasePointerCapture(val["pId"]);
         });
         window.document.addEventListener("keydown", function(e) {
-            app.ports.onKeyDown.send({"ctrl": e.ctrlKey || e.metaKey, "shift": e.shiftKey, "key": e.key});
-            if (e.ctrlKey || e.metaKey) e.preventDefault(); // Do not block regular typing
+            // Only send Undo and Redo
+            if ((e.ctrlKey || e.metaKey) && e.key == "z") {
+                app.ports.onKeyDown.send({"ctrl": e.ctrlKey || e.metaKey, "shift": e.shiftKey, "key": e.key});
+                e.preventDefault(); // Block browser's default undo/redo
+            }
         });
     </script>
 </body>

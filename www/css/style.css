@@ -61,7 +61,7 @@ button.noDefault {
     background-color: var(--color-menu);
     pointer-events: auto;
     overflow: visible;
-    max-width: min(100%, 40rem);
+    max-width: min(100%, 25rem);
     transition: max-width 0.5s ease-out;
 }
 span.space {
@@ -156,12 +156,13 @@ span.space {
 }
 #menu ul {
     display: flex;
+    width: min(100%, 25rem);
     flex-direction: column;
+    box-sizing: border-box;
     margin: 0;
     padding: 0 0 0 1.5rem;
 }
 #menu * {
-    width: fit-content;
     margin: 0;
     padding: 0;
 }
@@ -170,14 +171,26 @@ span.space {
 }
 #menu li {
     list-style: none;
-    overflow: hidden;
+    overflow-x: scroll;
 }
 #menu svg {
     height: 1.5rem;
     width: 1.5rem;
     vertical-align: -10%;
 }
-.menuTitle::before {
+.menuTitle {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    height: 2rem;
+    vertical-align: middle;
+    margin: 0;
+}
+.menuTitle > h1 {
+    text-decoration: underline;
+    text-wrap: nowrap;
+}
+.menuTitle > h1::before {
     content: url(../img/arrow.svg);
     display: inline-block;
     height: 1.5rem;
@@ -186,17 +199,16 @@ span.space {
     rotate: 0;
     transition: rotate 0.5s linear;
 }
-.menuTitle.shown::before {
+.menuTitle.shown > h1::before {
     rotate: 90deg;
     transition: rotate 0.5s linear;
 }
-.menuTitle {
-    display: inline-block;
+#menu .menuAction {
+    margin-right: 1rem;
+    margin-left: auto;
+    justify-self: end;
+    font-size: 1.5rem;
     height: 2rem;
-    vertical-align: middle;
-    text-decoration: underline;
-    text-wrap: nowrap;
-    margin: 0;
 }
 .subMenu {
     padding-left: 1rem;

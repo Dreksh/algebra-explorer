@@ -17,7 +17,7 @@ type alias Model =
     }
 
 type Part msg =
-    Section {name: String, icon: Maybe (Html.Html msg)} (List (Part msg))
+    Section {name: String, icon: Maybe (String -> Html.Html msg)} (List (Part msg))
     | Content (List (Html.Html msg))
 
 type Event =
@@ -40,9 +40,11 @@ partToHtml_ converter model part = case part of
     Content children -> li [] children
     Section title children -> let shown = Set.member title.name model.shown in
         li [class "menuSection"]
-        [   h1
-            ([class "menuTitle", UI.HtmlEvent.onClick (Click title.name |> converter), class "clickable"] |> Helper.maybeAppend (Helper.maybeGuard shown (class "shown")))
-            ([ text title.name ] |> Helper.maybeAppend (title.icon))
+        [   Html.div
+            ([class "menuTitle"] |> Helper.maybeAppend (Helper.maybeGuard shown (class "shown")))
+            (   [ h1 [UI.HtmlEvent.onClick (Click title.name |> converter), class "clickable"] [text title.name] ]
+                |> Helper.maybeAppend (Maybe.map (\func -> func "menuAction") title.icon)
+            )
         ,   ul (if shown then [class "subMenu", class "shown"] else [class "subMenu"]) (children |> List.map (partToHtml_ converter model))
         ]
 

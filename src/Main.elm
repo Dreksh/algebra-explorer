@@ -411,10 +411,10 @@ view core = let model = core.swappable in
                             ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
                             ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                             ]
-                        ,   Menu.Section {name = "Equations", icon = Just (a [HtmlEvent.onClick EnterCreateMode, class "clickable"] [text "+"])}
+                        ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)
                         ,   Tutorial.menu TutorialEvent model.tutorial
-                        ,   Menu.Section {name = "Topics", icon = Just (a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable"] [text "+"])}
+                        ,   Menu.Section {name = "Topics", icon = Just (\c -> a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable", class c] [text "+"])}
                             (Rules.menuTopics RuleEvent model.rules)
                         ]
                     ,   Icon.menu (List.filterMap identity

@@ -212,11 +212,11 @@ menuTopics: (Event state -> msg) -> Model -> List (Menu.Part msg)
 menuTopics converter model = Dict.foldl (\k t -> (::)
         (case t of
             NotInstalled_ url -> Menu.Section
-                {name = k, icon = Just (Icon.download [HtmlEvent.onClick (converter (Download url)), Icon.class "clickable"])}
+                {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download url)), Icon.class "clickable", Icon.class c])}
                 [   Menu.Content [p [] [text "<Add text for what this topic is about>"]]
                 ]
             Installed_ _ topic -> Menu.Section
-                {name = topic.name, icon = Just (a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable"] [text "x"])}
+                {name = topic.name, icon = Just (\c -> a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable", class c] [text "x"])}
                 ( List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
                     [  Menu.Content ( List.concat
                         [ [h3 [] [text "Rules"]]
