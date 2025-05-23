@@ -327,27 +327,30 @@ dialog svg {
     padding-left: 0.5rem;
     display: flex;
     flex-direction: column;
+    height: fit-content;
     position: relative;
 }
 #history a {
     position: relative;
     padding-left: 1rem;
 }
-#history > div *::before {
+#history > div a::before, #history > div div::before {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    content: "├"
+    width: 1rem;
+    overflow: hidden;
+    content: url("../img/history_middle.svg") / "├";
 }
 #history > div a:first-child:before, #history > div div:first-child:before {
-    content: "┬"
+    content: url("../img/history_top.svg") / "┬";
 }
-#history > div *:last-child:before {
-    content: "└"
+#history > div a:last-child:before {
+    content: url("../img/history_bottom.svg") / "└";
 }
 #history > div a:first-child:last-child:before, #history > div div:first-child:last-child:before {
-    content: "─"
+    content: url("../img/history.svg") / "─";
 }
 #history > div {
     pointer-events: auto;
@@ -358,7 +361,7 @@ dialog svg {
     display: block;
     background-color: var(--color-menu);
 }
-#history .selected {
+#history .selected, #history .selected::before {
     color: var(--color-highlight);
 }
 /* Actions */
