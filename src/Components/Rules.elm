@@ -1,6 +1,6 @@
-module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, init,
+module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Source, init,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics, functionProperties,
-    evaluateStr, menuTopics, encode, decoder
+    evaluateStr, menuTopics, encode, decoder, sourceDecoder
     )
 
 import Dict
@@ -15,6 +15,7 @@ import Algo.Matcher as Matcher
 import Algo.Math as Math
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
+import UI.Menu as Menu
 import UI.Menu as Menu
 
 {-
@@ -66,9 +67,14 @@ type alias Model =
     ,   topics: Dict.Dict String (LoadState_ Topic)
     }
 
+type alias Source =
+    {   url: String
+    ,   description: String
+    }
+
 type LoadState_ obj =
-    NotInstalled_ String
-    | Installed_ (Maybe String) obj
+    NotInstalled_ Source
+    | Installed_ (Maybe Source) obj
 
 type Event treeState =
     Apply (Parameters treeState)
@@ -162,7 +168,7 @@ loadedTopics model = Dict.toList model.topics
         _ -> Nothing
     )
 
-addSources: Dict.Dict String String -> Model -> Model
+addSources: Dict.Dict String {url: String, description: String} -> Model -> Model
 addSources map model =
     {   model
     |   topics = Dict.foldl (\name url dict ->
@@ -211,13 +217,14 @@ evaluateStr model root = (
 menuTopics: (Event state -> msg) -> Model -> List (Menu.Part msg)
 menuTopics converter model = Dict.foldl (\k t -> (::)
         (case t of
-            NotInstalled_ url -> Menu.Section
-                {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download url)), Icon.class "clickable", Icon.class c])}
-                [   Menu.Content [p [] [text "<Add text for what this topic is about>"]]
+            NotInstalled_ source -> Menu.Section
+                {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download source.url)), Icon.class "clickable", Icon.class c])}
+                [   Menu.Content [p [] [text source.description]]
                 ]
-            Installed_ _ topic -> Menu.Section
+            Installed_ s topic -> Menu.Section
                 {name = topic.name, icon = Just (\c -> a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable", class c] [text "x"])}
-                ( List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
+                (   Menu.Content [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
+                :: List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
                     [  Menu.Content ( List.concat
                         [ [h3 [] [text "Rules"]]
                         , List.map (\match -> p [] [text (match.from.name ++"→"++ (List.map .name match.to |> String.join ", "))]) rule.matches
@@ -230,7 +237,8 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         )
     )
     [   Menu.Section {name = "Core", icon = Nothing}
-        [   Menu.Section {name = "Evaluate", icon = Nothing}
+        [   Menu.Content [p [] [text "Covers the basic interactions in this block representation"]]
+        ,   Menu.Section {name = "Evaluate", icon = Nothing}
             [   Menu.Content
                 [   h3 [] [text "Convert expression into a single number"]
                 ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
@@ -410,12 +418,12 @@ encode model = Enc.object
     [   ("functions", Enc.dict identity (\(prop, count) -> Enc.object [("properties", encodeFProp_ prop), ("count", Enc.int count)] ) model.functions)
     ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", Enc.string name), ("count", Enc.int count)]) model.constants)
     ,   ("topics", Enc.dict identity (\loadState -> case loadState of
-            NotInstalled_ url -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string url)]
-            Installed_ url topic -> Enc.object
+            NotInstalled_ source -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string source.url),("description", Enc.string source.description)]
+            Installed_ source topic -> Enc.object
                 (   [   ("type", Enc.string "installed")
                     ,   ("topic", encodeTopic_ topic)
                     ]
-                |> Helper.maybeAppend (Maybe.map (\str -> ("url", Enc.string str)) url)
+                ++ (Maybe.map (\s -> [("url", Enc.string s.url),("description", Enc.string s.description)]) source |> Maybe.withDefault [])
                 )
             ) model.topics
         )
@@ -453,8 +461,13 @@ decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
     (Dec.field "functions" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
     (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
     (Dec.field "topics" <| Dec.dict <| Dec.andThen (\s -> case s of
-        "notInstalled" -> Dec.map NotInstalled_ (Dec.field "url" Dec.string)
-        "installed" -> Dec.map2 Installed_ (Dec.maybe <| Dec.field "url" Dec.string) (Dec.field "topic" topicDecoder)
+        "notInstalled" -> Dec.map NotInstalled_ sourceDecoder
+        "installed" -> Dec.map2 Installed_ (Dec.maybe <| sourceDecoder) (Dec.field "topic" topicDecoder)
         _ -> Dec.fail ("Unknown loadState: " ++ s)
     ) <| Dec.field "type" Dec.string
     )
+
+sourceDecoder: Dec.Decoder Source
+sourceDecoder = Dec.map2 Source
+    (Dec.field "url" Dec.string)
+    (Dec.field "description" Dec.string)

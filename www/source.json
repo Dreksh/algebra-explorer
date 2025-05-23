@@ -1,5 +1,8 @@
 {
     "topics": {
-        "Arithmetic": "topics/arithmetic.json"
+        "Arithmetic": {
+            "url": "topics/arithmetic.json",
+            "description": "Covers addition, subtraction, multiplication and division."
+        }
     }
 }

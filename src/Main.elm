@@ -125,7 +125,7 @@ type EvalType =
     | EvalType_ Int Int
 
 type alias Source =
-    {   topics: Dict.Dict String String
+    {   topics: Dict.Dict String Rules.Source
     }
 
 -- Events
@@ -545,7 +545,7 @@ loadSources sources = List.map
 
 sourceDecoder: Decode.Decoder Source
 sourceDecoder = Decode.map Source
-    (Decode.oneOf [Decode.field "topics" (Decode.dict Decode.string), Decode.succeed Dict.empty])
+    (Decode.field "topics" <| Decode.dict Rules.sourceDecoder)
 
 triplet: a -> b -> c -> (a,b,c)
 triplet x y z = (x,y,z)
