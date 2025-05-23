@@ -54,7 +54,7 @@ view model =
 listView_: List (Input msg) -> Html.Html msg
 listView_ = List.map (\input -> case input of
         Text t -> label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []]
-        Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, UI.Icon.class "clickable"] [text m.text]
+        Button m -> button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text]
         Info i -> text i.text
         Radio r -> r.options
             |> Dict.toList
