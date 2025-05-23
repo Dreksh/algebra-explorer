@@ -58,10 +58,10 @@ add c model = let id = currentNode_ model in
     let nextID = (Dict.size model.nodes) + 1 in
     {model | nodes = Dict.insert nextID {parent = id, component = c, children = []} model.nodes}
     |> \newModel -> let m = { newModel | visits = nextID::model.visits, undone = []} in
-        if id == 0 then let p = model.root in {m | root = {p | children = p.children ++ [nextID]}}
+        if id == 0 then let p = model.root in {m | root = {p | children = nextID :: p.children }}
         else case Dict.get id model.nodes of
             Nothing -> model
-            Just p -> {m | nodes = Dict.insert id {p | children = p.children ++ [nextID]} m.nodes }
+            Just p -> {m | nodes = Dict.insert id {p | children = nextID :: p.children } m.nodes }
 
 addAll: List component -> Model component -> Model component
 addAll list model = let id = currentNode_ model in
@@ -71,10 +71,10 @@ addAll list model = let id = currentNode_ model in
     ) model list
     |> \newModel -> let m = { newModel | visits = Dict.size newModel.nodes ::model.visits, undone = []} in
         let end = Dict.size m.nodes in
-        if id == 0 then let p = model.root in {m | root = {p | children = p.children ++ List.range start end}}
+        if id == 0 then let p = model.root in {m | root = {p | children = List.range start end ++ p.children }}
         else case Dict.get id model.nodes of
             Nothing -> model
-            Just p -> {m | nodes = Dict.insert id {p | children = p.children ++ List.range start end} m.nodes }
+            Just p -> {m | nodes = Dict.insert id {p | children = List.range start end ++ p.children } m.nodes }
 
 update: Event -> Model component -> Model component
 update e model = case e of
