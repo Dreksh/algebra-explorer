@@ -32,8 +32,8 @@
             else document.getElementById(val["eId"]).releasePointerCapture(val["pId"]);
         });
         window.document.addEventListener("keydown", function(e) {
-            // Only send Undo and Redo
-            if ((e.ctrlKey || e.metaKey) && e.key == "z") {
+            // Only send Undo, Redo and Escape
+            if ((e.ctrlKey || e.metaKey) && e.key == "z" || e.key == "Escape") {
                 app.ports.onKeyDown.send({"ctrl": e.ctrlKey || e.metaKey, "shift": e.shiftKey, "key": e.key});
                 e.preventDefault(); // Block browser's default undo/redo
             }
