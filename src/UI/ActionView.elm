@@ -11,8 +11,8 @@ import Set
 import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
-import Components.Display as Display
 import Components.Rules as Rules
+import UI.Display as Display
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 
@@ -40,18 +40,9 @@ type State =
     | Disallowed
     | Allowed (Rules.Event Display.State)
 
-type alias SelectedNode_ =
-    {   eq: Int
-    ,   root: Int
-    ,   tree: Math.Tree (Matcher.State Display.State)
-    ,   selected: Set.Set Int
-    ,   nodes: Set.Set Int
-    }
-
-view: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Rules.Model -> Display.Model -> Model -> Html.Html msg
-view ruleConvert eventConvert rModel dModel vModel =
+view: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Rules.Model -> Maybe Display.SelectedNode -> Model -> Html.Html msg
+view ruleConvert eventConvert rModel selectedNode vModel =
     let
-        selectedNode = selectedNode_ dModel
         loadedTopics = Rules.loadedTopics rModel
         (current, show) = case vModel of
             Current c s -> (min c (List.length loadedTopics), s)
@@ -90,13 +81,6 @@ displayTopic_ ruleConvert eventConvert selected show title current actions = Htm
         )
     ]
 
-selectedNode_: Display.Model -> Maybe SelectedNode_
-selectedNode_ model = model.selected
-    |> Maybe.andThen (\(eqNum, ids) -> Dict.get eqNum model.equations
-        |> Maybe.andThen (History.current >> Matcher.selectedSubtree ids >> Result.toMaybe)
-        |> Maybe.map (\(root, nodes, tree) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = tree})
-    )
-
 type alias CoreTopicState =
     {   substitute: State
     ,   group: State
@@ -105,7 +89,7 @@ type alias CoreTopicState =
     ,   evaluate: State
     }
 
-coreTopic_: Rules.Model -> Maybe SelectedNode_ -> CoreTopicState
+coreTopic_: Rules.Model -> Maybe Display.SelectedNode -> CoreTopicState
 coreTopic_ rModel selection = case selection of
     Nothing -> CoreTopicState DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
     Just selected ->
@@ -142,7 +126,7 @@ coreToList_ state =
     ,   ("Ungroup", state.ungroup)
     ]
 
-matchRule_: Maybe SelectedNode_ -> Rules.Rule -> (String, State)
+matchRule_: Maybe Display.SelectedNode -> Rules.Rule -> (String, State)
 matchRule_ selected rule = (rule.title,
     case selected of
         Nothing -> DisplayOnly

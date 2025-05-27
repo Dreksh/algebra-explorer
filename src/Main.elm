@@ -21,7 +21,6 @@ import Url
 import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
-import Components.Display as Display
 import Components.Evaluate as Evaluate
 import Components.Query as Query
 import Components.Rules as Rules
@@ -30,8 +29,8 @@ import Helper
 import UI.ActionView as ActionView
 import UI.Animation as Animation
 import UI.Dialog as Dialog
+import UI.Display as Display
 import UI.Draggable as Draggable
-import UI.HistoryView as HistoryView
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
@@ -55,6 +54,9 @@ port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
 
+setCapture: Bool -> String -> Encode.Value -> Cmd msg
+setCapture s e p = capture {set = s, eId = e, pId = p}
+
 -- Types
 
 type alias Model =
@@ -76,8 +78,6 @@ type alias Swappable =
     ,   nextCreateInt: Int
     ,   showHelp: Bool
     ,   showMenu: Bool
-    ,   showHistory: Bool
-    ,   historyBox: Draggable.Model
     ,   actionView: ActionView.Model
     }
 
@@ -89,7 +89,6 @@ type Event =
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
-    | HistoryEvent HistoryView.Event
     | ActionEvent ActionView.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
@@ -108,7 +107,6 @@ type Event =
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
-    | ToggleHistory
     | WindowResize Int Int
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
@@ -138,7 +136,7 @@ init flags url key =
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
-    (   {   swappable = { display = Display.init eqs
+    (   {   swappable = { display = Display.init setCapture eqs
             , rules = Rules.init
             , tutorial = Tutorial.init
             , notification = nModel
@@ -148,8 +146,6 @@ init flags url key =
             , nextCreateInt = if newScreen then 1 else 0
             , showHelp = False
             , showMenu = False
-            , showHistory = False
-            , historyBox = Draggable.init "history" (60, 10) (30, 80)
             , actionView = ActionView.init
             }
         , query = query
@@ -192,18 +188,14 @@ update event core = let model = core.swappable in
     case event of
         EventUrlRequest _ -> (core, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
-        DisplayEvent e -> let (dModel, dCmd) = Display.update e model.display in
-            (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
+        DisplayEvent e -> let (dModel, dCmd) = Display.update core.size e model.display in
+            -- Temporarily disable updating Query, since dragging boxes trigger it too often ( updateQuery_ core dModel,  )
+            (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
         NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
             (updateCore {model | notification = nModel}, Cmd.map NotificationEvent nCmd)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        HistoryEvent e -> case e of
-            HistoryView.DraggableEvent de -> let (newBox, action) = Draggable.update core.size de model.historyBox in
-                (updateCore {model | historyBox = newBox}, actionToCapture_ action)
-            HistoryView.DisplayEvent de -> let (dModel, dCmd) = Display.update de model.display in
-                (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateQuery_ core dModel, updateMathJax ()])
         ActionEvent e -> (updateCore {model | actionView = ActionView.update e model.actionView}, Cmd.none)
         NoOp -> (core, Cmd.none)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
@@ -239,7 +231,7 @@ update event core = let model = core.swappable in
                 else (updateCore {model | createMode = Nothing}, Cmd.none)
         SubmitEquation str -> if str == "" then (updateCore {model | createMode = Nothing, showHelp=False}, Cmd.none)
             else case Matcher.parseEquation (Rules.functionProperties model.rules) Display.createState Display.updateState str of
-                Result.Ok root -> Display.addEquation root model.display
+                Result.Ok root -> Display.add root model.display
                     |> (\dModel ->
                         (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False}
                         ,   Cmd.batch [updateQuery_ core dModel, updateMathJax ()]
@@ -280,7 +272,6 @@ update event core = let model = core.swappable in
                     Err errStr -> submitNotification_ core errStr
                     Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
                 )
-        ToggleHistory -> (updateCore {model | showHistory = not model.showHistory}, Cmd.none)
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
@@ -353,7 +344,7 @@ update event core = let model = core.swappable in
 -- TODO
 applyChange_: {from: Matcher.MatchResult Display.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
-    case Display.transformEquation params.replacements params.from swappable.display of
+    case Display.transform params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ model newDisplay)
 
@@ -371,7 +362,7 @@ httpErrorToString_ url err = case err of
     Http.BadBody str -> "The file is malformed:\n" ++ str
 
 updateQuery_: Model -> Display.Model -> Cmd Event
-updateQuery_ model dModel = let query = Query.setEquations (Display.listEquations dModel) model.query in
+updateQuery_ model dModel = let query = Query.setEquations (Display.list dModel) model.query in
     Query.pushUrl query
 
 
@@ -392,10 +383,9 @@ view: Model -> Browser.Document Event
 view core = let model = core.swappable in
     { title = "Maths"
     , body = Html.Keyed.node "div" [id "body"]
-        (   List.filterMap identity
-            [   ("display", Display.view DisplayEvent [id "display"] model.display) |> Just
-            ,   ("history", HistoryView.view HistoryEvent model.historyBox model.display) |> Helper.maybeGuard model.showHistory
-            ,   ("actions", ActionView.view RuleEvent ActionEvent model.rules model.display model.actionView) |> Just
+        (   Display.views DisplayEvent model.display
+        ++  List.filterMap identity
+            [   ("actions", ActionView.view RuleEvent ActionEvent model.rules (Display.getSelected model.display) model.actionView) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
@@ -409,7 +399,6 @@ view core = let model = core.swappable in
                         [   Menu.Section {name = "Settings", icon = Nothing}
                             [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                             ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
-                            ,   Menu.Content [a [HtmlEvent.onClick ToggleHistory, class "clickable"] [text "Show History"]]
                             ]
                         ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)
@@ -506,7 +495,7 @@ substitutionDialog_ eqNum selected model =
                 Dialog.Radio
                 {   name = "eqNum"
                 ,   options = Dict.filter (\k _ -> k /= eqNum) model.display.equations
-                        |> Dict.map (\_ -> History.current >> .root >> Math.toString)
+                        |> Dict.map (\_ -> .history >> History.current >> .root >> Math.toString)
                 }
             ]]
         }]
@@ -556,7 +545,7 @@ quarter w x y z = ((w,x),(y,z))
 swappableDecoder: Decode.Decoder Swappable
 swappableDecoder = Decode.map3 triplet
     (   Decode.map3 triplet
-        (Decode.field "display" Display.decoder)
+        (Decode.field "display" (Display.decoder setCapture))
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )
@@ -566,16 +555,14 @@ swappableDecoder = Decode.map3 triplet
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
         (Decode.maybe (Decode.field "createMode" createModeDecoder_))
     )
-    (   Decode.map6 (\a b c d e f -> ((a,b,c),(d,e,f)))
+    (   Decode.map4 (\a b c d -> ((a,b),(c,d)))
         (Decode.field "nextCreateInt" Decode.int)
         (Decode.field "showHelp" Decode.bool)
         (Decode.field "showMenu" Decode.bool)
-        (Decode.field "showHistory" Decode.bool)
-        (Decode.field "historyBox" Draggable.decoder)
         (Decode.field "actionView" ActionView.decoder)
     )
-    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp,showMenu),(showHistory,historyBox,actionView))) ->
-       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu showHistory historyBox actionView
+    |> Decode.map (\((display, rules, tutorial),((notification,menu),(evaluator,createMode)),((nextCreateInt,showHelp),(showMenu,actionView))) ->
+       Swappable display rules tutorial notification menu evaluator createMode nextCreateInt showHelp showMenu actionView
     )
 
 createModeDecoder_: Decode.Decoder (Animation.DeletableElement Int Event)
@@ -613,8 +600,6 @@ saveFile model = Encode.encode 0
         ,   ("nextCreateInt", Encode.int model.nextCreateInt)
         ,   ("showHelp", Encode.bool model.showHelp)
         ,   ("showMenu", Encode.bool model.showMenu)
-        ,   ("showHistory", Encode.bool model.showHistory)
-        ,   ("historyBox", Draggable.encode model.historyBox)
         ,   ("actionView", ActionView.encode model.actionView)
         ]
     )

@@ -323,6 +323,9 @@ dialog svg {
     fill: var(--color-selected);
 }
 /* History */
+.draggable {
+    box-sizing: border-box;
+}
 #history div {
     padding-left: 0.5rem;
     display: flex;

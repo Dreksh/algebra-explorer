@@ -104,6 +104,7 @@ divAttrs_ converter model =
     ,   style "position" "absolute"
     ,   style "padding" "1rem 0.2rem 0.2rem 0.2rem"
     ,   id model.id
+    ,   class "draggable"
     ]
     ++ onPointerMove converter Drag DragEnd
 
