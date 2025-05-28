@@ -51,7 +51,7 @@ type Event =
     | NoOp
 
 div: (Event -> msg) -> Model -> List (Html.Attribute msg) -> List (Html.Html msg) -> Html.Html msg
-div converter model attrs children = Html.div (attrs ++ divAttrs_ converter model)
+div converter model attrs children = Html.div (divAttrs_ converter model)
     [  span
         [ class "border", onPointerCapture converter (DragStart Top)
         , style "left" "0", style "top" "0", style "width" "100%", style "height" "1rem", style "cursor" "move"
@@ -92,7 +92,7 @@ div converter model attrs children = Html.div (attrs ++ divAttrs_ converter mode
         ,   style "right" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"
         ]
         []
-    ,   Html.div [] children
+    ,   Html.div attrs children
     ]
 
 divAttrs_: (Event -> msg) -> Model -> List (Html.Attribute msg)

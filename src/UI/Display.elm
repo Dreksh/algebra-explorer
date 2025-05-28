@@ -42,6 +42,7 @@ type Event =
     Select Int Int
     | Unselect
     | ToggleHide Int
+    | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
 
@@ -205,6 +206,9 @@ update size event model = case event of
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | show = not entry.show} model.equations}, Cmd.none)
+    ToggleHistory eq -> case Dict.get eq model.equations of
+        Nothing -> (model, Cmd.none)
+        Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, Cmd.none)
     HistoryEvent eq he -> case Dict.get eq model.equations of
         Nothing ->(model, Cmd.none)
         Just entry -> let newHis = History.update he entry.history in
@@ -262,14 +266,31 @@ views converter model =
                 |> Maybe.withDefault Set.empty
         in
             (   dModel.id
-            ,   Draggable.div (DraggableEvent eqNum >> converter) dModel []
-                [   eq.root
-                    |>  Math.symbolicate
-                    |>  collapsedView_ eqNum highlight
-                    |> Html.map converter
-                ,   eq.root
-                    |>  stackedView_ eqNum highlight
-                    |> Html.map converter
+            ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
+                [   div [] [   eq.root
+                        |>  Math.symbolicate
+                        |>  collapsedView_ eqNum highlight
+                        |> Html.map converter
+                    ,   eq.root
+                        |>  stackedView_ eqNum highlight
+                        |> Html.map converter
+                    ]
+                ,   if entry.showHistory
+                    then div []
+                        [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
+                        ,   div [class "history"]
+                            (   History.serialize (\current index c children -> let middle = max 0 (List.length children - 1) in
+                                case List.drop middle children |> List.head of
+                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> Math.toString)]
+                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> Math.toString)
+                                        ::  (
+                                            List.map (Html.div []) (List.take middle children)
+                                            ++ after
+                                        )
+                                ) entry.history
+                            )
+                        ]
+                    else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                 ]
             )
     )
@@ -280,6 +301,11 @@ getDraggable_ numVisible index eqNum entry = case entry.view of
     Just dModel -> dModel
     Nothing -> let indHeight = 100.0 / toFloat numVisible in
         Draggable.init ("equation" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
+
+historyEntry_: Bool -> msg -> String -> Html.Html msg
+historyEntry_ current event t = Html.a
+    (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
+    [Html.text t]
 
 collapsedView_: Int -> Set.Set Int -> Math.Symbol (Matcher.State State) -> Html Event
 collapsedView_ eq highlight node = case node of

@@ -282,11 +282,43 @@ dialog svg {
     height: 2rem;
     margin: 0 0.5rem;
 }
-/* Display */
-#display {
+/* Draggable */
+.draggable {
+    box-sizing: border-box;
+    position: relative;
+}
+.draggable > div {
+    background-color: var(--color-background);
+    width: 100%;
+    height: 100%;
+}
+.border {
+    position: absolute;
+    display: block;
+    background-color: var(--color-menu);
+}
+/* Equation */
+.equationHolder {
     display:flex;
+    flex-direction: row;
+    text-wrap: nowrap;
+}
+.equationHolder > div:first-child {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: scroll;
+}
+.equationHolder > div:nth-child(2) {
+    display: flex;
+    max-width: 50%;
     flex-direction: column;
-    align-items: center;
+}
+.equationHolder > div:nth-child(2) > a {
+    align-self: end;
+}
+.equationHolder > a {
+    writing-mode: vertical-rl;
+    text-align: center;
 }
 .node {
     padding: 0.2rem;
@@ -322,22 +354,28 @@ dialog svg {
 .block.selected .blockRect {
     fill: var(--color-selected);
 }
-/* History */
-.draggable {
-    box-sizing: border-box;
+/* Equation */
+div.history {
+    padding: 0 0.5rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    position: relative;
+    overflow: scroll;
 }
-#history div {
+div.history div {
+    position: relative;
     padding-left: 0.5rem;
     display: flex;
     flex-direction: column;
     height: fit-content;
-    position: relative;
 }
-#history a {
+div.history a {
     position: relative;
     padding-left: 1rem;
+    height: fit-content;
 }
-#history > div a::before, #history > div div::before {
+div.history a::before, div.history div::before {
     position: absolute;
     top: 0;
     left: 0;
@@ -346,25 +384,16 @@ dialog svg {
     overflow: hidden;
     content: url("../img/history_middle.svg") / "├";
 }
-#history > div a:first-child:before, #history > div div:first-child:before {
+div.history a:first-child:before, div.history div:first-child:before {
     content: url("../img/history_top.svg") / "┬";
 }
-#history > div a:last-child:before {
+div.history a:last-child:before {
     content: url("../img/history_bottom.svg") / "└";
 }
-#history > div a:first-child:last-child:before, #history > div div:first-child:last-child:before {
+div.history a:first-child:last-child:before, div.history div:first-child:last-child:before {
     content: url("../img/history.svg") / "─";
 }
-#history > div {
-    pointer-events: auto;
-    overflow: scroll;
-}
-.border {
-    position: absolute;
-    display: block;
-    background-color: var(--color-menu);
-}
-#history .selected, #history .selected::before {
+.history .selected, .history .selected::before {
     color: var(--color-highlight);
 }
 /* Actions */
