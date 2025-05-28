@@ -1,8 +1,8 @@
-module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right)
+module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right, verticalLine)
 
 import Html
-import Svg exposing (circle, defs, path, rect, svg, text, text_)
-import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeWidth, viewBox, width, x, y)
+import Svg exposing (circle, defs, line, path, rect, svg, text, text_)
+import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
 class: String -> Html.Attribute msg
@@ -23,7 +23,7 @@ download attr = svg (viewBox "0 0 24 24" :: attr)
 
 equation: List (Html.Attribute msg) -> Html.Html msg
 equation attr = svg (viewBox "0 0 24 24" :: attr)
-    [   Svg.text_ [] [Svg.text "f(x)"]
+    [   text_ [x "6", y "18"] [text "Eq"]
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg
@@ -69,4 +69,9 @@ left attr = svg (viewBox "0 0 24 24" :: attr)
 right: List (Html.Attribute msg) -> Html.Html msg
 right attr = svg (viewBox "0 0 24 24" :: attr)
     [   path [d "M16 12L8 6V18Z", stroke "none", fill "currentColor"] []
+    ]
+
+verticalLine: List (Html.Attribute msg) -> Html.Html msg
+verticalLine attr = svg (width "12" :: attr)
+    [   line [x1 "6", x2 "6", y1 "20%", y2 "80%", stroke "currentColor", strokeWidth "4"] []
     ]

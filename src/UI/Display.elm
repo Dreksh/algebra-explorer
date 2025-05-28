@@ -275,6 +275,7 @@ views converter model =
                         |>  stackedView_ eqNum highlight
                         |> Html.map converter
                     ]
+                ,   Icon.verticalLine []
                 ,   if entry.showHistory
                     then div []
                         [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]

@@ -308,12 +308,12 @@ dialog svg {
     flex-shrink: 1;
     overflow: scroll;
 }
-.equationHolder > div:nth-child(2) {
+.equationHolder > div:nth-child(3) {
     display: flex;
     max-width: 50%;
     flex-direction: column;
 }
-.equationHolder > div:nth-child(2) > a {
+.equationHolder > div:nth-child(3) > a {
     align-self: end;
 }
 .equationHolder > a {
