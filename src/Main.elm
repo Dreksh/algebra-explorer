@@ -195,7 +195,11 @@ update event core = let model = core.swappable in
         NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
             (updateCore {model | notification = nModel}, Cmd.map NotificationEvent nCmd)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        ActionEvent e -> (updateCore {model | actionView = ActionView.update e model.actionView}, Cmd.none)
+        ActionEvent e -> let newModel = {model | actionView = ActionView.update e model.actionView} in
+            case model.createMode of
+                Nothing -> (updateCore newModel, Cmd.none)
+                Just m -> Animation.delete m
+                    |> \(newM, cmd) -> (updateCore {newModel | createMode = Just newM, showHelp=False}, cmd)
         NoOp -> (core, Cmd.none)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case (core.dialog, model.createMode) of
@@ -216,6 +220,7 @@ update event core = let model = core.swappable in
                     |   createMode = Just (Animation.newDeletable (uiCancelCmd_ model.nextCreateInt) model.nextCreateInt)
                     ,   nextCreateInt = model.nextCreateInt + 1
                     ,   showMenu = False
+                    ,   actionView = ActionView.hide model.actionView
                     }
                 ,   focusTextBar_ "textInput"
                 )

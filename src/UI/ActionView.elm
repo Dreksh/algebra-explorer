@@ -1,4 +1,4 @@
-module UI.ActionView exposing (Model, Event(..), init, update, view, encode, decoder)
+module UI.ActionView exposing (Model, Event(..), init, update, view, hide, encode, decoder)
 
 import Dict
 import Html
@@ -32,6 +32,9 @@ update e m = case e of
     Toggle num -> case m of
         Current cNum show -> if cNum == num then Current cNum (not show)
             else Current num True
+
+hide: Model -> Model
+hide (Current num _) = Current num False
 
 -- UI-related
 
