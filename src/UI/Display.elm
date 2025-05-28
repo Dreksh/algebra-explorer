@@ -33,7 +33,7 @@ type alias Model =
 
 type alias Entry =
     {   history: History.Model (Matcher.Equation State)
-    ,   view: Maybe Draggable.Model
+    ,   view: (Bool, Draggable.Model)
     ,   showHistory: Bool
     ,   show: Bool
     }
@@ -65,8 +65,14 @@ type alias SelectedNode =
     }
 
 init: (Bool -> String -> Encode.Value -> Cmd Event) -> List (Matcher.Equation State) -> Model
-init setCapture = List.foldl add
-    {equations = Dict.empty, selected = Nothing, nextEquationNum = 0, createModeForEquation = Nothing, setCapture = setCapture}
+init setCapture l = let size = List.length l in
+    l
+    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), showHistory = False, show = True}))
+    |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture}
+
+createDraggable_: Int -> Int -> Int -> Draggable.Model
+createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
+    Draggable.init ("Equation-" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
 
 add: Matcher.Equation State -> Model -> Model
 add eq model =
@@ -74,9 +80,22 @@ add eq model =
     |   nextEquationNum = model.nextEquationNum + 1
     ,   equations = Dict.insert
             model.nextEquationNum
-            {history = History.init eq, view = Nothing, showHistory = False, show = True}
+            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), showHistory = False, show = True}
             model.equations
     }
+    |> updatePositions_
+
+updatePositions_: Model -> Model
+updatePositions_ model =
+    let
+        filtered = Dict.toList model.equations |> List.filter (\(_, entry) -> entry.show)
+        size = List.length filtered
+    in
+        filtered
+        |> List.indexedMap (\index (eqNum, entry) ->
+            (eqNum, {entry | view = if entry.view |> Tuple.first then entry.view else (False, createDraggable_ size index eqNum)})
+        )
+        |> List.foldl (\(eqNum, entry) m -> {m | equations = Dict.insert eqNum entry m.equations}) model
 
 getSelected: Model -> Maybe SelectedNode
 getSelected model = model.selected
@@ -205,7 +224,7 @@ update size event model = case event of
     Unselect -> ({model | selected = Nothing}, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
-        Just entry -> ({model | equations = Dict.insert eq {entry | show = not entry.show} model.equations}, Cmd.none)
+        Just entry -> (updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show} model.equations}, Cmd.none)
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, Cmd.none)
@@ -218,21 +237,17 @@ update size event model = case event of
                 Just (eqNum, selected) -> if eqNum /= eq
                     then (newModel, Cmd.none)
                     else ({newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))}, Cmd.none)
-    DraggableEvent eq dEvent -> let filtered = Dict.toList model.equations |> List.filter (\(_,entry) -> entry.show) in
-        List.indexedMap Tuple.pair filtered
-        |> List.filter (\(_,(eqNum,_)) -> eqNum == eq)
-        |> \l -> case l of
-            [(index,(_, entry))] -> getDraggable_ (List.length filtered) index eq entry
-                |> Draggable.update size dEvent
-                |> \(dModel, action) ->
-                    (   {model | equations = Dict.insert eq {entry | view = Just dModel} model.equations}
-                    ,   Maybe.map (\a -> case a of
-                            Draggable.SetCapture s v -> model.setCapture True s v
-                            Draggable.ReleaseCapture s v -> model.setCapture False s v
-                        ) action
-                        |> Maybe.withDefault Cmd.none
-                    )
-            _ -> (model, Cmd.none)
+    DraggableEvent eq dEvent -> case Dict.get eq model.equations of
+        Nothing -> (model, Cmd.none)
+        Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
+            |> \(dModel, action) ->
+                (   {model | equations = Dict.insert eq {entry | view = (True, dModel)} model.equations}
+                ,   Maybe.map (\a -> case a of
+                        Draggable.SetCapture s v -> model.setCapture True s v
+                        Draggable.ReleaseCapture s v -> model.setCapture False s v
+                    ) action
+                    |> Maybe.withDefault Cmd.none
+                )
 
 newSelectedNodes_: Set.Set Int -> Matcher.Equation State -> Set.Set Int
 newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
@@ -252,14 +267,11 @@ menu convert model = Dict.toList model.equations
     )
 
 views: (Event -> msg) -> Model -> List (String, Html msg)
-views converter model =
-    let
-        filtered = Dict.toList model.equations |> List.filter (\(_,entry) -> entry.show)
-        numVisible = List.length filtered
-    in
-    List.indexedMap (\order (eqNum, entry) ->
+views converter model = Dict.toList model.equations
+    |> List.filter (\(_,entry) -> entry.show)
+    |> List.map (\(eqNum, entry) ->
         let
-            dModel = getDraggable_ numVisible order eqNum entry
+            (_, dModel) = entry.view
             eq = History.current entry.history
             highlight = model.selected
                 |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
@@ -295,13 +307,6 @@ views converter model =
                 ]
             )
     )
-    filtered
-
-getDraggable_: Int -> Int -> Int -> Entry -> Draggable.Model
-getDraggable_ numVisible index eqNum entry = case entry.view of
-    Just dModel -> dModel
-    Nothing -> let indHeight = 100.0 / toFloat numVisible in
-        Draggable.init ("equation" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
 
 historyEntry_: Bool -> msg -> String -> Html.Html msg
 historyEntry_ current event t = Html.a
@@ -372,23 +377,48 @@ encodeEntry_ entry = Encode.object
     [   ("history", History.encode (Matcher.encodeEquation <| \s -> Encode.object [("prevID", Encode.int s.prevID)]) entry.history)
     ,   ("show", Encode.bool entry.show)
     ,   ("showHistory", Encode.bool entry.showHistory)
-    ,   ("view", case entry.view of
-            Nothing -> Encode.null
-            Just dModel -> Draggable.encode dModel
+    ,   ("view", entry.view
+            |> \(overwritten, dModel) -> if overwritten then Draggable.encode dModel else Encode.null
         )
     ]
 
 decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> Decode.Decoder Model
 decoder setCapture = Decode.map4 (\eq next sel create -> Model eq next sel create setCapture)
-    (   Decode.field "equations" <| Helper.intDictDecoder entryDecoder_)
+    (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (Decode.field "nextEquationNum" Decode.int)
     (   Decode.field "selected"
         <| Decode.maybe <| Decode.map2 Tuple.pair (Decode.field "eq" Decode.int) (Decode.field "nodes" <| Decode.map Set.fromList <| Decode.list Decode.int)
     )
     (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
-entryDecoder_: Decode.Decoder Entry
-entryDecoder_ = Decode.map4 Entry
+type alias TmpEntry_ =
+    {   history: History.Model (Matcher.Equation State)
+    ,   view: Maybe Draggable.Model
+    ,   showHistory: Bool
+    ,   show: Bool
+    }
+
+addDefaultPositions_: Dict.Dict Int TmpEntry_ -> Dict.Dict Int Entry
+addDefaultPositions_ orig =
+    let
+        (shown, hidden) = Dict.toList orig |> List.partition (\(_, entry) -> entry.show)
+        size = List.length shown
+        create tEntry newView =
+            {   history = tEntry.history
+            ,   view = case tEntry.view of
+                    Just view -> (True, view)
+                    Nothing -> (False, newView)
+            ,   showHistory = tEntry.showHistory
+            ,   show = tEntry.show
+            }
+    in
+        shown
+        |> List.indexedMap (\index (eqNum, entry) -> (eqNum, create entry (createDraggable_ size index eqNum)))
+        |> List.foldl (\(eqNum, entry) -> Dict.insert eqNum entry)
+            (List.map (\(eq, entry) -> (eq, create entry (createDraggable_ 1 0 eq))) hidden |> Dict.fromList)
+
+entryDecoder_: Decode.Decoder TmpEntry_
+entryDecoder_ = Decode.map4 TmpEntry_
     (Decode.field "history" <| History.decoder <| Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
     (Decode.maybe <| Decode.field "view" <| Draggable.decoder)
     (Decode.field "show" <| Decode.bool)

@@ -291,6 +291,7 @@ dialog svg {
     background-color: var(--color-background);
     width: 100%;
     height: 100%;
+    overflow: hidden;
 }
 .border {
     position: absolute;
@@ -319,6 +320,7 @@ dialog svg {
 .equationHolder > a {
     writing-mode: vertical-rl;
     text-align: center;
+    overflow: scroll;
 }
 .node {
     padding: 0.2rem;

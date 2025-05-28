@@ -7,7 +7,6 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
 import UI.HtmlEvent exposing (onPointerCapture, onPointerMove)
-import UI.Icon as Icon
 
 -- These will be in raw pixel amounts (technically ints)
 type alias Size = (Float, Float)
@@ -55,8 +54,9 @@ div converter model attrs children = Html.div (divAttrs_ converter model)
     [  span
         [ class "border", onPointerCapture converter (DragStart Top)
         , style "left" "0", style "top" "0", style "width" "100%", style "height" "1rem", style "cursor" "move"
+        , style "text-align" "center"
         ]
-        [Icon.menu [style "height" "1rem"]]
+        [Html.text model.id]
     ,   span
         [ class "border", onPointerCapture converter (DragStart Left)
         , style "left" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"
@@ -106,7 +106,7 @@ divAttrs_ converter model =
     ,   id model.id
     ,   class "draggable"
     ]
-    ++ onPointerMove converter Drag DragEnd
+    ++ (if Dict.isEmpty model.drags then [] else onPointerMove converter Drag DragEnd )
 
 update: Size -> Event -> Model -> (Model, Maybe Action)
 update (screenX, screenY) e model = case e of
