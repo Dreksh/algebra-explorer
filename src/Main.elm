@@ -136,7 +136,7 @@ init flags url key =
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
     in
-    (   {   swappable = { display = Display.init setCapture eqs
+    (   {   swappable = { display = Display.init setCapture (Query.pushEquations query) eqs
             , rules = Rules.init
             , tutorial = Tutorial.init
             , notification = nModel
@@ -172,7 +172,7 @@ parseEquations_ model elem (result, errs) = case Matcher.parseEquation (Rules.fu
     Result.Err err -> (result, err :: errs )
 
 subscriptions: Model -> Sub Event
-subscriptions model = Sub.batch
+subscriptions _ = Sub.batch
     [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
@@ -189,7 +189,6 @@ update event core = let model = core.swappable in
         EventUrlRequest _ -> (core, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, dCmd) = Display.update core.size e model.display in
-            -- Temporarily disable updating Query, since dragging boxes trigger it too often ( updateQuery_ core dModel,  )
             (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
@@ -234,7 +233,7 @@ update event core = let model = core.swappable in
                 Result.Ok root -> Display.add root model.display
                     |> (\dModel ->
                         (   updateCore {model | createMode = Nothing, display = dModel, showHelp = False}
-                        ,   Cmd.batch [updateQuery_ core dModel, updateMathJax ()]
+                        ,   Cmd.batch [updateQuery_ dModel, updateMathJax ()]
                         )
                     )
                 Result.Err err -> submitNotification_ core err
@@ -266,11 +265,11 @@ update event core = let model = core.swappable in
                     Err errStr -> submitNotification_ core errStr
                     Ok rModel -> (updateCore {model | rules = rModel}, Cmd.none)
                 )
-            SaveFile -> Decode.decodeString swappableDecoder str
+            SaveFile -> Decode.decodeString (swappableDecoder (Query.pushEquations core.query)) str
                 |> Result.mapError Decode.errorToString
                 |> (\result -> case result of
                     Err errStr -> submitNotification_ core errStr
-                    Ok s -> ({core | swappable = s}, updateQuery_ core s.display)
+                    Ok s -> ({core | swappable = s}, updateQuery_ s.display)
                 )
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         RuleEvent e -> case e of
@@ -281,10 +280,10 @@ update event core = let model = core.swappable in
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
             Rules.Group eqNum root children -> case Display.groupChildren eqNum root children model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
+                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
             Rules.Ungroup eqNum root selected -> case Display.ungroupChildren eqNum root selected model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ core dModel)
+                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
             Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
                 else ({core | dialog = Just (substitutionDialog_ eqNum selected model, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
@@ -320,7 +319,7 @@ update event core = let model = core.swappable in
             _ -> ({ core | dialog = Nothing}, Cmd.none)
         ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.functionProperties model.rules) origNum selected eqNum model.display of
             Err errStr -> submitNotification_ core errStr
-            Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ core dModel)
+            Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ dModel)
         ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
@@ -335,10 +334,10 @@ update event core = let model = core.swappable in
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
                     else case Display.replaceNumber eqNum root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
-                        Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
+                        Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
                 Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber eqNum id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
-                    Ok dModel -> ({core | swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ core dModel)
+                    Ok dModel -> ({core | swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
 
 
 -- TODO
@@ -346,7 +345,7 @@ applyChange_: {from: Matcher.MatchResult Display.State, replacements: List {name
 applyChange_ params model = let swappable = model.swappable in
     case Display.transform params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
-        Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ model newDisplay)
+        Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ newDisplay)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let swappable = model.swappable in
@@ -361,9 +360,12 @@ httpErrorToString_ url err = case err of
     Http.BadStatus code -> "The url returned an error code [" ++ String.fromInt code ++ "]: " ++ url
     Http.BadBody str -> "The file is malformed:\n" ++ str
 
-updateQuery_: Model -> Display.Model -> Cmd Event
-updateQuery_ model dModel = let query = Query.setEquations (Display.list dModel) model.query in
-    Query.pushUrl query
+updateQuery_: Display.Model -> Cmd Event
+updateQuery_ = Display.updateQueryCmd
+    >> Tuple.second
+    >> Cmd.map DisplayEvent
+--let query = Query.setEquations (Display.list dModel) model.query in
+--    Query.pushUrl query
 
 
 focusTextBar_: String -> Cmd Event
@@ -542,10 +544,10 @@ triplet x y z = (x,y,z)
 quarter: a -> b -> c -> d -> ((a,b),(c,d))
 quarter w x y z = ((w,x),(y,z))
 
-swappableDecoder: Decode.Decoder Swappable
-swappableDecoder = Decode.map3 triplet
+swappableDecoder: (List (Matcher.Equation Display.State) -> Cmd Display.Event) -> Decode.Decoder Swappable
+swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
-        (Decode.field "display" (Display.decoder setCapture))
+        (Decode.field "display" (Display.decoder setCapture updateQuery))
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )

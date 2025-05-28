@@ -1,6 +1,6 @@
 module UI.Display exposing (
     Model, Event(..), State, SelectedNode, init, update, views, menu,
-    createState, updateState, undo, redo, list,
+    createState, updateState, undo, redo, updateQueryCmd,
     add, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder, encodeState, stateDecoder
@@ -28,7 +28,9 @@ type alias Model =
     ,   nextEquationNum: Int
     ,   selected: Maybe (Int, Set.Set Int)
     ,   createModeForEquation: Maybe Int
+    -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
+    ,   updateQuery: List (Matcher.Equation State) -> Cmd Event
     }
 
 type alias Entry =
@@ -40,7 +42,6 @@ type alias Entry =
 
 type Event =
     Select Int Int
-    | Unselect
     | ToggleHide Int
     | ToggleHistory Int
     | HistoryEvent Int History.Event
@@ -64,11 +65,11 @@ type alias SelectedNode =
     ,   nodes: Set.Set Int
     }
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> List (Matcher.Equation State) -> Model
-init setCapture l = let size = List.length l in
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> List (Matcher.Equation State) -> Model
+init setCapture updateQuery l = let size = List.length l in
     l
     |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), showHistory = False, show = True}))
-    |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture}
+    |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture, updateQuery = updateQuery}
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
@@ -128,8 +129,14 @@ redo model = case model.selected of
             ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))
             }
 
-list: Model -> Dict.Dict Int (Matcher.Equation State)
-list model = model.equations |> Dict.map (\_ entry -> History.current entry.history)
+updateQueryCmd: Model -> (Model, Cmd Event)
+updateQueryCmd model =
+    (   model
+    ,   Dict.values model.equations
+        |> List.filter (\entry -> entry.show)
+        |> List.map (\entry -> History.current entry.history)
+        |> model.updateQuery
+    )
 
 groupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
 groupChildren eqNum root children model = case Dict.get eqNum model.equations of
@@ -221,10 +228,9 @@ update size event model = case event of
                 if Set.isEmpty newSet then ({model | selected = Nothing}, Cmd.none)
                 else ({model | selected = Just (eq, newSet)}, Cmd.none)
             else ({model | selected = Just (eq, Set.insert node current)}, Cmd.none)
-    Unselect -> ({model | selected = Nothing}, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
-        Just entry -> (updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show} model.equations}, Cmd.none)
+        Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show} model.equations} |> updateQueryCmd
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, Cmd.none)
@@ -233,10 +239,10 @@ update size event model = case event of
         Just entry -> let newHis = History.update he entry.history in
             let newModel = {model | equations = Dict.insert eq {entry | history = newHis} model.equations} in
             case model.selected of
-                Nothing -> (newModel, Cmd.none)
+                Nothing -> updateQueryCmd newModel
                 Just (eqNum, selected) -> if eqNum /= eq
-                    then (newModel, Cmd.none)
-                    else ({newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))}, Cmd.none)
+                    then updateQueryCmd newModel
+                    else updateQueryCmd {newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))}
     DraggableEvent eq dEvent -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
@@ -382,8 +388,8 @@ encodeEntry_ entry = Encode.object
         )
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> Decode.Decoder Model
-decoder setCapture = Decode.map4 (\eq next sel create -> Model eq next sel create setCapture)
+decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> Decode.Decoder Model
+decoder setCapture updateQuery = Decode.map4 (\eq next sel create -> Model eq next sel create setCapture updateQuery)
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (Decode.field "nextEquationNum" Decode.int)
     (   Decode.field "selected"

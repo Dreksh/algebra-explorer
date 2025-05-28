@@ -1,7 +1,6 @@
-module Components.Query exposing (Model, parseInit, pushUrl, setEquations)
+module Components.Query exposing (Model, parseInit, pushEquations)
 
 import Browser.Navigation as Nav
-import Dict
 import Url
 -- Ours
 import Algo.Math as Math
@@ -15,11 +14,12 @@ type alias Model =
     ,   sources: List String
     }
 
-setEquations: Dict.Dict Int (Matcher.Equation msg) -> Model -> Model
-setEquations dict model = dict
-    |> Dict.toList
-    |> List.map (\(_, elem) -> Math.toString elem.root )
-    |> (\result -> {model | equations = result})
+-- This time it's flipped, because we want to generate (List (Matcher.Equation msg) -> Cmd msg)
+pushEquations: Model -> List (Matcher.Equation a) -> Cmd msg
+pushEquations model list =
+    List.map (\elem -> Math.toString elem.root) list
+    |> \result -> {model | equations = result}
+    |> pushUrl_
 
 parseInit: Url.Url -> Nav.Key -> Model
 parseInit url key =
@@ -32,8 +32,8 @@ parseInit url key =
     ,   sources = []
     }
 
-pushUrl: Model -> Cmd msg
-pushUrl model = let eqs = marshalEquations_ model.equations in
+pushUrl_: Model -> Cmd msg
+pushUrl_ model = let eqs = marshalEquations_ model.equations in
     model.current
     |> (\url -> Url.toString { url | query = Just eqs} )
     |> Nav.replaceUrl model.key
