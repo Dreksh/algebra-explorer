@@ -1,4 +1,5 @@
-module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right, verticalLine)
+module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right,
+    verticalLine, history, default)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg, text, text_)
@@ -74,4 +75,19 @@ right attr = svg (viewBox "0 0 24 24" :: attr)
 verticalLine: List (Html.Attribute msg) -> Html.Html msg
 verticalLine attr = svg (width "12" :: attr)
     [   line [x1 "6", x2 "6", y1 "20%", y2 "80%", stroke "currentColor", strokeWidth "4"] []
+    ]
+
+history: List (Html.Attribute msg) -> Html.Html msg
+history attr = svg (viewBox "0 0 24 24" :: attr)
+    [   circle [cx "12", cy "12", r "11", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M6 8.5L12 12L21.4 6", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ]
+
+default: List (Html.Attribute msg) -> Html.Html msg
+default attr = svg (viewBox "0 0 24 24" :: attr)
+    [   path [d "M2 22L5 17V5A3 3 0 0 1 8 2H20A3 3 0 0 1 23 5V17A3 3 0 0 1 20 20H8Z", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   circle [cx "14", cy "9", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M11 13V17A5 5 0 0 0 17 17V13", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M11 15A5 5 0 0 0 16 15.5", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M13 14A8 8 0 0 0 12 10A8 8 0 0 0 16 10A8 8 0 0 0 15 14", stroke "currentColor", strokeWidth "1", fill "none"] []
     ]

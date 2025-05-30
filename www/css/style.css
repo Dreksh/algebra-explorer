@@ -8,6 +8,7 @@
     --color-submit: green;
     --color-text: black;
     --color-textbox: white;
+    --color-textbox-alternate: rgb(230,230,230);
     --color-selected: lightgreen;
 }
 html, body {
@@ -84,22 +85,29 @@ span.space {
     color: var(--color-hovered);
 }
 /* Text bar */
-@keyframes textbarAppear {
-    from { width: 0; padding-right: 0; }
-    to { width: 70%; padding-right: 3rem; }
-}
-@keyframes textbarDisappear {
-    from { width: 70%; padding-right: 3rem; }
-    to { width: 0; padding-right: 0; }
-}
-.textbar {
+.input {
+    width: 70dvw;
+    max-height: 75dvh;
+    display: flex;
     position: absolute;
-    box-sizing: border-box;
-    width: 70%;
-    height: 3rem;
     top: 50%;
     left: 50%;
     transform: translateX(-50%) translateY(-50%);
+    flex-direction: column;
+    align-items: center;
+    justify-items: center;
+}
+@keyframes textbarAppear {
+    from { width: 0; padding-right: 0; }
+    to { width: 100%; padding-right: 3rem; }
+}
+@keyframes textbarDisappear {
+    from { width: 100%; padding-right: 3rem; }
+    to { width: 0; padding-right: 0; }
+}
+.textbar {
+    box-sizing: border-box;
+    height: 3rem;
     background-color: var(--color-textbox);
     border-radius: 1.5rem;
     display: flex;
@@ -127,6 +135,27 @@ span.space {
     box-shadow: none;
     flex-grow: 1;
     flex-shrink: 1;
+}
+.input > ul {
+    width: 70%;
+    list-style: none;
+    overflow-y: scroll;
+    border-radius: 0 0 2rem 2rem;
+    padding: 0;
+    margin: 0;
+}
+.input > ul > li {
+    text-wrap: nowrap;
+    height: 2rem;
+    align-content: center;
+    background-color: var(--color-textbox-alternate);
+}
+.input > ul > li:nth-child(even) {
+    background-color: var(--color-textbox);
+}
+.input > ul svg {
+    height: 1rem;
+    margin: 0 0.5rem;
 }
 /* Menu */
 #menuToggle {

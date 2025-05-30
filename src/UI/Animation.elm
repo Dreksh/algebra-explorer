@@ -44,7 +44,7 @@ encode innerEnc element = Encode.object
     ,   ("deleting", Encode.bool element.deleting)
     ]
 
-decoder: Decode.Decoder elem -> (() -> Cmd event) -> Decode.Decoder (DeletableElement elem event)
-decoder innerDec trigger = Decode.map2 (\e d -> {element = e, triggerDelete = trigger, deleting = d})
+decoder: Decode.Decoder elem -> (elem -> () -> Cmd event) -> Decode.Decoder (DeletableElement elem event)
+decoder innerDec trigger = Decode.map2 (\e d -> {element = e, triggerDelete = trigger e, deleting = d})
     (Decode.field "element" <| innerDec)
     (Decode.field "deleting" <| Decode.bool)

@@ -12,8 +12,8 @@ onClick event = stopPropagationOn "click" (succeed (event, True))
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit
 
-onBlur: msg -> Html.Attribute msg
-onBlur = Html.Events.onBlur
+onFocus: msg -> Html.Attribute msg
+onFocus = Html.Events.onFocus
 
 onSubmitField: String -> (String -> msg) -> Html.Attribute msg
 onSubmitField target event = preventDefaultOn "submit"

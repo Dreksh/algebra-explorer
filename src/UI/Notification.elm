@@ -77,7 +77,7 @@ decoder = Decode.map2 (\id n -> {nextID = id, notifications = n})
 
 notificationDecoder_: Decode.Decoder (Dict.Dict Int (DeletableElement String Event))
 notificationDecoder_ = Helper.intDictDecoder Decode.value
-    |> Decode.andThen (Helper.resultDict (\index val map -> let dec = UI.Animation.decoder Decode.string (delayedDelete_ index) in
+    |> Decode.andThen (Helper.resultDict (\index val map -> let dec = UI.Animation.decoder Decode.string (\_ -> delayedDelete_ index) in
         case Decode.decodeValue dec val of
             Ok notification -> Ok (Dict.insert index notification map)
             Err _ -> Err ("failed to deserialise " ++ String.fromInt index)

@@ -1,4 +1,4 @@
-module UI.ActionView exposing (Model, Event(..), init, update, view, hide, encode, decoder)
+module UI.ActionView exposing (Model, Event(..), init, update, view, isOpen, hide, encode, decoder)
 
 import Dict
 import Html
@@ -35,6 +35,9 @@ update e m = case e of
 
 hide: Model -> Model
 hide (Current num _) = Current num False
+
+isOpen: Model -> Bool
+isOpen (Current _ open) = open
 
 -- UI-related
 
