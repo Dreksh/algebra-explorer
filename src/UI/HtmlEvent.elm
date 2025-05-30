@@ -4,10 +4,15 @@ module UI.HtmlEvent exposing (..)
 
 import Html
 import Html.Events exposing(custom, preventDefaultOn, stopPropagationOn)
-import Json.Decode exposing (Decoder, Value, field, float, map, map2, string, succeed, value)
+import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, string, succeed, value)
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
+
+onShiftClick: (Bool -> msg) -> Html.Attribute msg
+onShiftClick event = stopPropagationOn "click"
+    <| map (\shift -> (event shift, True))
+    <| field "shiftKey" bool
 
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit

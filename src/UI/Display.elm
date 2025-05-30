@@ -41,7 +41,7 @@ type alias Entry =
     }
 
 type Event =
-    Select Int Int
+    Select Int Int Bool
     | ToggleHide Int
     | ToggleHistory Int
     | HistoryEvent Int History.Event
@@ -219,15 +219,15 @@ substitute funcs origNum selected eqNum model = case Dict.get eqNum model.equati
 
 update: Draggable.Size -> Event -> Model -> (Model, Cmd Event)
 update size event model = case event of
-    Select eq node -> case model.selected of
-        Nothing -> ({model | selected = Just (eq, Set.singleton node)}, Cmd.none)
-        Just (e, current) -> if e /= eq
+    Select eq node shift -> case (shift, model.selected) of
+        (True, Just (e, current)) -> if e /= eq
             then ({model | selected = Just (eq, Set.singleton node)}, Cmd.none)
             else if Set.member node current
             then let newSet = Set.remove node current in
                 if Set.isEmpty newSet then ({model | selected = Nothing}, Cmd.none)
                 else ({model | selected = Just (eq, newSet)}, Cmd.none)
             else ({model | selected = Just (eq, Set.insert node current)}, Cmd.none)
+        _ -> ({model | selected = Just (eq, Set.singleton node)}, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show} model.equations} |> updateQueryCmd
@@ -326,7 +326,7 @@ collapsedView_ eq highlight node = case node of
         s.children
         |> List.map (collapsedView_ eq highlight)
         |> div
-            (   [class "node", HtmlEvent.onClick (Select eq id)]
+            (   [class "node", HtmlEvent.onShiftClick (Select eq id)]
             ++  if Set.member id highlight then [class "selected"] else []
             )
 
@@ -351,7 +351,7 @@ stackRecursive eq highlight minWidth minDepth node =
                     let (w, d, divs) = stackRecursive eq highlight foldWidth (minDepth+1) child
                     in (w, max foldDepth d, foldDivs ++ divs)
                 ) (minWidth, minDepth, [])
-        onClick = HtmlEvent.onClick (Select eq id)
+        onClick = HtmlEvent.onShiftClick (Select eq id)
         selected = (Set.member id highlight)
     in
         (   maxWidth

@@ -188,7 +188,7 @@ update event core = let model = core.swappable in
         ActionEvent e -> let (newIn, inCmd) = Input.close model.input in
             (updateCore {model | actionView = ActionView.update e model.actionView, input = newIn}, Cmd.map InputEvent inCmd)
         InputEvent e -> let (newIn, submitted, inCmd) = Input.update e model.input in
-            if submitted == "" then (updateCore {model | input = newIn}, Cmd.map InputEvent inCmd)
+            if submitted == "" then (updateCore {model | input = newIn}, Cmd.batch [Cmd.map InputEvent inCmd, focusTextBar_ "textInput"])
             else case Matcher.parseEquation (Rules.functionProperties model.rules) Display.createState Display.updateState submitted of
                 Result.Ok root -> Display.add root model.display
                     |> (\dModel ->
