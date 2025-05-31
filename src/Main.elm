@@ -9,7 +9,7 @@ import File
 import File.Download as FDownload
 import File.Select as FSelect
 import Html exposing (a, div, input, text)
-import Html.Attributes exposing (class, id, name)
+import Html.Attributes exposing (class, href, id, name, target)
 import Html.Keyed
 import Http
 import Json.Decode as Decode
@@ -371,6 +371,7 @@ view core = let model = core.swappable in
                         [   Menu.Section {name = "Settings", icon = Nothing}
                             [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                             ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
+                            ,   Menu.Content [a [class "clickable", href "https://github.com/jxz12/math", target "_blank"] [text "Github Source"]]
                             ]
                         ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)
