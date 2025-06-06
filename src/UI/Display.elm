@@ -18,6 +18,7 @@ import Algo.History as History
 import Algo.Math as Math
 import Algo.Matcher as Matcher
 import UI.Block as Block
+import UI.Bricks as Bricks
 import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
@@ -36,6 +37,7 @@ type alias Model =
 type alias Entry =
     {   history: History.Model (Matcher.Equation State)
     ,   view: (Bool, Draggable.Model)
+    ,   bricks: Bricks.Model
     ,   showHistory: Bool
     ,   show: Bool
     }
@@ -68,7 +70,7 @@ type alias SelectedNode =
 init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> List (Matcher.Equation State) -> Model
 init setCapture updateQuery l = let size = List.length l in
     l
-    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), showHistory = False, show = True}))
+    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq, showHistory = False, show = True}))
     |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture, updateQuery = updateQuery}
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
@@ -81,7 +83,7 @@ add eq model =
     |   nextEquationNum = model.nextEquationNum + 1
     ,   equations = Dict.insert
             model.nextEquationNum
-            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), showHistory = False, show = True}
+            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq, showHistory = False, show = True}
             model.equations
     }
     |> updatePositions_
@@ -288,10 +290,9 @@ views converter model = Dict.toList model.equations
                 [   div [] [   eq.root
                         |>  Math.symbolicate
                         |>  collapsedView_ eqNum highlight
-                        |> Html.map converter
-                    ,   eq.root
-                        |>  stackedView_ eqNum highlight
-                        |> Html.map converter
+                        |>  Html.map converter
+                    ,   Bricks.view entry.bricks eqNum highlight Select
+                        |>  Html.map converter
                     ]
                 ,   Icon.verticalLine []
                 ,   if entry.showHistory
@@ -329,35 +330,6 @@ collapsedView_ eq highlight node = case node of
             (   [class "node", HtmlEvent.onShiftClick (Select eq id)]
             ++  if Set.member id highlight then [class "selected"] else []
             )
-
-stackedView_: Int -> Set.Set Int -> Math.Tree (Matcher.State State) -> Html Event
-stackedView_ eq highlight root =
-    let
-        (maxWidth, maxDepth, blocks) = stackRecursive eq highlight 0 1 root
-    in
-        div [] [ Block.blocks maxWidth maxDepth blocks ]
-
-stackRecursive: Int -> Set.Set Int -> Int -> Int -> Math.Tree (Matcher.State State) -> (Int, Int, List (Html Event))
-stackRecursive eq highlight minWidth minDepth node =
-    let
-        children = Math.getChildren node
-        id = Math.getState node |> Matcher.getID
-        (maxWidth, maxDepth, childBlocks) =
-            if List.isEmpty children
-            then (minWidth+1, minDepth, [])
-            else
-                children
-                |>  List.foldl (\child (foldWidth, foldDepth, foldDivs) ->
-                    let (w, d, divs) = stackRecursive eq highlight foldWidth (minDepth+1) child
-                    in (w, max foldDepth d, foldDivs ++ divs)
-                ) (minWidth, minDepth, [])
-        onClick = HtmlEvent.onShiftClick (Select eq id)
-        selected = (Set.member id highlight)
-    in
-        (   maxWidth
-        ,   maxDepth
-        ,   ( Block.block minWidth maxWidth minDepth maxDepth selected onClick (Math.getName node)) :: childBlocks
-        )
 
 encode: Model -> Encode.Value
 encode model = Encode.object
@@ -414,6 +386,7 @@ addDefaultPositions_ orig =
             ,   view = case tEntry.view of
                     Just view -> (True, view)
                     Nothing -> (False, newView)
+            ,   bricks = Bricks.init (History.current tEntry.history)  -- TODO: not sure this is right
             ,   showHistory = tEntry.showHistory
             ,   show = tEntry.show
             }
