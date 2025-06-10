@@ -1,7 +1,7 @@
 module UI.Display exposing (
     Model, Event(..), State, SelectedNode, init, update, views, menu,
     createState, updateState, undo, redo, updateQueryCmd,
-    add, transform, substitute, getSelected,
+    add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder, encodeState, stateDecoder
     )
@@ -17,7 +17,6 @@ import Helper
 import Algo.History as History
 import Algo.Math as Math
 import Algo.Matcher as Matcher
-import UI.Block as Block
 import UI.Bricks as Bricks
 import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
@@ -70,7 +69,7 @@ type alias SelectedNode =
 init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> List (Matcher.Equation State) -> Model
 init setCapture updateQuery l = let size = List.length l in
     l
-    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq, showHistory = False, show = True}))
+    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq.root, showHistory = False, show = True}))
     |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture, updateQuery = updateQuery}
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
@@ -83,7 +82,7 @@ add eq model =
     |   nextEquationNum = model.nextEquationNum + 1
     ,   equations = Dict.insert
             model.nextEquationNum
-            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq, showHistory = False, show = True}
+            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq.root, showHistory = False, show = True}
             model.equations
     }
     |> updatePositions_
@@ -99,6 +98,14 @@ updatePositions_ model =
             (eqNum, {entry | view = if entry.view |> Tuple.first then entry.view else (False, createDraggable_ size index eqNum)})
         )
         |> List.foldl (\(eqNum, entry) m -> {m | equations = Dict.insert eqNum entry m.equations}) model
+
+advanceTime: Float -> Model -> Model
+advanceTime millis model =
+    let
+        newEquations = model.equations
+            |> Dict.map (\_ entry -> { entry | bricks = entry.bricks |> Bricks.advanceTime millis })
+    in
+        { model | equations = newEquations }
 
 getSelected: Model -> Maybe SelectedNode
 getSelected model = model.selected
@@ -291,7 +298,7 @@ views converter model = Dict.toList model.equations
                         |>  Math.symbolicate
                         |>  collapsedView_ eqNum highlight
                         |>  Html.map converter
-                    ,   Bricks.view entry.bricks eqNum highlight Select
+                    ,   Bricks.view eqNum highlight Select entry.bricks
                         |>  Html.map converter
                     ]
                 ,   Icon.verticalLine []
@@ -386,7 +393,7 @@ addDefaultPositions_ orig =
             ,   view = case tEntry.view of
                     Just view -> (True, view)
                     Nothing -> (False, newView)
-            ,   bricks = Bricks.init (History.current tEntry.history)  -- TODO: not sure this is right
+            ,   bricks = Bricks.init (History.current tEntry.history).root  -- TODO: not sure this is right
             ,   showHistory = tEntry.showHistory
             ,   show = tEntry.show
             }

@@ -104,6 +104,7 @@ type Event =
     | FileSelected LoadableFile File.File
     | FileLoaded LoadableFile String
     | WindowResize Int Int
+    | AnimationDelta Float
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
     | ApplySubstitution Int (Set.Set Int) Int -- eqNum root otherEqNum
@@ -166,6 +167,7 @@ subscriptions _ = Sub.batch
     [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
+    ,   BrowserEvent.onAnimationFrameDelta AnimationDelta
     ]
 
 {-
@@ -252,6 +254,7 @@ update event core = let model = core.swappable in
                     Ok s -> ({core | swappable = s}, updateQuery_ s.display)
                 )
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
+        AnimationDelta millis -> (updateCore {model | display = Display.advanceTime millis model.display}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of

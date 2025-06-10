@@ -1,5 +1,5 @@
 module Algo.Matcher exposing (
-    State, getID, getName,
+    State, getID, getState, getName,
     Equation, parseEquation, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
