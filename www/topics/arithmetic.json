@@ -48,7 +48,8 @@
             "matches": [
                 {"from": "-(a+b)", "to": ["-a-b"]},
                 {"from": "m(a+b)", "to": ["ma+mb"]},
-                {"from": "-(a*b)", "to": ["-a*b"]}
+                {"from": "-(a*b)", "to": ["-a*b"]},
+                {"from": "a/(b*c)", "to": ["a/b/c"]}
             ]
         },
         {
@@ -59,7 +60,8 @@
                 {"from": "ma+mb", "to": ["m(a+b)"]},
                 {"from": "ma-mb", "to": ["m(a-b)"]},
                 {"from": "-a*b", "to": ["-(ab)"]},
-                {"from": "a/-b", "to": ["-(a/b)"]}
+                {"from": "a/-b", "to": ["-(a/b)"]},
+                {"from": "a/b/c", "to": ["a/(b*c)"]}
             ]
         },
         {
