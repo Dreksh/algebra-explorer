@@ -88,6 +88,7 @@ orderedStack: (slot -> choice -> Continuation state -> Maybe (Continuation state
 orderedStack func = List.map (\s choices tok ->
     List.head choices
     |> Maybe.andThen (\c -> case tok.progress of
+        Nothing -> func s c tok
         Just (_, Choice_ 0 childTok) -> func s c childTok
         _ -> Nothing
     )

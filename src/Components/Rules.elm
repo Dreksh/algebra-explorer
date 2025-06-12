@@ -92,7 +92,7 @@ init =
             [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+"},1))
             ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*"},1))
             ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-"},1))
-            ,   ("/",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "1/"},1))
+            ,   ("/",({properties= Math.GenericNode {state = (), name = "", arguments = Just 2, children = []}, javascript = InfixOp "/"},1))
             ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty

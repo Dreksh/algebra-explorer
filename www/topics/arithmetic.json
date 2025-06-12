@@ -4,7 +4,7 @@
         "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}},
         "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}},
         "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}},
-        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}}
+        "/": {"arguments": 2, "associative": false, "commutative": false, "identity": 1, "javascript":{"type":"infix", "symbol":"/"}}
     },
     "constants": {},
     "actions": [
@@ -13,8 +13,9 @@
             "description": "Combining with their inverse, values can be cancelled out",
             "matches": [
                 {"from": "--a", "to": ["a"]},
-                {"from": "a-a+b", "to": ["b"]},
-                {"from": "a/a*b", "to": ["b"]},
+                {"from": "a-a", "to": ["0"]},
+                {"from": "a/a", "to": ["1"]},
+                {"from": "(a*b)/(a*c)", "to": ["b/c"]},
                 {"from": "b/(c/a)", "to": ["a*b/c"]},
                 {"from": "-(-a*b)", "to": ["a*b"]},
                 {"from": "-(a/-b)", "to": ["a/b"]},
@@ -43,13 +44,13 @@
             ]
         },
         {
-            "title": "Expand brackets",
+            "title": "Expand",
             "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
             "matches": [
                 {"from": "-(a+b)", "to": ["-a-b"]},
                 {"from": "m(a+b)", "to": ["ma+mb"]},
                 {"from": "-(a*b)", "to": ["-a*b"]},
-                {"from": "a/(b*c)", "to": ["a/b/c"]}
+                {"from": "a/b", "to": ["a*(1/b)"]}
             ]
         },
         {
@@ -61,7 +62,14 @@
                 {"from": "ma-mb", "to": ["m(a-b)"]},
                 {"from": "-a*b", "to": ["-(ab)"]},
                 {"from": "a/-b", "to": ["-(a/b)"]},
-                {"from": "a/b/c", "to": ["a/(b*c)"]}
+                {"from": "a/c+b/c", "to": ["(a+b)/c"]}
+            ]
+        },
+        {   "title": "Combine",
+            "description": "Putting products of fractions into one big fraction",
+            "matches": [
+                {"from": "a*b/c", "to": ["(a*b)/c"]},
+                {"from": "a/b*c/d", "to": ["(a*c)/(b*d)"]}
             ]
         },
         {

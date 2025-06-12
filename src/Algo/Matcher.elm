@@ -122,7 +122,7 @@ treeToMatcher_ checker argMap state root =
         Math.DeclarativeNode s -> processChildren s.children
             |> Result.map (\(children, newS) -> (DeclarativeMatcher {name = s.name, commutative = True, arguments = List.reverse children}, newS)) -- TODO: Not all of them are commutative (like <)
         Math.GenericNode s -> case Dict.get s.name argMap of
-            Just _ -> processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = children}, newS))
+            Just _ -> processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = List.reverse children}, newS))
             Nothing -> case s.arguments of
                 Nothing -> checker s.name (List.length s.children) state
                     |> Result.andThen (\newState -> Helper.resultList (\child (list, seen, newS) -> case child of
@@ -137,7 +137,7 @@ treeToMatcher_ checker argMap state root =
                     )
                     |> Result.map (\(children, _, newState) -> (AnyMatcher {name = s.name, arguments = List.reverse children}, newState))
                 Just argNum -> if argNum /= List.length s.children then Err (s.name ++ " has an unexpected function signature")
-                    else processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = children}, newS))
+                    else processChildren s.children |> Result.map (\(children, newS) -> (ExactMatcher {name = s.name, arguments = List.reverse children}, newS))
 
 matchNode: Matcher -> Math.Tree (State state) -> Bool
 matchNode matcher root = case (matcher, root) of

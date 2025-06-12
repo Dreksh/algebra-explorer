@@ -100,7 +100,7 @@ type Symbol s =
     | Node {state: s, children: List (Symbol s)}
 
 symbolicate: Tree state -> Symbol state
-symbolicate root = symbolicateRecursive_ Nothing True root
+symbolicate root = symbolicateRecursive_ Nothing root
 
 toString: Tree state -> String
 toString root = symbolicate root |> eqToString_
@@ -122,33 +122,35 @@ functionPrecedence_ node = case getName node of
     -- Others (variables, function calls)
     _ -> -1
 
-symbolicateRecursive_: Maybe (Tree state) -> Bool -> Tree state -> Symbol state
-symbolicateRecursive_ parent multiplicativeFirst root = (
+symbolicateRecursive_: Maybe (Tree state) -> Tree state -> Symbol state
+symbolicateRecursive_ parent root = (
     case root of
         RealNode s -> [String.fromFloat s.value |> Text]
         VariableNode s -> if String.length s.name == 1 then [Text s.name] else [Text ("\\" ++ s.name)]
-        UnaryNode s -> if s.name == "/"
-            then if multiplicativeFirst
-                then [Text "1/", symbolicateRecursive_ (Just root) False s.child]
-                else [Text "/", symbolicateRecursive_ (Just root) False s.child]
-            else [Text s.name, symbolicateRecursive_ (Just root) True s.child]
+        UnaryNode s -> if s.name == "-"
+            then [Text s.name, symbolicateRecursive_ (Just root) s.child]
+            else [Text s.name, Text "(", symbolicateRecursive_ (Just root) s.child, Text ")"]
         BinaryNode s -> s.children
             |> List.foldl (\child result -> if List.isEmpty result
-                then [symbolicateRecursive_ (Just root) True child]
+                then [symbolicateRecursive_ (Just root) child]
                 else case child of
                     UnaryNode c -> case (s.name, c.name) of
-                        ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) True child]
-                        ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) (List.isEmpty result) child]
-                        _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
-                    _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) True child]
+                        ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) child]
+                        ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) child]
+                        _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) child]
+                    _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) child]
                 )
                 []
-        GenericNode s -> s.children
-            |> List.map (symbolicateRecursive_ (Just root) True)
-            |> List.intersperse (Text ",")
-            |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
+        GenericNode s -> if s.name == "/"
+            then case s.children of
+                [a, b] -> [symbolicateRecursive_ (Just root) a, Text "/", symbolicateRecursive_ (Just root) b]
+                _ -> [Text "FAILED"]
+            else s.children
+                |> List.map (symbolicateRecursive_ (Just root))
+                |> List.intersperse (Text ",")
+                |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
         DeclarativeNode s -> s.children
-            |> List.map (symbolicateRecursive_ (Just root) True)
+            |> List.map (symbolicateRecursive_ (Just root))
             |> List.intersperse (Text s.name)
     )
     |> (\tokens -> case (parent, root) of
@@ -314,18 +316,14 @@ expression_ funcProps = Parser.loop []
 
 multiple_: FunctionProperties -> Parser_ (Tree ())
 multiple_ funcProps = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ funcProps |. Parser.spaces
+    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "*"
-                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "*"))
-                |. Parser.spaces
-            ,   Parser.succeed (\elem -> Parser.Loop (UnaryNode {state = (), name = "/", child = elem} :: list))
-                |. expectSymbol_ "/"
-                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "/"))
+                |= (divisible_ funcProps |> Parser.inContext (PrevStr_ "*"))
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |= term_ funcProps
+                |= divisible_ funcProps
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -335,6 +333,20 @@ multiple_ funcProps = Parser.loop []
         [x] -> x
         _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
+
+divisible_: FunctionProperties -> Parser_ (Tree ())
+divisible_ funcProps = Parser.succeed generateDivisibleNode_
+    |= negatable_ funcProps
+    |= Parser.loop [] (\list -> Parser.oneOf
+        [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable_ funcProps
+        ,   Parser.succeed (Parser.Done list)
+        ]
+    )
+
+generateDivisibleNode_: Tree () -> List (Tree ()) -> Tree ()
+generateDivisibleNode_ front divisors = case divisors of
+        [] -> front
+        (next :: others) -> GenericNode {state = (), name = "/", arguments = Just 2, children = [generateDivisibleNode_ front others, next] }
 
 negatable_: FunctionProperties -> Parser_ (Tree ())
 negatable_ funcProps = Parser.oneOf
