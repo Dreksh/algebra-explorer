@@ -6,9 +6,11 @@ Build status: ![Workflow Status](https://github.com/jxz12/math/actions/workflows
 
 - [ ] Animate equations as rules are applied (or when selecting something in the past)
     - [ ] Add animation bubble when hovering over applicable rules
+- [ ] Change input method to match the display of equations, rather than introducing our 'new' text-language (i.e. using '\sin()' to represent sin)
 - [ ] Work on creating tutorials/lessons
 - [ ] Expand topics covered
 
+- [ ] Enforce that the numbers remain as integers (i.e. do not evaluate decimals / surds). This is to help in non-calculator papers/prevent rounding errors in intermediate steps.
 - [ ] Should we make this mobile-friendly?
 - [ ] Maybe alter the size of boxes / text depending on what is selected? (helps with focus)
 
