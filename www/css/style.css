@@ -333,6 +333,10 @@ dialog svg {
     flex-direction: row;
     text-wrap: nowrap;
 }
+.equationHolder > div {
+    display: flex;
+    flex-direction: column;
+}
 .equationHolder > div:first-child {
     flex-grow: 1;
     flex-shrink: 1;
@@ -364,25 +368,22 @@ dialog svg {
     border: var(--color-selected) thin solid;
 }
 
-/* .blocks {
-    display: grid;
-    column-gap: .3rem;
-} */
-.blockRect {
+.brickRect {
     stroke: black;
     rx: 0.2;
     fill: #FFF;
 }
-.blockText {
+.brickText {
     font: 0.5pt monospace;
     text-anchor: middle;
     dominant-baseline: central;
     fill: black;
+    user-select: none;
 }
-.block:hover .blockRect {
+.brick:hover .brickRect {
     stroke: var(--color-highlight)
 }
-.block.selected .blockRect {
+.brick.selected .brickRect {
     fill: var(--color-selected);
 }
 /* Equation */

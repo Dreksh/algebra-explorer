@@ -18,8 +18,8 @@
         },
         "indirect": {
             "elm/bytes": "1.0.8",
-            "elm/virtual-dom": "1.0.3",
-            "elm/time": "1.0.0"
+            "elm/time": "1.0.0",
+            "elm/virtual-dom": "1.0.3"
         }
     },
     "test-dependencies": {
