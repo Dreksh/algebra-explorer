@@ -22,8 +22,6 @@ import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
-import UI.Bricks as Bricks
-import Algo.Matcher as Matcher
 
 
 type alias Model =

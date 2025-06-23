@@ -12,50 +12,12 @@ import Algo.Math as Math
 import UI.BrickSvg as BrickSvg
 import UI.HtmlEvent as HtmlEvent
 
--- taken from Unity
+
+-- Easing logic taken from Unity
 -- https://github.com/Unity-Technologies/UnityCsReference/blob/4b463aa72c78ec7490b7f03176bd012399881768/Runtime/Export/Math/Vector2.cs#L289
-type alias Vector2 =
-    {   x: Float
-    ,   y: Float
-    }
-
 -- note that this doesn't have maxSpeed unlike the Unity original
-smoothDamp2: Vector2 -> Vector2 -> Vector2 -> Float -> Float -> (Vector2, Vector2)
-smoothDamp2 current target velocity smoothTime deltaTime =
-    let
-        omega = 2 / smoothTime
-
-        x = omega * deltaTime
-        exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
-
-        change_x = current.x - target.x
-        change_y = current.y - target.y
-
-        newTarget = Vector2 (current.x - change_x) (current.y - change_y)
-
-        temp_x = (velocity.x + omega * change_x) * deltaTime
-        temp_y = (velocity.y + omega * change_y) * deltaTime
-
-        output_x = newTarget.x + (change_x + temp_x) * exp
-        output_y = newTarget.y + (change_y + temp_y) * exp
-
-        origMinusCurrent_x = target.x - current.x
-        origMinusCurrent_y = target.y - current.y
-        outMinusOrig_x = output_x - target.x
-        outMinusOrig_y = output_y - target.y
-
-        stop = origMinusCurrent_x * outMinusOrig_x + origMinusCurrent_y * outMinusOrig_y > 0
-        newPosition = if stop
-            then target
-            else Vector2 output_x output_y
-        newVelocity = if stop
-            then Vector2 0 0
-            else Vector2 ((velocity.x - omega * temp_x) * exp) ((velocity.y - omega * temp_y) * exp)
-    in
-        (newPosition, newVelocity)
-
-smoothDamp: Float -> Float -> Float -> Float -> Float -> (Float, Float)
-smoothDamp current target velocity smoothTime deltaTime =
+smoothDamp_: Float -> Float -> Float -> Float -> Float -> (Float, Float)
+smoothDamp_ smoothTime deltaTime target velocity current =
     let
         omega = 2 / smoothTime
 
@@ -83,23 +45,44 @@ smoothDamp current target velocity smoothTime deltaTime =
     in
         (newPosition, newVelocity)
 
-type alias Rect =
-    {   text: String
-    ,   canHover: Bool
-    ,   currentPos0: Vector2
-    ,   targetPos0: Vector2
-    ,   velocity0: Vector2
-    ,   currentPos1: Vector2
-    ,   targetPos1: Vector2
-    ,   velocity1: Vector2
-    ,   currentOpacity: Float
-    ,   targetOpacity: Float
-    ,   velocipacity: Float
+
+smoothDamp: Float -> Float -> EaseState Float -> EaseState Float
+smoothDamp smoothTime deltaTime state =
+    let
+        (newCurrent, newVelocity) = state.current |> smoothDamp_ smoothTime deltaTime state.target state.velocity
+    in
+        { state | current = newCurrent, velocity = newVelocity }
+
+
+type Vector2 = Vector2 Float Float
+getXY: Vector2 -> (Float, Float)
+getXY xy = case xy of Vector2 x y -> (x, y)
+
+smoothDamp2: Float -> Float -> EaseState Vector2 -> EaseState Vector2
+smoothDamp2 smoothTime deltaTime state =
+    let
+        (currentX, currentY) = getXY state.current
+        (targetX, targetY) = getXY state.target
+        (velocityX, velocityY) = getXY state.velocity
+        (newCurrentX, newVelocityX) = currentX |> smoothDamp_ smoothTime deltaTime targetX velocityX
+        (newCurrentY, newVelocityY) = currentY |> smoothDamp_ smoothTime deltaTime targetY velocityY
+    in
+        { state | current = Vector2 newCurrentX newCurrentY, velocity = Vector2 newVelocityX newVelocityY }
+
+
+type alias EaseState t =
+    {    current: t
+    ,    target: t
+    ,    velocity: t
     }
 
-zeroRect: Rect
-zeroRect = let zero = Vector2 0 0 in
-    Rect "" False zero zero zero zero zero zero 0 0 0
+type alias Rect =
+    {   text: String
+    ,   visible: Bool  -- False means it existed before but needs to fade away
+    ,   bottomLeft: EaseState Vector2
+    ,   topRight: EaseState Vector2
+    ,   opacity: EaseState Float
+    }
 
 type alias Model s =
     {   rects: Dict.Dict Int Rect
@@ -119,17 +102,14 @@ advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
             let
-                (newPos0, newVelocity0) = smoothDamp2 rect.currentPos0 rect.targetPos0 rect.velocity0 200 millis
-                (newPos1, newVelocity1) = smoothDamp2 rect.currentPos1 rect.targetPos1 rect.velocity1 200 millis
-                (newOpacity, newVelocipacity) = smoothDamp rect.currentOpacity rect.targetOpacity rect.velocipacity 200 millis
+                newBottomLeft = rect.bottomLeft |> smoothDamp2 300 millis
+                newTopRight = rect.topRight |> smoothDamp2 300 millis
+                newOpacity = rect.opacity |> smoothDamp 150 millis
             in
                 {   rect
-                |   currentPos0 = newPos0
-                ,   velocity0 = newVelocity0
-                ,   currentPos1 = newPos1
-                ,   velocity1 = newVelocity1
-                ,   currentOpacity = newOpacity
-                ,   velocipacity = newVelocipacity
+                |   bottomLeft = newBottomLeft
+                ,   topRight = newTopRight
+                ,   opacity = newOpacity
                 }
             )
     in
@@ -138,26 +118,25 @@ advanceTime millis model =
 view: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Model s -> Html e
 view eq highlight onShiftClick model =
     let
-        (bricks, maxX, maxY) = model.rects |> Dict.foldl (\id rect (foldSvgs, foldX, foldY) ->
-            let
-                onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
-                selected = highlight |> Set.member id
-                brick = BrickSvg.brick
-                    rect.currentPos0.x
-                    rect.currentPos1.x
-                    rect.currentPos0.y
-                    rect.currentPos1.y
-                    rect.currentOpacity
-                    rect.canHover
-                    selected
-                    onClick
-                    rect.text
-            in
-                (brick :: foldSvgs, max foldX rect.currentPos1.x, max foldY rect.currentPos1.y)
-            ) ([], 0, 0)
+        -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
+        (visBricks, maxX, maxY) = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick True) ([], 0, 0)
+        (bricks, _, _) = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick False) (visBricks, maxX, maxY)
     in
         BrickSvg.bricks maxX maxY bricks
 
+foldRectToBrick: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Bool -> Int -> Rect -> ((List (Html e)), Float, Float) -> ((List (Html e)), Float, Float)
+foldRectToBrick eq highlight onShiftClick includeVisible id rect (foldBricks, foldX, foldY) =
+    if rect.visible /= includeVisible
+    then (foldBricks, foldX, foldY)
+    else
+        let
+            onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
+            selected = highlight |> Set.member id
+            (blX, blY) = getXY rect.bottomLeft.current
+            (trX, trY) = getXY rect.topRight.current
+            brick = BrickSvg.brick blX trX blY trY rect.opacity.current rect.visible selected onClick rect.text
+        in
+            (brick :: foldBricks, max foldX trX, max foldY trY)
 
 -- TODO: make falling bricks drop like gravity, and rising bricks pushed by new ones below
 updateTree: Math.Tree s -> Model s -> Model s
@@ -166,36 +145,46 @@ updateTree root model =
         emptyGrid = (Grid Dict.empty (Array.initialize 1 (\_ -> 0)))
         grid = stackRecursive_ 0 emptyGrid model.getID model.getPrevID root
 
-        newRects = grid.items |> Dict.foldl (\id item foldRects ->
+        visibleRects = grid.items |> Dict.foldl (\id item foldRects ->
             let
-                pos0 = Vector2 (grid.lines |> getLine item.colStart) (toFloat item.rowStart)
-                pos1 = Vector2 (grid.lines |> getLine item.colEnd) (toFloat item.rowEnd)
-                --  TODO: use prevID more correctly
-                --    also simply fade in instead of defaulting to zeroRect
-                thisOld = foldRects |> Dict.get id
-                prevOld = foldRects |> Dict.get item.prevID
-                old = prevOld |> Maybe.withDefault (thisOld |> Maybe.withDefault zeroRect)
+                blTarget = Vector2 (grid.lines |> getLine item.colStart) (toFloat item.rowStart)
+                trTarget = Vector2 (grid.lines |> getLine item.colEnd) (toFloat item.rowEnd)
+
+                -- TODO: use prevID more correctly
+                --   e.g. if neither id nor prevID exist then the new rect may jerkily appear outside the current frame
+                thisOld = model.rects |> Dict.get id
+                prevOld = model.rects |> Dict.get item.prevID
+                noOld = Rect item.text True (EaseState blTarget blTarget (Vector2 0 0)) (EaseState trTarget trTarget (Vector2 0 0)) (EaseState 0 1 0)
+                old = prevOld |> Maybe.withDefault (thisOld |> Maybe.withDefault noOld)
+
+                blOld = old.bottomLeft
+                trOld = old.topRight
+                opOld = old.opacity
                 new = (
                     {   old
                     |   text = item.text
-                    ,   canHover = True
-                    ,   targetPos0 = pos0
-                    ,   targetPos1 = pos1
-                    ,   targetOpacity = 1
+                    ,   visible = True
+                    ,   bottomLeft = { blOld | target = blTarget }
+                    ,   topRight = { trOld | target = trTarget }
+                    ,   opacity = { opOld | target = 1 }
                     })
             in
                 foldRects |> Dict.insert id new
-            ) model.rects
+            ) Dict.empty
 
         -- need to keep deleted nodes in order to animate them away
-        goneRects = newRects |> Dict.map (\id rect ->
-            if grid.items |> Dict.member id
-            then rect
-            else { rect | canHover = False, targetOpacity = 0 }
-            )
+        leavingRects = model.rects |> Dict.foldl (\id rect foldRects ->
+            if Dict.member id visibleRects || not rect.visible  -- don't include ones that were already not visible
+            then foldRects
+            else
+                let
+                    opOld = rect.opacity
+                    goneRect = { rect | visible = False, opacity = { opOld | target = 0 } }
+                in
+                    foldRects |> Dict.insert id goneRect
+            ) visibleRects
     in
-        { model | rects = goneRects }
-        -- TODO: fade away rects that no longer appear (probably use opacity for this)
+        { model | rects = leavingRects }
 
 
 type alias GridItem =
@@ -215,10 +204,9 @@ type alias Grid =
 getLine: Int -> Array.Array Float -> Float
 getLine col lines =
     -- I would assert col < length lines here if I could
-    lines |> Array.get col |> Maybe.withDefault 0
+    lines |> Array.get col |> Maybe.withDefault -1
 
--- in relation to block width
--- TODO: measure exactly how wide it is
+-- We are using 0.5pt font so the width should match 0.5 units
 textWidth_: Float
 textWidth_ = 0.5
 

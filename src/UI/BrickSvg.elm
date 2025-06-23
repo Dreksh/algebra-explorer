@@ -32,36 +32,38 @@ bricks xMax yMax children =
 brick: Float -> Float -> Float -> Float -> Float -> Bool -> Bool -> Attribute event -> String -> Html event
 brick xMin xMax yMin yMax opacity_ canHover selected onClick label =
     let
+        -- TODO: it would be nice for rects to overlap slightly
+        --   but need to bring the hovered rect to the front for the :hover stroke to look nice
         x_ = xMin + (strokeWidth_ / 2) + (horizontalPad_ / 2)
-        y_ = -(yMax - (strokeWidth_ / 2))
+        y_ = -(yMax - (strokeWidth_ / 2))  -- use yMax because the y-axis in SVG extends downwards
         width_ = (xMax - xMin) - strokeWidth_ - horizontalPad_
         height_ = (yMax - yMin) - strokeWidth_
         pointerEvents_ = if canHover then "auto" else "none"
     in
-    g
-    (  List.filterMap identity
-        [   onClick |> Just
-        ,   class "brick" |> Just
-        ,   class "selected" |> Helper.maybeGuard selected
+        g
+        (   List.filterMap identity
+            [   onClick |> Just
+            ,   class "brick" |> Just
+            ,   class "selected" |> Helper.maybeGuard selected
+            ]
+        )
+        [   rect
+            [   x (String.fromFloat x_)
+            ,   y (String.fromFloat y_)
+            ,   width (String.fromFloat width_)
+            ,   height (String.fromFloat height_)
+            ,   strokeWidth (String.fromFloat strokeWidth_)
+            ,   class "brickRect"
+            ,   opacity (String.fromFloat opacity_)
+            ,   pointerEvents pointerEvents_
+            ]
+            []
+        ,   text_
+            [   x (String.fromFloat (x_ + width_ / 2))
+            ,   y (String.fromFloat (y_ + height_ / 2))
+            ,   class "brickText"
+            ,   opacity (String.fromFloat opacity_)
+            ,   pointerEvents pointerEvents_
+            ]
+            [ text label ]
         ]
-    )
-    [   rect
-        [   x (String.fromFloat x_)
-        ,   y (String.fromFloat y_)
-        ,   width (String.fromFloat width_)
-        ,   height (String.fromFloat height_)
-        ,   strokeWidth (String.fromFloat strokeWidth_)
-        ,   class "brickRect"
-        ,   opacity (String.fromFloat opacity_)
-        ,   pointerEvents pointerEvents_
-        ]
-        []
-    ,   text_
-        [   x (String.fromFloat (x_ + width_ / 2))
-        ,   y (String.fromFloat (y_ + height_ / 2))
-        ,   class "brickText"
-        ,   opacity (String.fromFloat opacity_)
-        ,   pointerEvents pointerEvents_
-        ]
-        [ text label ]
-    ]
