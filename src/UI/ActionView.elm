@@ -1,17 +1,16 @@
 module UI.ActionView exposing (Model, Event(..), init, update, view, isOpen, hide, encode, decoder)
 
-import Dict
 import Html
-import Html.Attributes exposing (attribute, id, class)
+import Html.Attributes exposing (id, class)
 import Html.Keyed exposing (node)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
 -- Ours
-import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
 import Components.Rules as Rules
+import UI.Animation as Animation
 import UI.Display as Display
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
@@ -44,9 +43,9 @@ isOpen (Current _ open) = open
 type State =
     DisplayOnly
     | Disallowed
-    | Allowed (Rules.Event Display.State)
+    | Allowed (Rules.Event Animation.State)
 
-view: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Rules.Model -> Maybe Display.SelectedNode -> Model -> Html.Html msg
+view: (Rules.Event Animation.State -> msg) -> (Event -> msg) -> Rules.Model -> Maybe Display.SelectedNode -> Model -> Html.Html msg
 view ruleConvert eventConvert rModel selectedNode vModel =
     let
         loadedTopics = Rules.loadedTopics rModel
@@ -69,7 +68,7 @@ view ruleConvert eventConvert rModel selectedNode vModel =
     ,   Icon.right ( if current >= List.length loadedTopics then [] else [HtmlEvent.onClick (Next (current + 1) |> eventConvert), Icon.class "clickable"])
     ]
 
-displayTopic_: (Rules.Event Display.State -> msg) -> (Event -> msg) -> Int -> Bool -> String -> Int -> List (String, State) -> Html.Html msg
+displayTopic_: (Rules.Event Animation.State -> msg) -> (Event -> msg) -> Int -> Bool -> String -> Int -> List (String, State) -> Html.Html msg
 displayTopic_ ruleConvert eventConvert selected show title current actions = Html.li []
     [   Html.h2
         ((if current == selected then [class "selected"] else []) ++ [class "clickable", HtmlEvent.onClick (Toggle current |> eventConvert)])

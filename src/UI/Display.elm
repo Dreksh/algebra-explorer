@@ -1,14 +1,14 @@
 module UI.Display exposing (
-    Model, Event(..), State, SelectedNode, init, update, views, menu,
-    createState, updateState, undo, redo, updateQueryCmd,
+    Model, Event(..), SelectedNode, init, update, views, menu,
+    undo, redo, updateQueryCmd,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
-    encode, decoder, encodeState, stateDecoder
+    encode, decoder
     )
 
 import Dict
-import Html exposing (Html, a, button, div, p, span, text)
-import Html.Attributes exposing (class, style)
+import Html exposing (Html, a, div, p, span, text)
+import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
@@ -17,6 +17,7 @@ import Helper
 import Algo.History as History
 import Algo.Math as Math
 import Algo.Matcher as Matcher
+import UI.Animation as Animation
 import UI.Bricks as Bricks
 import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
@@ -31,13 +32,13 @@ type alias Model =
     ,   createModeForEquation: Maybe Int
     -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
-    ,   updateQuery: List (Matcher.Equation State) -> Cmd Event
+    ,   updateQuery: List (Matcher.Equation Animation.State) -> Cmd Event
     }
 
 type alias Entry =
-    {   history: History.Model (Matcher.Equation State)
+    {   history: History.Model (Matcher.Equation Animation.State)
     ,   view: (Bool, Draggable.Model)
-    ,   bricks: Bricks.Model (Matcher.State State)
+    ,   bricks: Bricks.Model
     ,   showHistory: Bool
     ,   show: Bool
     }
@@ -49,47 +50,31 @@ type Event =
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
 
-type alias State =
-    {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
-    }
-
-createState: Int -> State
-createState num = { prevID = num }
-
-updateState: Matcher.State State -> Int -> State
-updateState s _ = {prevID = Matcher.getID s}
-
-getID: Math.Tree (Matcher.State State) -> Int
-getID node = node |> Math.getState |> Matcher.getID
-
-getPrevID: Math.Tree (Matcher.State State) -> Int
-getPrevID node = node |> Math.getState |> Matcher.getState |> .prevID
-
 type alias SelectedNode =
     {   eq: Int
     ,   root: Int
-    ,   tree: Math.Tree (Matcher.State State)
+    ,   tree: Math.Tree (Matcher.State Animation.State)
     ,   selected: Set.Set Int
     ,   nodes: Set.Set Int
     }
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> List (Matcher.Equation State) -> Model
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> List (Matcher.Equation Animation.State) -> Model
 init setCapture updateQuery l = let size = List.length l in
     l
-    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq.root getID getPrevID, showHistory = False, show = True}))
+    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq.root, showHistory = False, show = True}))
     |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture, updateQuery = updateQuery}
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
     Draggable.init ("Equation-" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
 
-add: Matcher.Equation State -> Model -> Model
+add: Matcher.Equation Animation.State -> Model -> Model
 add eq model =
     {   model
     |   nextEquationNum = model.nextEquationNum + 1
     ,   equations = updateBricks
             model.nextEquationNum
-            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq.root getID getPrevID, showHistory = False, show = True}
+            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq.root, showHistory = False, show = True}
             model.equations
     }
     |> updatePositions_
@@ -212,7 +197,7 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
                 ,   selected = Just (eqNum, Set.singleton newSelect)
                 })
 
-transform: List {a | root: Matcher.Replacement} -> Matcher.MatchResult State -> Model -> Result String Model
+transform: List {a | root: Matcher.Replacement} -> Matcher.MatchResult Animation.State -> Model -> Result String Model
 transform replacement result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
@@ -279,7 +264,7 @@ update size event model = case event of
                     |> Maybe.withDefault Cmd.none
                 )
 
-newSelectedNodes_: Set.Set Int -> Matcher.Equation State -> Set.Set Int
+newSelectedNodes_: Set.Set Int -> Matcher.Equation Animation.State -> Set.Set Int
 newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
     if Set.isEmpty intersection then Set.singleton (Math.getState eq.root |> Matcher.getID) else intersection
 
@@ -342,7 +327,7 @@ historyEntry_ current event t = Html.a
     (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
     [Html.text t]
 
-collapsedView_: Int -> Set.Set Int -> Math.Symbol (Matcher.State State) -> Html Event
+collapsedView_: Int -> Set.Set Int -> Math.Symbol (Matcher.State Animation.State) -> Html Event
 collapsedView_ eq highlight node = case node of
     Math.Text val -> text val
     Math.Node s -> let id = Matcher.getID s.state in
@@ -374,7 +359,7 @@ encode model = Encode.object
 
 encodeEntry_: Entry -> Encode.Value
 encodeEntry_ entry = Encode.object
-    [   ("history", History.encode (Matcher.encodeEquation <| \s -> Encode.object [("prevID", Encode.int s.prevID)]) entry.history)
+    [   ("history", History.encode (Matcher.encodeEquation <| Animation.encodeState) entry.history)
     ,   ("show", Encode.bool entry.show)
     ,   ("showHistory", Encode.bool entry.showHistory)
     ,   ("view", entry.view
@@ -382,7 +367,7 @@ encodeEntry_ entry = Encode.object
         )
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation State) -> Cmd Event) -> Decode.Decoder Model
+decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> Decode.Decoder Model
 decoder setCapture updateQuery = Decode.map4 (\eq next sel create -> Model eq next sel create setCapture updateQuery)
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (Decode.field "nextEquationNum" Decode.int)
@@ -392,7 +377,7 @@ decoder setCapture updateQuery = Decode.map4 (\eq next sel create -> Model eq ne
     (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
 type alias TmpEntry_ =
-    {   history: History.Model (Matcher.Equation State)
+    {   history: History.Model (Matcher.Equation Animation.State)
     ,   view: Maybe Draggable.Model
     ,   showHistory: Bool
     ,   show: Bool
@@ -408,7 +393,7 @@ addDefaultPositions_ orig =
             ,   view = case tEntry.view of
                     Just view -> (True, view)
                     Nothing -> (False, newView)
-            ,   bricks = Bricks.init (History.current tEntry.history).root getID getPrevID
+            ,   bricks = History.current tEntry.history |> .root |> Bricks.init
             ,   showHistory = tEntry.showHistory
             ,   show = tEntry.show
             }
@@ -420,15 +405,7 @@ addDefaultPositions_ orig =
 
 entryDecoder_: Decode.Decoder TmpEntry_
 entryDecoder_ = Decode.map4 TmpEntry_
-    (Decode.field "history" <| History.decoder <| Matcher.equationDecoder createState updateState (Decode.map (\id -> {prevID = id}) <| Decode.field "prevID" Decode.int) )
+    (Decode.field "history" <| History.decoder <| Matcher.equationDecoder Animation.createState Animation.updateState Animation.stateDecoder )
     (Decode.maybe <| Decode.field "view" <| Draggable.decoder)
     (Decode.field "show" <| Decode.bool)
     (Decode.field "showHistory" Decode.bool)
-
-stateDecoder: Decode.Decoder State
-stateDecoder = Decode.map (\n -> {prevID = n})
-    (Decode.field "prevID" Decode.int)
-
-encodeState: State -> Encode.Value
-encodeState s = Encode.object
-    [("prevID", Encode.int s.prevID)]

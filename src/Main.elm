@@ -27,6 +27,7 @@ import Components.Rules as Rules
 import Components.Tutorial as Tutorial
 import Helper
 import UI.ActionView as ActionView
+import UI.Animation as Animation
 import UI.Dialog as Dialog
 import UI.Display as Display
 import UI.Draggable as Draggable
@@ -35,7 +36,6 @@ import UI.Icon as Icon
 import UI.Input as Input
 import UI.Menu as Menu
 import UI.Notification as Notification
-import UI.ActionView as ActionView
 
 -- Overall Structure of the app: it's a document
 
@@ -64,7 +64,7 @@ type alias Model =
     {   swappable: Swappable
     ,   query: Query.Model
     ,   size: Draggable.Size
-    ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Display.State))
+    ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Animation.State))
     }
 
 type alias Swappable =
@@ -84,7 +84,7 @@ type Event =
     EventUrlRequest Browser.UrlRequest
     | EventUrlChange Url.Url
     | DisplayEvent Display.Event
-    | RuleEvent (Rules.Event Display.State)
+    | RuleEvent (Rules.Event Animation.State)
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
@@ -157,8 +157,8 @@ init flags url key =
         ]
     )
 
-parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Display.State), List String) -> (List (Matcher.Equation Display.State), List String)
-parseEquations_ model elem (result, errs) = case Matcher.parseEquation (Rules.functionProperties model) Display.createState Display.updateState elem of
+parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Animation.State), List String) -> (List (Matcher.Equation Animation.State), List String)
+parseEquations_ model elem (result, errs) = case Matcher.parseEquation (Rules.functionProperties model) Animation.createState Animation.updateState elem of
     Result.Ok root -> (root :: result, errs)
     Result.Err err -> (result, err :: errs )
 
@@ -191,7 +191,7 @@ update event core = let model = core.swappable in
             (updateCore {model | actionView = ActionView.update e model.actionView, input = newIn}, Cmd.map InputEvent inCmd)
         InputEvent e -> let (newIn, submitted, inCmd) = Input.update e model.input in
             if submitted == "" then (updateCore {model | input = newIn}, Cmd.batch [Cmd.map InputEvent inCmd, focusTextBar_ "textInput"])
-            else case Matcher.parseEquation (Rules.functionProperties model.rules) Display.createState Display.updateState submitted of
+            else case Matcher.parseEquation (Rules.functionProperties model.rules) Animation.createState Animation.updateState submitted of
                 Result.Ok root -> Display.add root model.display
                     |> (\dModel ->
                         (   updateCore {model | display = dModel, input = newIn}
@@ -324,7 +324,7 @@ update event core = let model = core.swappable in
 
 
 -- TODO
-applyChange_: {from: Matcher.MatchResult Display.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
+applyChange_: {from: Matcher.MatchResult Animation.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
     case Display.transform params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
@@ -418,7 +418,7 @@ addTopicDialog_ =
     ,   focus = Just "url"
     }
 
-parameterDialog_: Rules.Parameters Display.State -> Dialog.Model Event
+parameterDialog_: Rules.Parameters Animation.State -> Dialog.Model Event
 parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
     ,   sections =
@@ -499,7 +499,7 @@ triplet x y z = (x,y,z)
 quarter: a -> b -> c -> d -> ((a,b),(c,d))
 quarter w x y z = ((w,x),(y,z))
 
-swappableDecoder: (List (Matcher.Equation Display.State) -> Cmd Display.Event) -> Decode.Decoder Swappable
+swappableDecoder: (List (Matcher.Equation Animation.State) -> Cmd Display.Event) -> Decode.Decoder Swappable
 swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
         (Decode.field "display" (Display.decoder setCapture updateQuery))

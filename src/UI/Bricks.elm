@@ -7,104 +7,37 @@ import Html exposing (Html)
 import Dict
 import Set
 import Array
-
+-- Ours
 import Algo.Math as Math
+import Algo.Matcher as Matcher
+import UI.Animation as Animation
 import UI.BrickSvg as BrickSvg
 import UI.HtmlEvent as HtmlEvent
 
 
--- Easing logic taken from Unity
--- https://github.com/Unity-Technologies/UnityCsReference/blob/4b463aa72c78ec7490b7f03176bd012399881768/Runtime/Export/Math/Vector2.cs#L289
--- note that this doesn't have maxSpeed unlike the Unity original
-smoothDamp_: Float -> Float -> Float -> Float -> Float -> (Float, Float)
-smoothDamp_ smoothTime deltaTime target velocity current =
-    let
-        omega = 2 / smoothTime
-
-        x = omega * deltaTime
-        exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
-
-        change = current - target
-
-        newTarget = current - change
-
-        temp = (velocity + omega * change) * deltaTime
-
-        output = newTarget + (change + temp) * exp
-
-        origMinusCurrent = target - current
-        outMinusOrig = output - target
-
-        stop = origMinusCurrent * outMinusOrig > 0
-        newPosition = if stop
-            then target
-            else output
-        newVelocity = if stop
-            then 0
-            else ((velocity - omega * temp) * exp)
-    in
-        (newPosition, newVelocity)
-
-
-smoothDamp: Float -> Float -> EaseState Float -> EaseState Float
-smoothDamp smoothTime deltaTime state =
-    let
-        (newCurrent, newVelocity) = state.current |> smoothDamp_ smoothTime deltaTime state.target state.velocity
-    in
-        { state | current = newCurrent, velocity = newVelocity }
-
-
-type Vector2 = Vector2 Float Float
-getXY: Vector2 -> (Float, Float)
-getXY xy = case xy of Vector2 x y -> (x, y)
-
-smoothDamp2: Float -> Float -> EaseState Vector2 -> EaseState Vector2
-smoothDamp2 smoothTime deltaTime state =
-    let
-        (currentX, currentY) = getXY state.current
-        (targetX, targetY) = getXY state.target
-        (velocityX, velocityY) = getXY state.velocity
-        (newCurrentX, newVelocityX) = currentX |> smoothDamp_ smoothTime deltaTime targetX velocityX
-        (newCurrentY, newVelocityY) = currentY |> smoothDamp_ smoothTime deltaTime targetY velocityY
-    in
-        { state | current = Vector2 newCurrentX newCurrentY, velocity = Vector2 newVelocityX newVelocityY }
-
-
-type alias EaseState t =
-    {    current: t
-    ,    target: t
-    ,    velocity: t
-    }
-
 type alias Rect =
     {   text: String
     ,   visible: Bool  -- False means it existed before but needs to fade away
-    ,   bottomLeft: EaseState Vector2
-    ,   topRight: EaseState Vector2
-    ,   opacity: EaseState Float
+    ,   bottomLeft: Animation.EaseState Animation.Vector2
+    ,   topRight: Animation.EaseState Animation.Vector2
+    ,   opacity: Animation.EaseState Float
     }
 
-type alias Model s =
+type alias Model =
     {   rects: Dict.Dict Int Rect
-    ,   getID: (Math.Tree s) -> Int
-    ,   getPrevID: (Math.Tree s) -> Int
     }
 
-init: Math.Tree s -> (Math.Tree s -> Int) -> (Math.Tree s -> Int) -> Model s
-init root getID getPrevID =
-    let
-        emptyModel = Model Dict.empty getID getPrevID
-    in
-        updateTree root emptyModel
+init: Math.Tree (Matcher.State Animation.State) -> Model
+init root = updateTree root (Model Dict.empty)
 
-advanceTime: Float -> Model s -> Model s
+advanceTime: Float -> Model -> Model
 advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
             let
-                newBottomLeft = rect.bottomLeft |> smoothDamp2 300 millis
-                newTopRight = rect.topRight |> smoothDamp2 300 millis
-                newOpacity = rect.opacity |> smoothDamp 150 millis
+                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 300 millis
+                newTopRight = rect.topRight |> Animation.smoothDampVector2 300 millis
+                newOpacity = rect.opacity |> Animation.smoothDampFloat 150 millis
             in
                 {   rect
                 |   bottomLeft = newBottomLeft
@@ -115,7 +48,7 @@ advanceTime millis model =
     in
         { model | rects = newRects }
 
-view: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Model s -> Html e
+view: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Model -> Html e
 view eq highlight onShiftClick model =
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
@@ -132,29 +65,29 @@ foldRectToBrick eq highlight onShiftClick includeVisible id rect (foldBricks, fo
         let
             onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
             selected = highlight |> Set.member id
-            (blX, blY) = getXY rect.bottomLeft.current
-            (trX, trY) = getXY rect.topRight.current
+            (blX, blY) = rect.bottomLeft.current
+            (trX, trY) = rect.topRight.current
             brick = BrickSvg.brick blX trX blY trY rect.opacity.current rect.visible selected onClick rect.text
         in
             (brick :: foldBricks, max foldX trX, max foldY trY)
 
 -- TODO: make falling bricks drop like gravity, and rising bricks pushed by new ones below
-updateTree: Math.Tree s -> Model s -> Model s
+updateTree: Math.Tree (Matcher.State Animation.State) -> Model -> Model
 updateTree root model =
     let
         emptyGrid = (Grid Dict.empty (Array.initialize 1 (\_ -> 0)))
-        grid = stackRecursive_ 0 emptyGrid model.getID model.getPrevID root
+        grid = stackRecursive_ 0 root emptyGrid
 
         visibleRects = grid.items |> Dict.foldl (\id item foldRects ->
             let
-                blTarget = Vector2 (grid.lines |> getLine item.colStart) (toFloat item.rowStart)
-                trTarget = Vector2 (grid.lines |> getLine item.colEnd) (toFloat item.rowEnd)
+                blTarget = (grid.lines |> getLine item.colStart, toFloat item.rowStart)
+                trTarget = (grid.lines |> getLine item.colEnd, toFloat item.rowEnd)
 
                 -- TODO: use prevID more correctly
                 --   e.g. if neither id nor prevID exist then the new rect may jerkily appear outside the current frame
                 thisOld = model.rects |> Dict.get id
                 prevOld = model.rects |> Dict.get item.prevID
-                noOld = Rect item.text True (EaseState blTarget blTarget (Vector2 0 0)) (EaseState trTarget trTarget (Vector2 0 0)) (EaseState 0 1 0)
+                noOld = Rect item.text True (Animation.EaseState blTarget blTarget (0, 0)) (Animation.EaseState trTarget trTarget (0, 0)) (Animation.EaseState 0 1 0)
                 old = prevOld |> Maybe.withDefault (thisOld |> Maybe.withDefault noOld)
 
                 blOld = old.bottomLeft
@@ -210,11 +143,11 @@ getLine col lines =
 textWidth_: Float
 textWidth_ = 0.5
 
-stackRecursive_: Int -> Grid -> (Math.Tree s -> Int) -> (Math.Tree s -> Int) -> Math.Tree s -> Grid
-stackRecursive_ depth grid getID getPrevID node =
+stackRecursive_: Int  -> Math.Tree (Matcher.State Animation.State) -> Grid -> Grid
+stackRecursive_ depth node grid =
     let
-        id = getID node
-        prevID = getPrevID node
+        id = Math.getState node |> Matcher.getID
+        prevID = Math.getState node |> Matcher.getState |> .prevID
         text = Math.getName node
         colStart = (Array.length grid.lines) - 1
         lineStart = grid.lines |> getLine colStart
@@ -230,9 +163,7 @@ stackRecursive_ depth grid getID getPrevID node =
         else
             let
                 childrenGrid = children |>
-                    List.foldl (\child foldGrid ->
-                        child |> stackRecursive_ (depth+1) foldGrid getID getPrevID
-                    ) grid
+                    List.foldl (stackRecursive_ (depth+1)) grid
                 colEnd = (Array.length childrenGrid.lines) - 1
                 lineEndChildren = childrenGrid.lines |> getLine colEnd
 
