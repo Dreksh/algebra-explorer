@@ -22,6 +22,7 @@ import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
 import Components.Evaluate as Evaluate
+import Components.Latex as Latex
 import Components.Query as Query
 import Components.Rules as Rules
 import Components.Tutorial as Tutorial
@@ -157,10 +158,14 @@ init flags url key =
         ]
     )
 
-parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Animation.State), List String) -> (List (Matcher.Equation Animation.State), List String)
-parseEquations_ model elem (result, errs) = case Matcher.parseEquation (Rules.functionProperties model) Animation.createState Animation.updateState elem of
+parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String) -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String)
+parseEquations_ model elem (result, errs) = case parseEquation_ model elem of
     Result.Ok root -> (root :: result, errs)
     Result.Err err -> (result, err :: errs )
+
+parseEquation_: Rules.Model -> String -> Result String (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State))
+parseEquation_ model str = Matcher.parseEquation (Rules.functionProperties model) Animation.createState Animation.updateState str
+    |> Result.andThen (\root -> Rules.toLatex model root |> Result.map (\l -> (root, l)) )
 
 subscriptions: Model -> Sub Event
 subscriptions _ = Sub.batch
@@ -191,7 +196,7 @@ update event core = let model = core.swappable in
             (updateCore {model | actionView = ActionView.update e model.actionView, input = newIn}, Cmd.map InputEvent inCmd)
         InputEvent e -> let (newIn, submitted, inCmd) = Input.update e model.input in
             if submitted == "" then (updateCore {model | input = newIn}, Cmd.batch [Cmd.map InputEvent inCmd, focusTextBar_ "textInput"])
-            else case Matcher.parseEquation (Rules.functionProperties model.rules) Animation.createState Animation.updateState submitted of
+            else case parseEquation_ model.rules submitted of
                 Result.Ok root -> Display.add root model.display
                     |> (\dModel ->
                         (   updateCore {model | display = dModel, input = newIn}
@@ -261,10 +266,10 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            Rules.Group eqNum root children -> case Display.groupChildren eqNum root children model.display of
+            Rules.Group eqNum root children -> case Display.groupChildren (Rules.toLatex model.rules) eqNum root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
-            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren eqNum root selected model.display of
+            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren (Rules.toLatex model.rules) eqNum root selected model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
             Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
@@ -300,7 +305,7 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.functionProperties model.rules) origNum selected eqNum model.display of
+        ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.toLatex model.rules) (Rules.functionProperties model.rules) origNum selected eqNum model.display of
             Err errStr -> submitNotification_ core errStr
             Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ dModel)
         ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty str of
@@ -315,10 +320,10 @@ update event core = let model = core.swappable in
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
                 Just (NumSubType_ eqNum root target replacement) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber eqNum root target replacement model.display of
+                    else case Display.replaceNumber (Rules.toLatex model.rules) eqNum root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
-                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber eqNum id reply.value model.display of
+                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber (Rules.toLatex model.rules) eqNum id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
                     Ok dModel -> ({core | swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
 
@@ -326,7 +331,7 @@ update event core = let model = core.swappable in
 -- TODO
 applyChange_: {from: Matcher.MatchResult Animation.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
-    case Display.transform params.replacements params.from swappable.display of
+    case Display.transform (Rules.toLatex swappable.rules) params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ newDisplay)
 
@@ -452,7 +457,7 @@ substitutionDialog_ eqNum selected model =
                 Dialog.Radio
                 {   name = "eqNum"
                 ,   options = Dict.filter (\k _ -> k /= eqNum) model.display.equations
-                        |> Dict.map (\_ -> .history >> History.current >> .root >> Math.toString)
+                        |> Dict.map (\_ -> .history >> History.current >> Tuple.first >> .root >> Rules.process (\_ -> String.join "") identity)
                 }
             ]]
         }]

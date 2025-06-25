@@ -1,8 +1,7 @@
 module Algo.Math exposing (
     Tree(..), equal, getChildren, getState, getName, map,
-    Symbol(..),symbolicate, toString,
     FunctionProperty, FunctionProperties, functionPropertyDecoder, addConstant, encodeFunctionProperty,
-    notation, parse,validVariable,
+    parse, validVariable,
     encode, decoder
     )
 
@@ -95,78 +94,6 @@ equal check left right = case (left, right) of
         && (List.map2 (equal check) l.children r.children |> List.foldl (&&) True)
     _ -> False
 
-type Symbol s =
-    Text String
-    | Node {state: s, children: List (Symbol s)}
-
-symbolicate: Tree state -> Symbol state
-symbolicate root = symbolicateRecursive_ Nothing root
-
-toString: Tree state -> String
-toString root = symbolicate root |> eqToString_
-
-eqToString_: Symbol msg -> String
-eqToString_ root = case root of
-    Text str -> str
-    Node s -> List.map eqToString_ s.children |> String.join ""
-
-functionPrecedence_: Tree state -> Int -- Higher Int has higher precedence
-functionPrecedence_ node = case getName node of
-    -- modifier
-    "/" -> 3
-    "-" -> 3
-    -- multiplicative
-    "*" -> 2
-    -- additive
-    "+" -> 1
-    -- Others (variables, function calls)
-    _ -> -1
-
-symbolicateRecursive_: Maybe (Tree state) -> Tree state -> Symbol state
-symbolicateRecursive_ parent root = (
-    case root of
-        RealNode s -> [String.fromFloat s.value |> Text]
-        VariableNode s -> if String.length s.name == 1 then [Text s.name] else [Text ("\\" ++ s.name)]
-        UnaryNode s -> if s.name == "-"
-            then [Text s.name, symbolicateRecursive_ (Just root) s.child]
-            else [Text s.name, Text "(", symbolicateRecursive_ (Just root) s.child, Text ")"]
-        BinaryNode s -> s.children
-            |> List.foldl (\child result -> if List.isEmpty result
-                then [symbolicateRecursive_ (Just root) child]
-                else case child of
-                    UnaryNode c -> case (s.name, c.name) of
-                        ("+", "-") -> result ++ [symbolicateRecursive_ (Just root) child]
-                        ("*", "/") -> result ++ [symbolicateRecursive_ (Just root) child]
-                        _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) child]
-                    _ -> result ++ [Text s.name, symbolicateRecursive_ (Just root) child]
-                )
-                []
-        GenericNode s -> if s.name == "/"
-            then case s.children of
-                [a, b] -> [symbolicateRecursive_ (Just root) a, Text "/", symbolicateRecursive_ (Just root) b]
-                _ -> [Text "FAILED"]
-            else s.children
-                |> List.map (symbolicateRecursive_ (Just root))
-                |> List.intersperse (Text ",")
-                |> (\arguments -> Text ("\\" ++ s.name ++ "(")::arguments ++ [Text ")"] )
-        DeclarativeNode s -> s.children
-            |> List.map (symbolicateRecursive_ (Just root))
-            |> List.intersperse (Text s.name)
-    )
-    |> (\tokens -> case (parent, root) of
-        -- Ignore when top-level
-        (Nothing, _) -> Node {state = getState root, children = tokens}
-        -- Ignore if variable, number or the traditional way of expressing functions
-        (_, RealNode s) -> Node {state = s.state, children = tokens}
-        (_, VariableNode s) -> Node {state = s.state, children = tokens}
-        (_, GenericNode s) -> Node {state = s.state, children = tokens}
-        (_, DeclarativeNode s) -> Node {state = s.state, children = tokens}
-        (Just p, _) ->
-            if (functionPrecedence_ p) >= (functionPrecedence_ root)
-            then Node {state = getState root, children= Text "("::tokens ++ [Text ")"]}
-            else Node {state = getState root, children = tokens}
-    )
-
 type alias FunctionProperty = Tree ()
 type alias FunctionProperties = Dict.Dict String FunctionProperty
 
@@ -208,14 +135,6 @@ encodeFunctionProperty fp = case fp of
 
 addConstant: String -> FunctionProperties -> FunctionProperties
 addConstant key = Dict.insert key (VariableNode {state = (), name = key, constant = True})
-
-notation: String
-notation = """
-a - a variable called "a"
-ab - a variable "a" multiplied by a variable "b"
-\\ab - a variable with a long name called "ab"
-\\a(x,y;z) - a function called "a" that takes in x and y, and uses z
-"""
 
 -- Parser implementation
 

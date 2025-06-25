@@ -2,7 +2,8 @@ module UI.Animation exposing (DeletableElement,
     delayEvent, class,
     newDeletable, delete,
     State, createState, updateState,
-    EaseState, Vector2, smoothDampFloat, smoothDampVector2,
+    Vector2, minVector2, maxVector2, addVector2, scaleVector2,
+    EaseState, smoothDampFloat, smoothDampVector2,
     encode, decoder, stateDecoder, encodeState
     )
 
@@ -34,6 +35,18 @@ type alias EaseState t =
     ,    target: t
     ,    velocity: t
     }
+
+minVector2: Vector2 -> Vector2 -> Vector2
+minVector2 (x1,y1) (x2,y2) = (min x1 x2, min y1 y2)
+
+maxVector2: Vector2 -> Vector2 -> Vector2
+maxVector2 (x1,y1) (x2,y2) = (max x1 x2, max y1 y2)
+
+addVector2: Vector2 -> Vector2 -> Vector2
+addVector2 (x1, y1) (x2, y2) = (x1+x2, y1+y2)
+
+scaleVector2: Float -> Vector2 -> Vector2
+scaleVector2 scale (x,y) = (x * scale, y * scale)
 
 -- Easing logic taken from Unity
 -- https://github.com/Unity-Technologies/UnityCsReference/blob/4b463aa72c78ec7490b7f03176bd012399881768/Runtime/Export/Math/Vector2.cs#L289

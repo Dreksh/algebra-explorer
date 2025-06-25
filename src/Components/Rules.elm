@@ -1,5 +1,6 @@
 module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Source, init,
-    addTopic, deleteTopic, addSources, topicDecoder, loadedTopics, functionProperties,
+    functionProperties, toLatex, process,
+    addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
     evaluateStr, menuTopics, encode, decoder, sourceDecoder
     )
 
@@ -13,6 +14,7 @@ import Set
 import Helper
 import Algo.Matcher as Matcher
 import Algo.Math as Math
+import Components.Latex as Latex
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
@@ -25,6 +27,7 @@ import UI.Menu as Menu
 type alias FunctionProperties_ =
     {   properties: Math.FunctionProperty
     ,   javascript: Javascript_
+    ,   latex: Latex.Model ()
     }
 
 type Javascript_ =
@@ -89,10 +92,10 @@ type Event treeState =
 init: Model
 init =
     {   functions = Dict.fromList
-            [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+"},1))
-            ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*"},1))
-            ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-"},1))
-            ,   ("/",({properties= Math.GenericNode {state = (), name = "", arguments = Just 2, children = []}, javascript = InfixOp "/"},1))
+            [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+", latex = [Latex.Text () "+"]},1))
+            ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]},1))
+            ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-", latex = [Latex.Text () "-", Latex.Argument () 1]},1))
+            ,   ("/",({properties= Math.GenericNode {state = (), name = "", arguments = Just 2, children = []}, javascript = InfixOp "/", latex = [Latex.Fraction () [Latex.Argument () 1] [Latex.Argument () 2]]},1))
             ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty
@@ -101,6 +104,98 @@ init =
 functionProperties: Model -> Math.FunctionProperties
 functionProperties model = Dict.map (\_ (f, _) -> f.properties) model.functions
     |> \dict -> Dict.foldl (\k _ -> Math.addConstant k) dict model.constants
+
+{- Functions -}
+
+priority_: Math.Tree s -> Int
+priority_ root = case Math.getName root of
+    -- Following https://en.wikipedia.org/wiki/Order_of_operations#Programming_languages
+    "-" -> 2 -- Following the unary operator
+    "*" -> 3
+    "/" -> 3
+    "+" -> 4
+    "=" -> 7 -- Equivalent to == in programming languages
+    _ -> 1 -- Assume other functions will be called as "func()"
+
+process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
+process combine convert tree =
+    let
+        infixStr root =
+            List.foldl (\elem children ->
+                (   if priority_ elem > priority_ tree || Math.getName elem == Math.getName root
+                    then [convert "(", process combine convert elem, convert ")"]
+                    else [process combine convert elem]
+                )
+                |> \inner -> if List.isEmpty children then inner else children ++ (convert (Math.getName root) :: inner)
+            ) [] (Math.getChildren root)
+    in
+        (
+            case tree of
+            Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
+            Math.VariableNode n -> [convert n.name]
+            _ -> case Math.getName tree of
+                "+" -> infixStr tree
+                "/" -> infixStr tree
+                "=" -> infixStr tree
+                "*" -> infixStr tree -- Maybe do something smart to remove unnecessary multiplication symbols?
+                "-" -> (convert "-" :: (Math.getChildren tree |> List.map (process combine convert)))
+                _ ->
+                    (convert ("\\" ++ Math.getName tree ++ "("))
+                    ::
+                    ((Math.getChildren tree |> List.map (process combine convert) |> List.intersperse (convert ",")) ++ [convert ")"])
+        )
+        |> \children -> combine (Math.getState tree) children
+
+toLatex: Model -> Matcher.Equation s -> Result String (Latex.Model (Matcher.State s))
+toLatex model eq = toLatex_ model eq.root
+
+toLatex_: Model -> Math.Tree state -> Result String (Latex.Model state)
+toLatex_ model tree =
+    let
+        state = Math.getState tree
+        genericFunction root = Helper.resultList (\n list -> toLatex_ model n |> Result.map (\new -> new :: list)) [] (Math.getChildren root)
+                |> Result.map (\list -> [Latex.Text state (Math.getName root), Latex.Bracket state (List.intersperse [Latex.Text state ","] list |> List.reverse |> List.concat) ])
+    in
+    case tree of
+        Math.RealNode n -> Ok [ (100.0 * n.value |> round |> toFloat) / 100 |> String.fromFloat |> Latex.Text state ]
+        Math.VariableNode n -> Ok [Latex.Text state n.name]
+        Math.BinaryNode _ -> let p = priority_ tree in
+            case Dict.get (Math.getName tree) model.functions of
+                Nothing -> genericFunction tree
+                Just (l, _) ->
+                    Helper.resultList (\elem list -> toLatex_ model elem
+                        |> Result.map (\inner -> if priority_ elem > p || Math.getName elem == Math.getName tree
+                            then list ++ Latex.map (\_ -> state) l.latex ++ [Latex.Bracket state inner]
+                            else list ++ (Latex.map (\_ -> state) l.latex) ++ inner
+                        )
+                    )
+                    [] (Math.getChildren tree)
+        _ -> case Dict.get (Math.getName tree) model.functions of
+            Nothing -> genericFunction tree
+            Just (l, _) -> substituteArgs_ model state (Math.getChildren tree) l.latex
+
+substituteArgs_: Model -> state -> List (Math.Tree state) -> Latex.Model () -> Result String (Latex.Model state)
+substituteArgs_ model state args = Helper.resultList (\elem list -> case elem of
+    Latex.Fraction _ top bottom -> substituteArgs_ model state args top
+        |> Result.andThen (\newTop -> substituteArgs_ model state args bottom
+            |> Result.map (\newBot -> Latex.Fraction state newTop newBot :: list)
+        )
+    Latex.Superscript _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Superscript state new :: list)
+    Latex.Subscript _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Subscript state new :: list)
+    Latex.Bracket _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Bracket state new :: list)
+    Latex.Sqrt _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Sqrt state new :: list)
+    Latex.Argument _ n -> case getN_ (n-1) args of
+        Nothing -> Err ("Cannot find the " ++ String.fromInt n ++ " argument")
+        Just t -> toLatex_ model t |> Result.map (\new -> list ++ new)
+    Latex.Text _ str -> Ok (Latex.Text state str :: list)
+    Latex.SymbolPart _  str -> Ok (Latex.SymbolPart state str :: list)
+    )
+    []
+
+getN_: Int -> List a -> Maybe a
+getN_ num list = if num < 0 then Nothing
+    else if num == 0 then List.head list
+    else getN_ (num-1) (List.drop 1 list)
 
 {-
 ## Topics
@@ -294,9 +389,10 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     )
 
 functionDecoder_: Dec.Decoder FunctionProperties_
-functionDecoder_ = Dec.map2 FunctionProperties_
+functionDecoder_ = Dec.map3 FunctionProperties_
     Math.functionPropertyDecoder
     (Dec.field "javascript" javascriptDecoder_)
+    (Dec.field "latex" <| Dec.andThen (Helper.resultToDecoder << Latex.parse) <| Dec.string)
 
 javascriptDecoder_: Dec.Decoder Javascript_
 javascriptDecoder_ = Dec.map2 Tuple.pair

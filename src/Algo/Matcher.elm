@@ -1,5 +1,5 @@
 module Algo.Matcher exposing (
-    State, getID, getState, getName,
+    State, getID, getState, getName, encodeState, stateDecoder,
     Equation, parseEquation, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
@@ -754,7 +754,7 @@ replaceOnNode_ matches id (selected, eq) = processSubtree_ (searchPath_ eq.track
 
 encodeEquation: (state -> Encode.Value) -> Equation state -> Encode.Value
 encodeEquation convert eq = Encode.object
-    [   ("root", Math.encode (encodeState_ convert) eq.root)
+    [   ("root", Math.encode (encodeState convert) eq.root)
     ,   ("tracker", Encode.object
         [   ("nextID", Encode.int eq.tracker.nextID)
         ,   ("parent", Encode.dict String.fromInt Encode.int eq.tracker.parent)
@@ -762,16 +762,16 @@ encodeEquation convert eq = Encode.object
         )
     ]
 
-encodeState_: (state -> Encode.Value) -> State state -> Encode.Value
-encodeState_ convert s = case s of
+encodeState: (state -> Encode.Value) -> State state -> Encode.Value
+encodeState convert s = case s of
     State_ id innerState -> Encode.object [("id", Encode.int id), ("state", convert innerState)]
 
-stateDecoder_: Decode.Decoder state -> Decode.Decoder (State state)
-stateDecoder_ innerDec = Decode.map2 State_ (Decode.field "id" Decode.int) (Decode.field "state" innerDec)
+stateDecoder: Decode.Decoder state -> Decode.Decoder (State state)
+stateDecoder innerDec = Decode.map2 State_ (Decode.field "id" Decode.int) (Decode.field "state" innerDec)
 
 equationDecoder: (Int -> state) -> (State state -> Int -> state) -> Decode.Decoder state -> Decode.Decoder (Equation state)
 equationDecoder newState copyState innerDec = Decode.map2 (\root tracker -> {root = root, tracker = tracker})
-    (Decode.field "root" <| Math.decoder <| stateDecoder_ innerDec)
+    (Decode.field "root" <| Math.decoder <| stateDecoder innerDec)
     (   Decode.field "tracker"
         <| Decode.map2 (\id p -> {nextID = id, parent = p, newState = newState, copyState = copyState})
             (Decode.field "nextID" Decode.int)

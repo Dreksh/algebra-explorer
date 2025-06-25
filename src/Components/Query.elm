@@ -5,6 +5,7 @@ import Url
 -- Ours
 import Algo.Math as Math
 import Algo.Matcher as Matcher
+import Components.Rules as Rules
 
 type alias Model =
     {   current: Url.Url
@@ -17,7 +18,7 @@ type alias Model =
 -- This time it's flipped, because we want to generate (List (Matcher.Equation msg) -> Cmd msg)
 pushEquations: Model -> List (Matcher.Equation a) -> Cmd msg
 pushEquations model list =
-    List.map (\elem -> Math.toString elem.root) list
+    List.map (\elem -> Rules.process (\_ -> String.join "") identity elem.root) list
     |> \result -> {model | equations = result}
     |> pushUrl_
 

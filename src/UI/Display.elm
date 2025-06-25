@@ -17,13 +17,18 @@ import Helper
 import Algo.History as History
 import Algo.Math as Math
 import Algo.Matcher as Matcher
+import Components.Latex as Latex
+import Components.Rules as Rules
 import UI.Animation as Animation
 import UI.Bricks as Bricks
 import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
+import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 
+type alias State = Matcher.State Animation.State
+type alias LatexConverter = Matcher.Equation Animation.State -> Result String (Latex.Model State)
 
 type alias Model =
     {   equations: Dict.Dict Int Entry
@@ -35,12 +40,16 @@ type alias Model =
     ,   updateQuery: List (Matcher.Equation Animation.State) -> Cmd Event
     }
 
+type UIModel =
+    Blocks Bricks.Model
+    | Written MathIcon.Model
+
 type alias Entry =
-    {   history: History.Model (Matcher.Equation Animation.State)
+    {   history: History.Model (Matcher.Equation Animation.State, Latex.Model State)
     ,   view: (Bool, Draggable.Model)
-    ,   bricks: Bricks.Model
     ,   showHistory: Bool
     ,   show: Bool
+    ,   ui: UIModel
     }
 
 type Event =
@@ -53,29 +62,42 @@ type Event =
 type alias SelectedNode =
     {   eq: Int
     ,   root: Int
-    ,   tree: Math.Tree (Matcher.State Animation.State)
+    ,   tree: Math.Tree State
     ,   selected: Set.Set Int
     ,   nodes: Set.Set Int
     }
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> List (Matcher.Equation Animation.State) -> Model
+newEntry_: Int -> Int -> (Matcher.Equation Animation.State, Latex.Model State) -> Entry
+newEntry_ size index (eq, latex) =
+    {   history = History.init (eq, latex)
+    ,   view = (False, createDraggable_ size index index)
+    ,   showHistory = False
+    ,   show = True
+    ,   ui = Bricks.init eq.root |> Blocks
+    }
+
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> List (Matcher.Equation Animation.State, Latex.Model State) -> Model
 init setCapture updateQuery l = let size = List.length l in
-    l
-    |> List.indexedMap (\index eq -> (index, {history = History.init eq, view = (False, createDraggable_ size index index), bricks = Bricks.init eq.root, showHistory = False, show = True}))
-    |> \result -> {equations = Dict.fromList result, selected = Nothing, nextEquationNum = size, createModeForEquation = Nothing, setCapture = setCapture, updateQuery = updateQuery}
+    {   equations =
+        List.foldl (\eq list -> let index = List.length list in (index, newEntry_ size index eq) :: list ) [] l
+        |> Dict.fromList
+    ,   selected = Nothing
+    ,   nextEquationNum = size
+    ,   createModeForEquation = Nothing
+    ,   setCapture = setCapture
+    ,   updateQuery = updateQuery
+    }
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
     Draggable.init ("Equation-" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
 
-add: Matcher.Equation Animation.State -> Model -> Model
+add: (Matcher.Equation Animation.State, Latex.Model State) -> Model -> Model
 add eq model =
     {   model
     |   nextEquationNum = model.nextEquationNum + 1
-    ,   equations = updateBricks
-            model.nextEquationNum
-            {history = History.init eq, view = (False, createDraggable_ 1 0 model.nextEquationNum), bricks = Bricks.init eq.root, showHistory = False, show = True}
-            model.equations
+    ,   equations = newEntry_ (model.nextEquationNum + 1) model.nextEquationNum eq
+            |> \e -> Dict.insert model.nextEquationNum e model.equations
     }
     |> updatePositions_
 
@@ -94,25 +116,26 @@ updatePositions_ model =
 getSelected: Model -> Maybe SelectedNode
 getSelected model = model.selected
     |> Maybe.andThen (\(eqNum, ids) -> Dict.get eqNum model.equations
-        |> Maybe.andThen (.history >> History.current >> Matcher.selectedSubtree ids >> Result.toMaybe)
+        |> Maybe.andThen (.history >> History.current >> Tuple.first >> Matcher.selectedSubtree ids >> Result.toMaybe)
         |> Maybe.map (\(root, nodes, tree) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = tree})
     )
 
-updateBricks: Int -> Entry -> Dict.Dict Int Entry -> Dict.Dict Int Entry
-updateBricks eqNum entry equations =
-    let
-        currentEq = (History.current entry.history).root
-        entryWithBricks = { entry | bricks = Bricks.updateTree currentEq entry.bricks }
-    in
-        equations |> Dict.insert eqNum entryWithBricks
+updateBricks: Entry -> Entry
+updateBricks entry = let (eq, latex) = History.current entry.history in
+    {   entry
+    |   ui = case entry.ui of
+        Blocks b -> Bricks.updateTree eq.root b |> Blocks
+        Written w -> MathIcon.set latex w |> Written
+    }
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
-    let
-        newEquations = model.equations
-            |> Dict.map (\_ entry -> { entry | bricks = entry.bricks |> Bricks.advanceTime millis })
-    in
-        { model | equations = newEquations }
+    {   model
+    |   equations = Dict.map (\_ entry -> case entry.ui of
+                Blocks b -> {entry | ui = Bricks.advanceTime millis b |> Blocks }
+                Written w -> {entry | ui = MathIcon.advanceTime millis w |> Written }
+            ) model.equations
+    }
 
 undo: Model -> Result String Model
 undo model = case model.selected of
@@ -122,8 +145,8 @@ undo model = case model.selected of
         Just entry -> let newHis = History.undo entry.history in
             Ok
             {   model
-            |   equations = updateBricks eqNum {entry | history = newHis} model.equations
-            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))
+            |   equations = Dict.insert eqNum (updateBricks {entry | history = newHis}) model.equations
+            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
             }
 
 redo: Model -> Result String Model
@@ -134,8 +157,8 @@ redo model = case model.selected of
         Just entry -> let newHis = History.redo entry.history in
             Ok
             {   model
-            |   equations = updateBricks eqNum {entry | history = newHis} model.equations
-            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))
+            |   equations = Dict.insert eqNum (updateBricks {entry | history = newHis}) model.equations
+            ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
             }
 
 updateQueryCmd: Model -> (Model, Cmd Event)
@@ -143,45 +166,57 @@ updateQueryCmd model =
     (   model
     ,   Dict.values model.equations
         |> List.filter (\entry -> entry.show)
-        |> List.map (\entry -> History.current entry.history)
+        |> List.map (\entry -> History.current entry.history |> Tuple.first)
         |> model.updateQuery
     )
 
-groupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
-groupChildren eqNum root children model = case Dict.get eqNum model.equations of
+groupChildren: LatexConverter -> Int -> Int -> Set.Set Int -> Model -> Result String Model
+groupChildren convert eqNum root children model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
+        |> Tuple.first
         |> Matcher.groupSubtree root children
-        |> Result.map (\(newSelect, newEq) ->
-            {   model
-            |   equations = updateBricks eqNum {entry | history = History.add newEq entry.history} model.equations
-            ,   selected = Just (eqNum, Set.singleton newSelect)
-            })
+        |> Result.andThen (\(newSelect, newEq) -> convert newEq
+            |> Result.map (\l ->
+                {   model
+                |   equations = Dict.insert eqNum (updateBricks {entry | history = History.add (newEq, l) entry.history}) model.equations
+                ,   selected = Just (eqNum, Set.singleton newSelect)
+                }
+            )
+        )
 
-ungroupChildren: Int -> Int -> Set.Set Int -> Model -> Result String Model
-ungroupChildren eqNum id selected model = case Dict.get eqNum model.equations of
+ungroupChildren: LatexConverter -> Int -> Int -> Set.Set Int -> Model -> Result String Model
+ungroupChildren convert eqNum id selected model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
+        |> Tuple.first
         |> Matcher.ungroupSubtree id selected
-        |> Result.map (\newEq ->
-            {   model
-            |   equations = updateBricks eqNum {entry | history = History.add newEq entry.history} model.equations
-            ,   selected = Just (eqNum, Set.singleton id)
-            })
+        |> Result.andThen (\newEq -> convert newEq
+            |> Result.map (\l ->
+                {   model
+                |   equations = Dict.insert eqNum (updateBricks {entry | history = History.add (newEq, l) entry.history}) model.equations
+                ,   selected = Just (eqNum, Set.singleton id)
+                }
+            )
+        )
 
-replaceNumber: Int -> Int -> Float -> Matcher.Replacement -> Model -> Result String Model
-replaceNumber eqNum root target replacement model = case Dict.get eqNum model.equations of
+replaceNumber: LatexConverter -> Int -> Int -> Float -> Matcher.Replacement -> Model -> Result String Model
+replaceNumber convert eqNum root target replacement model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
+        |> Tuple.first
         |> Matcher.replaceRealNode root target replacement
-        |> Result.map (\(newSelect, newEq) ->
-            {   model
-            |   equations = updateBricks eqNum {entry | history = History.add newEq entry.history} model.equations
-            ,   selected = Just (eqNum, Set.singleton newSelect)
-            })
+        |> Result.andThen (\(newSelect, newEq) -> convert newEq
+            |> Result.map (\l ->
+                {   model
+                |   equations = Dict.insert eqNum (updateBricks {entry | history = History.add (newEq, l) entry.history}) model.equations
+                ,   selected = Just (eqNum, Set.singleton newSelect)
+                }
+            )
+        )
 
-replaceNodeWithNumber: Int -> Int -> Float -> Model -> Result String Model
-replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equations of
+replaceNodeWithNumber: LatexConverter -> Int -> Int -> Float -> Model -> Result String Model
+replaceNodeWithNumber convert eqNum id number model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry ->
         let
@@ -190,40 +225,47 @@ replaceNodeWithNumber eqNum id number model = case Dict.get eqNum model.equation
                 else Math.RealNode {state = Nothing, value = number}
         in
             History.current entry.history
+            |> Tuple.first
             |> Matcher.replaceSubtree (Set.singleton id) replacement Matcher.newResult
-            |> Result.map (\(newSelect, newEq) ->
-                {   model
-                |   equations = updateBricks eqNum {entry | history = History.add newEq entry.history} model.equations
-                ,   selected = Just (eqNum, Set.singleton newSelect)
-                })
+            |> Result.andThen (\(newSelect, newEq) -> convert newEq
+                |> Result.map (\l ->
+                    {   model
+                    |   equations = Dict.insert eqNum (updateBricks {entry | history = History.add (newEq, l) entry.history}) model.equations
+                    ,   selected = Just (eqNum, Set.singleton newSelect)
+                    }
+                )
+            )
 
-transform: List {a | root: Matcher.Replacement} -> Matcher.MatchResult Animation.State -> Model -> Result String Model
-transform replacement result model = case model.selected of
+transform: LatexConverter -> List {a | root: Matcher.Replacement} -> Matcher.MatchResult Animation.State -> Model -> Result String Model
+transform convert replacement result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation is not found"
         Just entry -> History.current entry.history
+            |> Tuple.first
             |> \current -> Helper.resultList (\r (_, others) -> Matcher.replaceSubtree ids r.root result current
-                |> Result.map (\(num, newEq) -> (num, newEq :: others))
+                |> Result.andThen (\(num, newEq) -> convert newEq |> Result.map (\l -> (num, (newEq, l) :: others)))
                 ) (0, []) replacement
             |> Result.map (\(newSelect, newEq) ->
                 {   model
-                |   equations = updateBricks eqNum {entry | history = History.addAll (List.reverse newEq) entry.history} model.equations
+                |   equations = Dict.insert eqNum (updateBricks {entry | history = History.addAll (List.reverse newEq) entry.history}) model.equations
                 ,   selected = Just (eqNum, Set.singleton newSelect)
                 })
 
-substitute: Math.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
-substitute funcs origNum selected eqNum model = case Dict.get eqNum model.equations of
+substitute: LatexConverter -> Math.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String Model
+substitute convert funcs origNum selected eqNum model = case Dict.get eqNum model.equations of
     Nothing -> Err "Substitution equation not found"
     Just subEntry -> case Dict.get origNum model.equations of
         Nothing -> Err "Target equation not found"
-        Just origEntry -> let origEq = History.current origEntry.history in
-            Matcher.replaceAllOccurrences funcs selected (History.current subEntry.history) origEq
-            |> Result.map (\(newSelected, newEq) ->
-                {   model
-                |   selected = Just (origNum, newSelected)
-                ,   equations = updateBricks origNum {origEntry | history = History.add newEq origEntry.history} model.equations
-                }
+        Just origEntry -> let origEq = History.current origEntry.history |> Tuple.first in
+            Matcher.replaceAllOccurrences funcs selected (History.current subEntry.history |> Tuple.first) origEq
+            |> Result.andThen (\(newSelected, newEq) -> convert newEq
+                |> Result.map (\l ->
+                    {   model
+                    |   selected = Just (origNum, newSelected)
+                    ,   equations = Dict.insert origNum (updateBricks {origEntry | history = History.add (newEq,l) origEntry.history}) model.equations
+                    }
+                )
             )
 
 update: Draggable.Size -> Event -> Model -> (Model, Cmd Event)
@@ -246,12 +288,12 @@ update size event model = case event of
     HistoryEvent eq he -> case Dict.get eq model.equations of
         Nothing ->(model, Cmd.none)
         Just entry -> let newHis = History.update he entry.history in
-            let newModel = {model | equations = updateBricks eq {entry | history = newHis} model.equations} in
+            let newModel = {model | equations = Dict.insert eq (updateBricks {entry | history = newHis}) model.equations} in
             case model.selected of
                 Nothing -> updateQueryCmd newModel
                 Just (eqNum, selected) -> if eqNum /= eq
                     then updateQueryCmd newModel
-                    else updateQueryCmd {newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis))}
+                    else updateQueryCmd {newModel | selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis |> Tuple.first))}
     DraggableEvent eq dEvent -> case Dict.get eq model.equations of
         Nothing -> (model, Cmd.none)
         Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
@@ -277,9 +319,12 @@ menu convert model = Dict.toList model.equations
     |> List.map (\(num, entry) -> Menu.Content [a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
         [   if entry.show then Icon.shown [] else Icon.hidden []
         ,   span [class "space"] []
-        ,   p [] [text (History.current entry.history |> .root |> Math.toString)]
+        ,   p [] [text (History.current entry.history |> Tuple.first |> .root |> treeToString_)]
         ]]
     )
+
+treeToString_: Math.Tree s -> String
+treeToString_ = Rules.process (\_ -> String.join "") identity
 
 views: (Event -> msg) -> Model -> List (String, Html msg)
 views converter model = Dict.toList model.equations
@@ -287,29 +332,37 @@ views converter model = Dict.toList model.equations
     |> List.map (\(eqNum, entry) ->
         let
             (_, dModel) = entry.view
-            eq = History.current entry.history
+            (eq, _) = History.current entry.history
             highlight = model.selected
                 |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
                 |> Maybe.withDefault Set.empty
         in
             (   dModel.id
             ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
-                [   div [] [   eq.root
-                        |>  Math.symbolicate
-                        |>  collapsedView_ eqNum highlight
-                        |>  Html.map converter
-                    ,   Bricks.view eqNum highlight Select entry.bricks
-                        |>  Html.map converter
-                    ]
+                [   div []
+                    (   case entry.ui of
+                        Blocks b ->
+                            [   Rules.process (\s -> let id = Matcher.getID s in
+                                    Html.span
+                                    ( HtmlEvent.onShiftClick (Select eqNum id)
+                                    :: (class "node" :: if Set.member id highlight then [class "selected"] else [])
+                                    )
+                                )
+                                Html.text eq.root
+                            ,   Bricks.view eqNum highlight Select b
+                            ]
+                        Written w -> [MathIcon.view (\_ -> []) [] w]
+                    )
+                    |>  Html.map converter
                 ,   Icon.verticalLine []
                 ,   if entry.showHistory
                     then div []
                         [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
                         ,   div [class "history"]
-                            (   History.serialize (\current index c children -> let middle = max 0 (List.length children - 1) in
+                            (   History.serialize (\current index (c,_) children -> let middle = max 0 (List.length children - 1) in
                                 case List.drop middle children |> List.head of
-                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> Math.toString)]
-                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> Math.toString)
+                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> treeToString_)]
+                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> treeToString_)
                                         ::  (
                                             List.map (Html.div []) (List.take middle children)
                                             ++ after
@@ -326,17 +379,6 @@ historyEntry_: Bool -> msg -> String -> Html.Html msg
 historyEntry_ current event t = Html.a
     (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
     [Html.text t]
-
-collapsedView_: Int -> Set.Set Int -> Math.Symbol (Matcher.State Animation.State) -> Html Event
-collapsedView_ eq highlight node = case node of
-    Math.Text val -> text val
-    Math.Node s -> let id = Matcher.getID s.state in
-        s.children
-        |> List.map (collapsedView_ eq highlight)
-        |> div
-            (   [class "node", HtmlEvent.onShiftClick (Select eq id)]
-            ++  if Set.member id highlight then [class "selected"] else []
-            )
 
 encode: Model -> Encode.Value
 encode model = Encode.object
@@ -359,12 +401,18 @@ encode model = Encode.object
 
 encodeEntry_: Entry -> Encode.Value
 encodeEntry_ entry = Encode.object
-    [   ("history", History.encode (Matcher.encodeEquation <| Animation.encodeState) entry.history)
+    [   ("history", History.encode encodeHistoryState_ entry.history)
     ,   ("show", Encode.bool entry.show)
     ,   ("showHistory", Encode.bool entry.showHistory)
     ,   ("view", entry.view
             |> \(overwritten, dModel) -> if overwritten then Draggable.encode dModel else Encode.null
         )
+    ]
+
+encodeHistoryState_: (Matcher.Equation Animation.State, Latex.Model State) -> Encode.Value
+encodeHistoryState_ (eq, l) = Encode.object
+    [   ("equation", Matcher.encodeEquation Animation.encodeState eq)
+    ,   ("latex", Latex.encode (Matcher.encodeState Animation.encodeState) l)
     ]
 
 decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> Decode.Decoder Model
@@ -377,7 +425,7 @@ decoder setCapture updateQuery = Decode.map4 (\eq next sel create -> Model eq ne
     (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
 type alias TmpEntry_ =
-    {   history: History.Model (Matcher.Equation Animation.State)
+    {   history: History.Model (Matcher.Equation Animation.State, Latex.Model State)
     ,   view: Maybe Draggable.Model
     ,   showHistory: Bool
     ,   show: Bool
@@ -393,7 +441,7 @@ addDefaultPositions_ orig =
             ,   view = case tEntry.view of
                     Just view -> (True, view)
                     Nothing -> (False, newView)
-            ,   bricks = History.current tEntry.history |> .root |> Bricks.init
+            ,   ui = (History.current tEntry.history |> Tuple.first |> .root) |> Bricks.init |> Blocks
             ,   showHistory = tEntry.showHistory
             ,   show = tEntry.show
             }
@@ -405,7 +453,12 @@ addDefaultPositions_ orig =
 
 entryDecoder_: Decode.Decoder TmpEntry_
 entryDecoder_ = Decode.map4 TmpEntry_
-    (Decode.field "history" <| History.decoder <| Matcher.equationDecoder Animation.createState Animation.updateState Animation.stateDecoder )
+    (Decode.field "history" <| History.decoder <| historyStateDecoder_ )
     (Decode.maybe <| Decode.field "view" <| Draggable.decoder)
     (Decode.field "show" <| Decode.bool)
     (Decode.field "showHistory" Decode.bool)
+
+historyStateDecoder_: Decode.Decoder (Matcher.Equation Animation.State, Latex.Model State)
+historyStateDecoder_ = Decode.map2 Tuple.pair
+    (Decode.field "equation" <| Matcher.equationDecoder Animation.createState Animation.updateState Animation.stateDecoder)
+    (Decode.field "latex" <| Latex.decoder (Matcher.stateDecoder Animation.stateDecoder))
