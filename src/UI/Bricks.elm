@@ -17,6 +17,7 @@ import UI.HtmlEvent as HtmlEvent
 
 type alias Rect =
     {   text: String
+    ,   prevID: Int
     ,   visible: Bool  -- False means it existed before but needs to fade away
     ,   bottomLeft: Animation.EaseState Animation.Vector2
     ,   topRight: Animation.EaseState Animation.Vector2
@@ -78,17 +79,25 @@ updateTree root model =
         emptyGrid = (Grid Dict.empty (Array.initialize 1 (\_ -> 0)))
         grid = stackRecursive_ 0 root emptyGrid
 
+        -- don't tween if they aren't visible
+        oldRects = model.rects |> Dict.filter (\_ rect -> rect.visible)
+
+        -- if we are doing an undo then we can try to reverse-engineer where it came from
+        nextIDs = oldRects |> Dict.foldl (\id rect foldMap -> foldMap |> Dict.insert rect.prevID id) Dict.empty
+
         visibleRects = grid.items |> Dict.foldl (\id item foldRects ->
             let
                 blTarget = (grid.lines |> getLine item.colStart, toFloat item.rowStart)
                 trTarget = (grid.lines |> getLine item.colEnd, toFloat item.rowEnd)
 
                 -- TODO: use prevID more correctly
-                --   e.g. if neither id nor prevID exist then the new rect may jerkily appear outside the current frame
-                thisOld = model.rects |> Dict.get id
-                prevOld = model.rects |> Dict.get item.prevID
-                noOld = Rect item.text True (Animation.EaseState blTarget blTarget (0, 0)) (Animation.EaseState trTarget trTarget (0, 0)) (Animation.EaseState 0 1 0)
-                old = prevOld |> Maybe.withDefault (thisOld |> Maybe.withDefault noOld)
+                --   e.g. the new rect may jerkily appear outside the current frame if there is nothing to tween from
+                --   I also wonder if we can allow blocks to share a border to make it look like it's splitting better
+                thisOld = oldRects |> Dict.get id
+                prevOld = oldRects |> Dict.get item.prevID
+                nextOld = oldRects |> Dict.get (nextIDs |> Dict.get id |> Maybe.withDefault -1)
+                noOld = Rect item.text id True (Animation.EaseState blTarget blTarget (0, 0)) (Animation.EaseState trTarget trTarget (0, 0)) (Animation.EaseState 0 1 0)
+                old = thisOld |> Maybe.withDefault (prevOld |> Maybe.withDefault (nextOld |> Maybe.withDefault noOld))
 
                 blOld = old.bottomLeft
                 trOld = old.topRight
@@ -96,6 +105,7 @@ updateTree root model =
                 new = (
                     {   old
                     |   text = item.text
+                    ,   prevID = item.prevID
                     ,   visible = True
                     ,   bottomLeft = { blOld | target = blTarget }
                     ,   topRight = { trOld | target = trTarget }
@@ -106,15 +116,15 @@ updateTree root model =
             ) Dict.empty
 
         -- need to keep deleted nodes in order to animate them away
-        leavingRects = model.rects |> Dict.foldl (\id rect foldRects ->
-            if Dict.member id visibleRects || not rect.visible  -- don't include ones that were already not visible
+        leavingRects = oldRects |> Dict.foldl (\id rect foldRects ->
+            if Dict.member id foldRects
             then foldRects
             else
                 let
                     opOld = rect.opacity
-                    goneRect = { rect | visible = False, opacity = { opOld | target = 0 } }
+                    leavingRect = { rect | visible = False, opacity = { opOld | target = 0 } }
                 in
-                    foldRects |> Dict.insert id goneRect
+                    foldRects |> Dict.insert id leavingRect
             ) visibleRects
     in
         { model | rects = leavingRects }
