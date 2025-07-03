@@ -26,19 +26,28 @@ type alias Rect =
 
 type alias Model =
     {   rects: Dict.Dict Int Rect
+    ,   viewBox: Animation.EaseState Animation.Vector2
     }
 
+smoothTime_: Float
+smoothTime_ = 300
+
 init: Math.Tree (Matcher.State Animation.State) -> Model
-init root = updateTree root (Model Dict.empty)
+init root =
+    let
+        movingTree = updateTree root (Model Dict.empty (Animation.EaseState (0, 0) (0, 0) (0, 0)))
+    in
+        -- move time forward by a lot to force init as static
+        advanceTime (smoothTime_ * 1e6) movingTree
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
             let
-                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 300 millis
-                newTopRight = rect.topRight |> Animation.smoothDampVector2 300 millis
-                newOpacity = rect.opacity |> Animation.smoothDampFloat 150 millis
+                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 smoothTime_ millis
+                newTopRight = rect.topRight |> Animation.smoothDampVector2 smoothTime_ millis
+                newOpacity = rect.opacity |> Animation.smoothDampFloat (smoothTime_ / 2) millis
             in
                 {   rect
                 |   bottomLeft = newBottomLeft
@@ -46,22 +55,24 @@ advanceTime millis model =
                 ,   opacity = newOpacity
                 }
             )
+        newViewBox = model.viewBox |> Animation.smoothDampVector2 smoothTime_ millis
     in
-        { model | rects = newRects }
+        { model | rects = newRects, viewBox = newViewBox }
 
 view: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Model -> Html e
 view eq highlight onShiftClick model =
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
-        (visBricks, maxX, maxY) = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick True) ([], 0, 0)
-        (bricks, _, _) = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick False) (visBricks, maxX, maxY)
+        visBricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick True) []
+        bricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick False) visBricks
+        (maxX, maxY) = model.viewBox.current
     in
         BrickSvg.bricks maxX maxY bricks
 
-foldRectToBrick: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Bool -> Int -> Rect -> ((List (Html e)), Float, Float) -> ((List (Html e)), Float, Float)
-foldRectToBrick eq highlight onShiftClick includeVisible id rect (foldBricks, foldX, foldY) =
+foldRectToBrick: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Bool -> Int -> Rect -> List (Html e) -> List (Html e)
+foldRectToBrick eq highlight onShiftClick includeVisible id rect foldBricks =
     if rect.visible /= includeVisible
-    then (foldBricks, foldX, foldY)
+    then foldBricks
     else
         let
             onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
@@ -70,7 +81,7 @@ foldRectToBrick eq highlight onShiftClick includeVisible id rect (foldBricks, fo
             (trX, trY) = rect.topRight.current
             brick = BrickSvg.brick blX trX blY trY rect.opacity.current rect.visible selected onClick rect.text
         in
-            (brick :: foldBricks, max foldX trX, max foldY trY)
+            brick :: foldBricks
 
 -- TODO: make falling bricks drop like gravity, and rising bricks pushed by new ones below
 updateTree: Math.Tree (Matcher.State Animation.State) -> Model -> Model
@@ -126,8 +137,18 @@ updateTree root model =
                 in
                     foldRects |> Dict.insert id leavingRect
             ) visibleRects
+
+        (maxX, maxY) = visibleRects |> Dict.foldl (\_ rect (foldX, foldY) ->
+            let
+                (trX, trY) = rect.topRight.target
+            in
+                (max foldX trX, max foldY trY)
+            ) (0, 0)
+
+        vbOld = model.viewBox
+        newViewBox = { vbOld | target = (maxX, maxY) }
     in
-        { model | rects = leavingRects }
+        { model | rects = leavingRects, viewBox = newViewBox }
 
 
 type alias GridItem =

@@ -157,31 +157,19 @@ look at https://github.com/3b1b/manim for inspiration
     * that means the state needs to be the layed out coordinates already
 
 
-     each grid vertical is a variable to be optimised
-     but what happens in this situation?
-
-     x  | x
-     xxx|xxxx
-
-     e.g. if a parent block wider than both its 2 children, there are infinite solutions for where to place the grid line between the 2 children
-     ideally it would try to distribute the children as evenly as possible
-     I think in general this then becomes like a linear programming problem, but there must be some good heuristic for it
-
-     but maybe this is best solved as part of the recursion because we have a tree structure that makes the problem much simpler
-     - when a parent receives the width of its children, if it is wider than all its children then simply scale all the children grid lines up to the width of the parent!
-
-     which means the result of the recursion
+* each grid vertical is a variable to be optimised
+*   but what happens in this situation?
+```
+x  | x
+xxx|xxxx
+```
+* e.g. if a parent block wider than both its 2 children, there are infinite solutions for where to place the grid line between the 2 children
+  * ideally it would try to distribute the children as evenly as possible
+  * I think in general this then becomes like a linear programming problem, but there must be some good heuristic for it
+* but maybe this is best solved as part of the recursion because we have a tree structure that makes the problem much simpler
+  * when a parent receives the width of its children, if it is wider than all its children then simply scale all the children grid lines up to the width of the parent!
 
 * what is prevID?
   * it is not where the node came from in the previous equation, but it signals which nodes are literally the same thing
   * i.e. a node can have a prevID that doesn't even exist in the previous equation
   * every node gets a new ID on every operation
-
-### questions for Derek
-* does it make sense to have +-*/ in arithmetic.json anymore? Since they are in Rules.init anyway?
-* a-a results in a*(-a), which then matches the rule a-a=0
-  * funnily this means a + (-a) doesn't actually match
-* most rules are reversible, so do we need to repeat them?
-  * instead of 'Substitution' being a rule, does it make more sense for everything to be Substitution?
-    * and then you could visualise it by having mini windows that show the mini equation that always works?
-* is it confusing that 'combine' is basically 'factorise' but for division?

@@ -16,10 +16,11 @@ bricks: Float -> Float -> List (Html event) -> Html event
 bricks xMax yMax children =
     svg
     [   viewBox
-        (   "0.0 "
+        (   String.fromFloat (horizontalPad_ / 2)
+        ++  " "
         ++  String.fromFloat -yMax
         ++  " "
-        ++  String.fromFloat xMax
+        ++  String.fromFloat (xMax - horizontalPad_)
         ++  " "
         ++  String.fromFloat yMax
         )
