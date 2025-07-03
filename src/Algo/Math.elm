@@ -198,13 +198,14 @@ expectSymbol_ name = Parser.symbol (Parser.Token name EOF_)
 
 equation_: FunctionProperties -> Parser_ (Tree ())
 equation_ funcProps = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |. Parser.spaces |= expression_ funcProps |. Parser.spaces
+    (\list -> if List.isEmpty list
+        then Parser.succeed (List.singleton >> Parser.Loop) |. Parser.spaces |= expression_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "="
                 |= (expression_ funcProps |> Parser.inContext (PrevStr_ "="))
                 |. Parser.spaces
-            ,   Parser.succeed()
+            ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
     )
@@ -215,7 +216,8 @@ equation_ funcProps = Parser.loop []
 
 expression_: FunctionProperties -> Parser_ (Tree ())
 expression_ funcProps = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= multiple_ funcProps |. Parser.spaces
+    (\list -> if List.isEmpty list
+        then Parser.succeed (List.singleton >> Parser.Loop) |= multiple_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "+"
@@ -235,14 +237,15 @@ expression_ funcProps = Parser.loop []
 
 multiple_: FunctionProperties -> Parser_ (Tree ())
 multiple_ funcProps = Parser.loop []
-    (\list -> if List.isEmpty list then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps |. Parser.spaces
+    (\list -> if List.isEmpty list
+        then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps True |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "*"
-                |= (divisible_ funcProps |> Parser.inContext (PrevStr_ "*"))
+                |= (divisible_ funcProps True |> Parser.inContext (PrevStr_ "*"))
                 |. Parser.spaces
             ,   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |= divisible_ funcProps
+                |= divisible_ funcProps False
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -253,14 +256,20 @@ multiple_ funcProps = Parser.loop []
         _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
 
-divisible_: FunctionProperties -> Parser_ (Tree ())
-divisible_ funcProps = Parser.succeed generateDivisibleNode_
-    |= negatable_ funcProps
-    |= Parser.loop [] (\list -> Parser.oneOf
-        [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable_ funcProps
-        ,   Parser.succeed (Parser.Done list)
-        ]
-    )
+divisible_: FunctionProperties -> Bool -> Parser_ (Tree ())
+divisible_ funcProps isNegatable =
+    let
+        negatable = if isNegatable
+            then negatable_ funcProps
+            else Parser.succeed identity |= term_ funcProps
+    in
+        Parser.succeed generateDivisibleNode_
+        |=  negatable
+        |=  Parser.loop [] (\list -> Parser.oneOf
+            [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable
+            ,   Parser.succeed (Parser.Done list)
+            ]
+        )
 
 generateDivisibleNode_: Tree () -> List (Tree ()) -> Tree ()
 generateDivisibleNode_ front divisors = case divisors of
@@ -275,7 +284,7 @@ negatable_ funcProps = Parser.oneOf
 
 term_: FunctionProperties -> Parser_ (Tree ())
 term_ funcProps = Parser.oneOf
-    [   Parser.succeed identity |. expectSymbol_ "(" |= (expression_ funcProps |> Parser.inContext (PrevStr_ "("))|. Parser.spaces |. expectSymbol_ ")"
+    [   Parser.succeed identity |. expectSymbol_ "(" |= (expression_ funcProps |> Parser.inContext (PrevStr_ "(")) |. Parser.spaces |. expectSymbol_ ")"
     ,   tokenNumber_
     ,   Parser.succeed (\a b -> (a, b)) |. expectSymbol_ "\\" |= tokenLongName_ |= varOrFunc_ funcProps
         |> Parser.andThen (\(name, props) -> case (Dict.get name funcProps, props) of
