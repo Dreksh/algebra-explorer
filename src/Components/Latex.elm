@@ -186,7 +186,7 @@ wordParser_ = Parser.variable
     ,   inner = Char.isAlpha
     ,   reserved = Set.empty
     }
-    |> Parser.andThen (\str -> case strToSymbol_ str |> Debug.log "received" of
+    |> Parser.andThen (\str -> case strToSymbol_ str of
         Ok symbol -> Parser.succeed symbol
         Err err -> Parser.problem err
     )
