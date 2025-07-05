@@ -397,10 +397,10 @@ views converter model = Dict.toList model.equations
                     then div []
                         [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
                         ,   div [class "history"]
-                            (   History.serialize (\current index (c,_) children -> let middle = max 0 (List.length children - 1) in
+                            (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
                                 case List.drop middle children |> List.head of
-                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> treeToString_)]
-                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (c.root |> treeToString_)
+                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)]
+                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)
                                         ::  (
                                             List.map (Html.div []) (List.take middle children)
                                             ++ after
@@ -413,10 +413,10 @@ views converter model = Dict.toList model.equations
             )
     )
 
-historyEntry_: Bool -> msg -> String -> Html.Html msg
-historyEntry_ current event t = Html.a
+historyEntry_: Bool -> msg -> Html.Html msg -> Html.Html msg
+historyEntry_ current event inner = Html.a
     (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
-    [Html.text t]
+    [inner]
 
 encode: Model -> Encode.Value
 encode model = Encode.object

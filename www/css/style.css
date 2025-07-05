@@ -405,7 +405,10 @@ div.history div {
 div.history a {
     position: relative;
     padding-left: 1rem;
-    height: fit-content;
+    height: 1rem;
+}
+div.history a > svg {
+    height: 100%;
 }
 div.history a::before, div.history div::before {
     position: absolute;

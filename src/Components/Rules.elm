@@ -96,6 +96,7 @@ init =
             ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]},1))
             ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-", latex = [Latex.Text () "-", Latex.Argument () 1]},1))
             ,   ("/",({properties= Math.GenericNode {state = (), name = "", arguments = Just 2, children = []}, javascript = InfixOp "/", latex = [Latex.Fraction () [Latex.Argument () 1] [Latex.Argument () 2]]},1))
+            ,   ("=",({properties= Math.DeclarativeNode {state = (), name = "", children = []}, javascript = InfixOp "=", latex = [Latex.Text () "="]},1))
             ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty
@@ -155,21 +156,27 @@ toLatex_ model tree =
         state = Math.getState tree
         genericFunction root = Helper.resultList (\n list -> toLatex_ model n |> Result.map (\new -> new :: list)) [] (Math.getChildren root)
                 |> Result.map (\list -> [Latex.Text state (Math.getName root), Latex.Bracket state (List.intersperse [Latex.Text state ","] list |> List.reverse |> List.concat) ])
-    in
-    case tree of
-        Math.RealNode n -> Ok [ (100.0 * n.value |> round |> toFloat) / 100 |> String.fromFloat |> Latex.Text state ]
-        Math.VariableNode n -> Ok [Latex.Text state n.name]
-        Math.BinaryNode _ -> let p = priority_ tree in
-            case Dict.get (Math.getName tree) model.functions of
-                Nothing -> genericFunction tree
+        infixFunction root = let p = priority_ root in
+            case Dict.get (Math.getName root) model.functions of
+                Nothing -> genericFunction root
                 Just (l, _) ->
                     Helper.resultList (\elem list -> toLatex_ model elem
                         |> Result.map (\inner -> if priority_ elem > p || Math.getName elem == Math.getName tree
-                            then list ++ Latex.map (\_ -> state) l.latex ++ [Latex.Bracket state inner]
+                            then [Latex.Bracket state inner]
+                            else inner
+                        )
+                        |> Result.map (\inner -> if List.isEmpty list
+                            then inner
                             else list ++ (Latex.map (\_ -> state) l.latex) ++ inner
                         )
                     )
-                    [] (Math.getChildren tree)
+                    [] (Math.getChildren root)
+    in
+    case tree of
+        Math.RealNode n -> Ok [ String.fromFloat n.value |> Latex.Text state ]
+        Math.VariableNode n -> Ok [Latex.Text state n.name]
+        Math.BinaryNode _ -> infixFunction tree
+        Math.DeclarativeNode _ -> infixFunction tree
         _ -> case Dict.get (Math.getName tree) model.functions of
             Nothing -> genericFunction tree
             Just (l, _) -> substituteArgs_ model state (Math.getChildren tree) l.latex
