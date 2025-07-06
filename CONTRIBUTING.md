@@ -85,6 +85,16 @@ here is some good intuition for the pipe: it is like having objects where you do
 * a subscription *listens* to the runtime
   * a sub needs to return an event to update the model
 
+### Parser
+* the `a` in `Parser a` means that the result of the parsing is an `a`
+  * but then the `|=` and `|.` operators expect `Parser (a -> b)` **(note that the argument is a function!)**
+  * each time you see the `|=` then it gets 'chomped' into the constructor for the `a`
+    * OTOH the `|.` just gets ignored
+  * `Parser.succeed` does nothing but act as the first link in the chain into these operators
+    * this is a bit like `elm-animator` which has `Animator.animator` as the first link of its chain
+* the `Step` in `Parser (Step state a)` is just like a `Result`, where if you want to keep looping then you return a `state` and if you're done you return an `a`
+* `generateDivisibleNode_` needs to be recursive because a divide node cannot have multiple children
+
 ## Maths
 * DisplayEvent is passed into the Display.view as an argument
   * that is because it is used as a converter from Display.Event to DisplayEvent
