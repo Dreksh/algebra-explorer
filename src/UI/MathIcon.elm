@@ -32,9 +32,9 @@ type alias Model =
 blank: Model
 blank =
     {   frames = Dict.empty
-    ,   topLeft = Animation.EaseState (0,0) (0,0) (0,0)
-    ,   botRight = Animation.EaseState (0,0) (0,0) (0,0)
-    ,   opacity = Animation.EaseState 0 0 0
+    ,   topLeft = Animation.newEase 300 (0,0) (0,0)
+    ,   botRight = Animation.newEase 300 (0,0) (0,0)
+    ,   opacity = Animation.newEase 300 0 0
     }
 
 init: Latex.Model State -> Model
@@ -47,19 +47,19 @@ advanceTime time model =
             {   animation
             |   data = List.map (\data ->
                     {   data
-                    |   origin = Animation.smoothDampVector2 300 time data.origin
-                    ,   scale = Animation.smoothDampFloat 300 time data.scale
+                    |   origin = Animation.smoothDampVector2 time data.origin
+                    ,   scale = Animation.smoothDampFloat time data.scale
                     }
                 ) animation.data
-            ,   opacity = Animation.smoothDampFloat 300 time animation.opacity
+            ,   opacity = Animation.smoothDampFloat time animation.opacity
             }
             )
         )
         model.frames
     }
 
-set: Latex.Model State -> Model -> Model
-set root model = model
+set: Animation.Tracker -> Latex.Model State -> Model -> (Model, Animation.Tracker)
+set tracker root model = (model, tracker)
 
 {- toFrames -}
 
@@ -229,8 +229,8 @@ rightShiftStrokes_ left = List.map (\elem -> case elem of
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
 view convert attrs model =
     let
-        (left, top) = model.topLeft.current
-        (right, bot) = model.botRight.current
+        (left, top) = Animation.current model.topLeft
+        (right, bot) = Animation.current model.botRight
         vbString = String.fromFloat left ++ " " ++
             String.fromFloat top ++ " " ++
             String.fromFloat (right - left) ++ " " ++
@@ -240,7 +240,7 @@ view convert attrs model =
     |> List.concatMap (\(_, f) -> Dict.toList f
         |> List.concatMap (\(id, frame) ->
             List.map (\s ->
-                Svg.path (d (strokeToPath_ s.origin.current s.scale.current s.strokes) :: (opacity (String.fromFloat frame.opacity.current) ::convert id)) []
+                Svg.path (d (strokeToPath_ (Animation.current s.origin) (Animation.current s.scale) s.strokes) :: (opacity (Animation.current frame.opacity |> String.fromFloat) ::convert id)) []
             ) frame.data
         )
     )

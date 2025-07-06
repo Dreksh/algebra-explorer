@@ -32,22 +32,21 @@ type alias Model =
 smoothTime_: Float
 smoothTime_ = 300
 
-init: Math.Tree (Matcher.State Animation.State) -> Model
-init root =
+init: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> (Model, Animation.Tracker)
+init tracker root =
     let
-        movingTree = updateTree root (Model Dict.empty (Animation.EaseState (0, 0) (0, 0) (0, 0)))
+        (movingTree, viewBox, newT) = calculateTree_ tracker root Dict.empty
     in
-        -- move time forward by a lot to force init as static
-        advanceTime (smoothTime_ * 1e6) movingTree
+        ({rects = movingTree, viewBox = Animation.newEase smoothTime_ (0,0) viewBox}, newT)
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
             let
-                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 smoothTime_ millis
-                newTopRight = rect.topRight |> Animation.smoothDampVector2 smoothTime_ millis
-                newOpacity = rect.opacity |> Animation.smoothDampFloat (smoothTime_ / 2) millis
+                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 millis
+                newTopRight = rect.topRight |> Animation.smoothDampVector2 millis
+                newOpacity = rect.opacity |> Animation.smoothDampFloat millis
             in
                 {   rect
                 |   bottomLeft = newBottomLeft
@@ -55,7 +54,7 @@ advanceTime millis model =
                 ,   opacity = newOpacity
                 }
             )
-        newViewBox = model.viewBox |> Animation.smoothDampVector2 smoothTime_ millis
+        newViewBox = model.viewBox |> Animation.smoothDampVector2 millis
     in
         { model | rects = newRects, viewBox = newViewBox }
 
@@ -65,7 +64,7 @@ view eq highlight onShiftClick model =
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
         visBricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick True) []
         bricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick False) visBricks
-        (maxX, maxY) = model.viewBox.current
+        (maxX, maxY) = Animation.current model.viewBox
     in
         BrickSvg.bricks maxX maxY bricks
 
@@ -77,26 +76,35 @@ foldRectToBrick eq highlight onShiftClick includeVisible id rect foldBricks =
         let
             onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
             selected = highlight |> Set.member id
-            (blX, blY) = rect.bottomLeft.current
-            (trX, trY) = rect.topRight.current
-            brick = BrickSvg.brick blX trX blY trY rect.opacity.current rect.visible selected onClick rect.text
+            (blX, blY) = Animation.current rect.bottomLeft
+            (trX, trY) = Animation.current rect.topRight
+            brick = BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible selected onClick rect.text
         in
             brick :: foldBricks
 
 -- TODO: make falling bricks drop like gravity, and rising bricks pushed by new ones below
-updateTree: Math.Tree (Matcher.State Animation.State) -> Model -> Model
-updateTree root model =
+updateTree: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Model -> (Model, Animation.Tracker)
+updateTree tracker root model =
+    let
+        (newRect, newViewBox, newT) = calculateTree_ tracker root model.rects
+        (finalViewBox, t1) = Animation.setEase newT newViewBox model.viewBox
+    in
+
+        ({model | rects = newRect, viewBox = finalViewBox}, t1)
+
+calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict Int Rect -> (Dict.Dict Int Rect, Animation.Vector2, Animation.Tracker)
+calculateTree_ animation root rects =
     let
         emptyGrid = (Grid Dict.empty (Array.initialize 1 (\_ -> 0)))
         grid = stackRecursive_ 0 root emptyGrid
 
         -- don't tween if they aren't visible
-        oldRects = model.rects |> Dict.filter (\_ rect -> rect.visible)
+        oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
 
         -- if we are doing an undo then we can try to reverse-engineer where it came from
         nextIDs = oldRects |> Dict.foldl (\id rect foldMap -> foldMap |> Dict.insert rect.prevID id) Dict.empty
 
-        visibleRects = grid.items |> Dict.foldl (\id item foldRects ->
+        (visibleRects, newAnimaiton) = grid.items |> Dict.foldl (\id item (foldRects, a0) ->
             let
                 blTarget = (grid.lines |> getLine item.colStart, toFloat item.rowStart)
                 trTarget = (grid.lines |> getLine item.colEnd, toFloat item.rowEnd)
@@ -107,48 +115,45 @@ updateTree root model =
                 thisOld = oldRects |> Dict.get id
                 prevOld = oldRects |> Dict.get item.prevID
                 nextOld = oldRects |> Dict.get (nextIDs |> Dict.get id |> Maybe.withDefault -1)
-                noOld = Rect item.text id True (Animation.EaseState blTarget blTarget (0, 0)) (Animation.EaseState trTarget trTarget (0, 0)) (Animation.EaseState 0 1 0)
+                noOld = Rect item.text id True (Animation.newEase smoothTime_ (0,0) blTarget) (Animation.newEase smoothTime_ (0, 0) trTarget) (Animation.newEase (smoothTime_/2) 0 0)
                 old = thisOld |> Maybe.withDefault (prevOld |> Maybe.withDefault (nextOld |> Maybe.withDefault noOld))
 
-                blOld = old.bottomLeft
-                trOld = old.topRight
-                opOld = old.opacity
+                (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft
+                (tr, a2) = Animation.setEase a1 trTarget old.topRight
+                (op, a3) = Animation.setEase a2 1 old.opacity
                 new = (
                     {   old
                     |   text = item.text
                     ,   prevID = item.prevID
                     ,   visible = True
-                    ,   bottomLeft = { blOld | target = blTarget }
-                    ,   topRight = { trOld | target = trTarget }
-                    ,   opacity = { opOld | target = 1 }
+                    ,   bottomLeft = bl
+                    ,   topRight = tr
+                    ,   opacity = op
                     })
             in
-                foldRects |> Dict.insert id new
-            ) Dict.empty
+                (Dict.insert id new foldRects, a3)
+            ) (Dict.empty, animation)
 
         -- need to keep deleted nodes in order to animate them away
-        leavingRects = oldRects |> Dict.foldl (\id rect foldRects ->
+        (leavingRects, finalA) = oldRects |> Dict.foldl (\id rect (foldRects, a) ->
             if Dict.member id foldRects
-            then foldRects
+            then (foldRects, a)
             else
                 let
-                    opOld = rect.opacity
-                    leavingRect = { rect | visible = False, opacity = { opOld | target = 0 } }
+                    (op, a1) = Animation.setEase a 0 rect.opacity
+                    leavingRect = { rect | visible = False, opacity = op }
                 in
-                    foldRects |> Dict.insert id leavingRect
-            ) visibleRects
+                    (Dict.insert id leavingRect foldRects, a1)
+            ) (visibleRects, newAnimaiton)
 
-        (maxX, maxY) = visibleRects |> Dict.foldl (\_ rect (foldX, foldY) ->
+        viewBox = visibleRects |> Dict.foldl (\_ rect (foldX, foldY) ->
             let
-                (trX, trY) = rect.topRight.target
+                (trX, trY) = Animation.target rect.topRight
             in
                 (max foldX trX, max foldY trY)
             ) (0, 0)
-
-        vbOld = model.viewBox
-        newViewBox = { vbOld | target = (maxX, maxY) }
     in
-        { model | rects = leavingRects, viewBox = newViewBox }
+        (leavingRects, viewBox, finalA)
 
 
 type alias GridItem =

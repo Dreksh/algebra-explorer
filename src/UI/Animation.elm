@@ -3,7 +3,8 @@ module UI.Animation exposing (DeletableElement,
     newDeletable, delete,
     State, createState, updateState,
     Vector2, minVector2, maxVector2, addVector2, scaleVector2,
-    EaseState, smoothDampFloat, smoothDampVector2,
+    EaseState, newEase, setEase, current, target, smoothDampFloat, smoothDampVector2,
+    Tracker, updateTracker,
     encode, decoder, stateDecoder, encodeState
     )
 
@@ -30,11 +31,26 @@ updateState: Matcher.State State -> Int -> State
 updateState s _ = {prevID = Matcher.getID s}
 
 type alias Vector2 = (Float, Float)
-type alias EaseState t =
-    {    current: t
-    ,    target: t
-    ,    velocity: t
-    }
+type EaseState t = EaseState {current: t, target: t, velocity: t, changeDuration: Float}
+
+newEase: Float -> t -> t -> EaseState t
+newEase duration zero initial = EaseState {current = initial, target = initial, velocity = zero, changeDuration = duration}
+
+setEase: Tracker -> t -> EaseState t -> (EaseState t, Tracker)
+setEase tracker value (EaseState n) = if n.target == value
+    then (EaseState n, tracker)
+    else (EaseState {n | target = value}, max tracker (n.changeDuration*2))
+
+current: EaseState t -> t
+current (EaseState n) = n.current
+
+target: EaseState t -> t
+target (EaseState n) = n.target
+
+type alias Tracker = Float
+-- When update frame is called, tracking how many more frames are needed
+updateTracker: Float -> Tracker -> Tracker
+updateTracker time count = count - time
 
 minVector2: Vector2 -> Vector2 -> Vector2
 minVector2 (x1,y1) (x2,y2) = (min x1 x2, min y1 y2)
@@ -52,27 +68,27 @@ scaleVector2 scale (x,y) = (x * scale, y * scale)
 -- https://github.com/Unity-Technologies/UnityCsReference/blob/4b463aa72c78ec7490b7f03176bd012399881768/Runtime/Export/Math/Vector2.cs#L289
 -- note that this doesn't have maxSpeed unlike the Unity original
 smoothDamp_: Float -> Float -> Float -> Float -> Float -> (Float, Float)
-smoothDamp_ smoothTime deltaTime target velocity current =
+smoothDamp_ smoothTime deltaTime t velocity c =
     let
         omega = 2 / smoothTime
 
         x = omega * deltaTime
         exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
 
-        change = current - target
+        change = c - t
 
-        newTarget = current - change
+        newTarget = c - change
 
         temp = (velocity + omega * change) * deltaTime
 
         output = newTarget + (change + temp) * exp
 
-        origMinusCurrent = target - current
-        outMinusOrig = output - target
+        origMinusCurrent = t- c
+        outMinusOrig = output - t
 
         stop = origMinusCurrent * outMinusOrig > 0
         newPosition = if stop
-            then target
+            then t
             else output
         newVelocity = if stop
             then 0
@@ -81,24 +97,24 @@ smoothDamp_ smoothTime deltaTime target velocity current =
         (newPosition, newVelocity)
 
 
-smoothDampFloat: Float -> Float -> EaseState Float -> EaseState Float
-smoothDampFloat smoothTime deltaTime state =
+smoothDampFloat: Float -> EaseState Float -> EaseState Float
+smoothDampFloat deltaTime (EaseState state) =
     let
-        (newCurrent, newVelocity) = state.current |> smoothDamp_ smoothTime deltaTime state.target state.velocity
+        (newCurrent, newVelocity) = state.current |> smoothDamp_ state.changeDuration deltaTime state.target state.velocity
     in
-        { state | current = newCurrent, velocity = newVelocity }
+        EaseState { state | current = newCurrent, velocity = newVelocity }
 
 
-smoothDampVector2: Float -> Float -> EaseState Vector2 -> EaseState Vector2
-smoothDampVector2 smoothTime deltaTime state =
+smoothDampVector2: Float -> EaseState Vector2 -> EaseState Vector2
+smoothDampVector2 deltaTime (EaseState state) =
     let
         (currentX, currentY) = state.current
         (targetX, targetY) = state.target
         (velocityX, velocityY) = state.velocity
-        (newCurrentX, newVelocityX) = currentX |> smoothDamp_ smoothTime deltaTime targetX velocityX
-        (newCurrentY, newVelocityY) = currentY |> smoothDamp_ smoothTime deltaTime targetY velocityY
+        (newCurrentX, newVelocityX) = currentX |> smoothDamp_ state.changeDuration deltaTime targetX velocityX
+        (newCurrentY, newVelocityY) = currentY |> smoothDamp_ state.changeDuration deltaTime targetY velocityY
     in
-        { state | current = (newCurrentX, newCurrentY), velocity = (newVelocityX, newVelocityY) }
+        EaseState { state | current = (newCurrentX, newCurrentY), velocity = (newVelocityX, newVelocityY) }
 
 {- Old Animation -}
 

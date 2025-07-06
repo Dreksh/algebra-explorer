@@ -66,6 +66,7 @@ type alias Model =
     ,   query: Query.Model
     ,   size: Draggable.Size
     ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Animation.State))
+    ,   animation: Animation.Tracker
     }
 
 type alias Swappable =
@@ -133,8 +134,10 @@ init flags url key =
         (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
+        (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) -1 eqs
     in
-    (   {   swappable = { display = Display.init setCapture (Query.pushEquations query) eqs
+    (   {   swappable =
+            { display = newDisplay
             , rules = Rules.init
             , tutorial = Tutorial.init
             , notification = nModel
@@ -151,6 +154,7 @@ init flags url key =
             flags
             |> Result.toMaybe
             |> Maybe.withDefault (0, 0)
+        , animation = tracker
         }
     ,   Cmd.batch
         [   Cmd.map NotificationEvent nCmd
@@ -168,11 +172,11 @@ parseEquation_ model str = Matcher.parseEquation (Rules.functionProperties model
     |> Result.andThen (\root -> Rules.toLatex model root |> Result.map (\l -> (root, l)) )
 
 subscriptions: Model -> Sub Event
-subscriptions _ = Sub.batch
+subscriptions model = Sub.batch
     [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
-    ,   BrowserEvent.onAnimationFrameDelta AnimationDelta
+    ,   if model.animation >= 0 then BrowserEvent.onAnimationFrameDelta AnimationDelta else Sub.none
     ]
 
 {-
@@ -185,8 +189,8 @@ update event core = let model = core.swappable in
     case event of
         EventUrlRequest _ -> (core, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
-        DisplayEvent e -> let (dModel, dCmd) = Display.update core.size e model.display in
-            (updateCore {model | display = dModel}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
+        DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation e model.display in
+            ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
         NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
@@ -197,9 +201,9 @@ update event core = let model = core.swappable in
         InputEvent e -> let (newIn, submitted, inCmd) = Input.update e model.input in
             if submitted == "" then (updateCore {model | input = newIn}, Cmd.batch [Cmd.map InputEvent inCmd, focusTextBar_ "textInput"])
             else case parseEquation_ model.rules submitted of
-                Result.Ok root -> Display.add root model.display
-                    |> (\dModel ->
-                        (   updateCore {model | display = dModel, input = newIn}
+                Result.Ok root -> Display.add core.animation root model.display
+                    |> (\(dModel, animation) ->
+                        (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
                         ,   Cmd.batch [updateQuery_ dModel, Cmd.map InputEvent inCmd, updateMathJax ()]
                         )
                     )
@@ -214,12 +218,12 @@ update event core = let model = core.swappable in
                     Nothing -> if ActionView.isOpen model.actionView
                         then (updateCore {model | actionView = ActionView.hide model.actionView}, Cmd.none)
                         else (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
-            (True, False, "z") -> case Display.undo model.display of
+            (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok display -> (updateCore {model | display = display}, Cmd.none)
-            (True, True, "z") -> case Display.redo model.display of
+                Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
+            (True, True, "z") -> case Display.redo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok display -> (updateCore {model | display = display}, Cmd.none)
+                Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
             _ -> (core, Cmd.none)
         EnterCreateMode ->
             (   updateCore {model | input = Input.open model.input, actionView = ActionView.hide model.actionView, showMenu = False}
@@ -256,22 +260,23 @@ update event core = let model = core.swappable in
                 |> Result.mapError Decode.errorToString
                 |> (\result -> case result of
                     Err errStr -> submitNotification_ core errStr
-                    Ok s -> ({core | swappable = s}, updateQuery_ s.display)
+                    Ok (s, animation) -> ({core | swappable = s, animation = animation}, updateQuery_ s.display)
                 )
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
-        AnimationDelta millis -> (updateCore {model | display = Display.advanceTime millis model.display}, Cmd.none)
+        AnimationDelta millis ->
+            ({core | swappable = {model | display = Display.advanceTime millis model.display}, animation = Animation.updateTracker millis core.animation}, Cmd.none)
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            Rules.Group eqNum root children -> case Display.groupChildren (Rules.toLatex model.rules) eqNum root children model.display of
+            Rules.Group eqNum root children -> case Display.groupChildren core.animation (Rules.toLatex model.rules) eqNum root children model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
-            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren (Rules.toLatex model.rules) eqNum root selected model.display of
+                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
+            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren core.animation (Rules.toLatex model.rules) eqNum root selected model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok dModel -> (updateCore {model | display = dModel}, updateQuery_ dModel)
+                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
             Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
                 else ({core | dialog = Just (substitutionDialog_ eqNum selected model, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
@@ -305,9 +310,9 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution origNum selected eqNum -> case Display.substitute (Rules.toLatex model.rules) (Rules.functionProperties model.rules) origNum selected eqNum model.display of
+        ApplySubstitution origNum selected eqNum -> case Display.substitute core.animation (Rules.toLatex model.rules) (Rules.functionProperties model.rules) origNum selected eqNum model.display of
             Err errStr -> submitNotification_ core errStr
-            Ok dModel -> ({core | swappable = {model | display = dModel}, dialog = Nothing}, updateQuery_ dModel)
+            Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}, updateQuery_ dModel)
         ConvertSubString eqNum root target str -> case Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
@@ -320,20 +325,20 @@ update event core = let model = core.swappable in
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
                 Just (NumSubType_ eqNum root target replacement) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber (Rules.toLatex model.rules) eqNum root target replacement model.display of
+                    else case Display.replaceNumber core.animation (Rules.toLatex model.rules) eqNum root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
-                        Ok dModel -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
-                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber (Rules.toLatex model.rules) eqNum id reply.value model.display of
+                        Ok (dModel, animation) -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
+                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber core.animation (Rules.toLatex model.rules) eqNum id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
-                    Ok dModel -> ({core | swappable = {model | evaluator = eModel, display = dModel}}, updateQuery_ dModel)
+                    Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
 
 
 -- TODO
 applyChange_: {from: Matcher.MatchResult Animation.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
-    case Display.transform (Rules.toLatex swappable.rules) params.replacements params.from swappable.display of
+    case Display.transform model.animation (Rules.toLatex swappable.rules) params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
-        Ok newDisplay -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}}, updateQuery_ newDisplay)
+        Ok (newDisplay, animation) -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}, animation = animation}, updateQuery_ newDisplay)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let swappable = model.swappable in
@@ -349,9 +354,8 @@ httpErrorToString_ url err = case err of
     Http.BadBody str -> "The file is malformed:\n" ++ str
 
 updateQuery_: Display.Model -> Cmd Event
-updateQuery_ = Display.updateQueryCmd
-    >> Tuple.second
-    >> Cmd.map DisplayEvent
+updateQuery_ = Display.updateQueryCmd 0
+    >> \(_, _, c) -> Cmd.map DisplayEvent c
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
@@ -504,7 +508,7 @@ triplet x y z = (x,y,z)
 quarter: a -> b -> c -> d -> ((a,b),(c,d))
 quarter w x y z = ((w,x),(y,z))
 
-swappableDecoder: (List (Matcher.Equation Animation.State) -> Cmd Display.Event) -> Decode.Decoder Swappable
+swappableDecoder: (List (Matcher.Equation Animation.State) -> Cmd Display.Event) -> Decode.Decoder (Swappable, Animation.Tracker)
 swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
         (Decode.field "display" (Display.decoder setCapture updateQuery))
@@ -521,8 +525,8 @@ swappableDecoder updateQuery = Decode.map3 triplet
         (Decode.field "actionView" ActionView.decoder)
         (Decode.field "input" Input.decoder)
     )
-    |> Decode.map (\((display, rules, tutorial),(notification,menu,evaluator),(showMenu,actionView, input)) ->
-       Swappable display rules tutorial notification menu evaluator showMenu actionView input
+    |> Decode.map (\(((display, tracker), rules, tutorial),(notification,menu,evaluator),(showMenu,actionView, input)) ->
+       (Swappable display rules tutorial notification menu evaluator showMenu actionView input, tracker)
     )
 
 evalTypeDecoder_: Decode.Decoder EvalType
