@@ -257,29 +257,23 @@ multiple_ funcProps = Parser.loop []
     )
 
 divisible_: FunctionProperties -> Bool -> Parser_ (Tree ())
-divisible_ funcProps isNegatable =
-    let
-        negatable = if isNegatable
-            then negatable_ funcProps
-            else Parser.succeed identity |= term_ funcProps
-    in
-        Parser.succeed generateDivisibleNode_
-        |=  negatable
-        |=  Parser.loop [] (\list -> Parser.oneOf
-            [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable
-            ,   Parser.succeed (Parser.Done list)
-            ]
-        )
+divisible_ funcProps isNegatable = Parser.succeed generateDivisibleNode_
+    |= (if isNegatable then negatable_ else term_) funcProps
+    |= Parser.loop [] (\list -> Parser.oneOf
+        [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable_ funcProps
+        ,   Parser.succeed (Parser.Done list)
+        ]
+    )
 
 generateDivisibleNode_: Tree () -> List (Tree ()) -> Tree ()
 generateDivisibleNode_ front divisors = case divisors of
-        [] -> front
-        (next :: others) -> GenericNode {state = (), name = "/", arguments = Just 2, children = [generateDivisibleNode_ front others, next] }
+    [] -> front
+    (next :: others) -> GenericNode {state = (), name = "/", arguments = Just 2, children = [generateDivisibleNode_ front others, next] }
 
 negatable_: FunctionProperties -> Parser_ (Tree ())
 negatable_ funcProps = Parser.oneOf
-    [   Parser.succeed (\x -> UnaryNode {state = (), name="-", child = x}) |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps |> Parser.inContext (PrevStr_ "-"))
-    ,   Parser.succeed identity |= term_ funcProps
+    [   Parser.succeed (\x -> UnaryNode {state = (), name = "-", child = x}) |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps |> Parser.inContext (PrevStr_ "-"))
+    ,   term_ funcProps
     ]
 
 term_: FunctionProperties -> Parser_ (Tree ())
