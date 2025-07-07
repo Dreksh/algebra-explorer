@@ -132,7 +132,7 @@ process combine convert tree =
         (
             case tree of
             Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
-            Math.VariableNode n -> [convert n.name]
+            Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
             _ -> case Math.getName tree of
                 "+" -> infixStr tree
                 "/" -> infixStr tree
