@@ -2,7 +2,7 @@ module UI.BrickSvg exposing (bricks, brick)
 
 import Html exposing (Html, div)
 import Svg exposing (svg, g, rect, text_, text, Attribute)
-import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents)
+import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx)
 -- ours
 import Helper
 
@@ -11,6 +11,8 @@ strokeWidth_: Float
 strokeWidth_ = 0.08
 horizontalPad_: Float  -- space between adjacent blocks on same row
 horizontalPad_ = 0.1
+rectRadius_: Float
+rectRadius_ = 0.2
 
 bricks: Float -> Float -> List (Html event) -> Html event
 bricks xMax yMax children =
@@ -57,6 +59,7 @@ brick xMin xMax yMin yMax opacity_ canHover selected onClick label =
             ,   class "brickRect"
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
+            ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari
             ]
             []
         ,   text_

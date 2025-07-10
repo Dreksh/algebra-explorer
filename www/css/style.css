@@ -370,7 +370,6 @@ dialog svg {
 
 .brickRect {
     stroke: black;
-    rx: 0.2;
     fill: #FFF;
 }
 .brickText {
