@@ -123,7 +123,7 @@ process combine convert tree =
     let
         infixStr root =
             List.foldl (\elem children ->
-                (   if priority_ elem > priority_ tree || Math.getName elem == Math.getName root
+                (   if priority_ elem >= priority_ tree
                     then [convert "(", process combine convert elem, convert ")"]
                     else [process combine convert elem]
                 )
@@ -161,7 +161,7 @@ toLatex_ model tree =
                 Nothing -> genericFunction root
                 Just (l, _) ->
                     Helper.resultList (\elem list -> toLatex_ model elem
-                        |> Result.map (\inner -> if priority_ elem > p || Math.getName elem == Math.getName tree
+                        |> Result.map (\inner -> if priority_ elem >= p
                             then [Latex.Bracket state inner]
                             else inner
                         )
