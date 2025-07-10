@@ -221,12 +221,12 @@ expression_ funcProps = Parser.loop []
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "+"
-                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "+"))
                 |. Parser.spaces
+                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "+"))
             ,   Parser.succeed (\elem -> Parser.Loop ((UnaryNode {state = (), name = "-", child = elem}) :: list))
                 |. expectSymbol_ "-"
-                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "-"))
                 |. Parser.spaces
+                |= (multiple_ funcProps |> Parser.inContext (PrevStr_ "-"))
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
@@ -238,27 +238,27 @@ expression_ funcProps = Parser.loop []
 multiple_: FunctionProperties -> Parser_ (Tree ())
 multiple_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list
-        then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps True |. Parser.spaces
+        then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "*"
-                |= (divisible_ funcProps True |> Parser.inContext (PrevStr_ "*"))
-                |. Parser.spaces
-            ,   Parser.succeed (\elem -> Parser.Loop (elem :: list))
-                |= divisible_ funcProps False
+                |= (divisible_ funcProps |> Parser.inContext (PrevStr_ "*"))
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
             ]
     )
-    |> Parser.map (\children -> case children of
-        [x] -> x
-        _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
+    |> generateMultipleNode_
+
+generateMultipleNode_: Parser_ (List (Tree ())) -> Parser_ (Tree ())
+generateMultipleNode_ = Parser.map (\children -> case children of
+    [x] -> x
+    _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
 
-divisible_: FunctionProperties -> Bool -> Parser_ (Tree ())
-divisible_ funcProps isNegatable = Parser.succeed generateDivisibleNode_
-    |= (if isNegatable then negatable_ else term_) funcProps
+divisible_: FunctionProperties -> Parser_ (Tree ())
+divisible_ funcProps = Parser.succeed generateDivisibleNode_
+    |= negatable_ funcProps
     |= Parser.loop [] (\list -> Parser.oneOf
         [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable_ funcProps
         ,   Parser.succeed (Parser.Done list)
@@ -273,8 +273,22 @@ generateDivisibleNode_ front divisors = case divisors of
 negatable_: FunctionProperties -> Parser_ (Tree ())
 negatable_ funcProps = Parser.oneOf
     [   Parser.succeed (\x -> UnaryNode {state = (), name = "-", child = x}) |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps |> Parser.inContext (PrevStr_ "-"))
-    ,   term_ funcProps
+    ,   product_ funcProps
     ]
+
+product_: FunctionProperties -> Parser_ (Tree ())
+product_ funcProps = Parser.loop []
+    (\list -> if List.isEmpty list
+        then Parser.succeed (List.singleton >> Parser.Loop) |= term_ funcProps |. Parser.spaces
+        else Parser.oneOf
+            [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
+                |= term_ funcProps
+                |. Parser.spaces
+            ,   Parser.succeed ()
+                |> Parser.map (\_ -> Parser.Done (List.reverse list))
+            ]
+    )
+    |> generateMultipleNode_
 
 term_: FunctionProperties -> Parser_ (Tree ())
 term_ funcProps = Parser.oneOf
