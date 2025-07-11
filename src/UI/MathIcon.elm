@@ -99,20 +99,20 @@ symbolsToFrames_ ref elem = case elem of
             botFrame = latexToFrames_ bottom
             maxWidth = max (Tuple.first topFrame.botRight) (Tuple.first botFrame.botRight)
             width = maxWidth*0.75 + 0.25
-            topOrigin = -(Tuple.second topFrame.botRight)*0.75 - 0.25
-            botOrigin = -(Tuple.second botFrame.topLeft)*0.75 + 0.25
+            topOrigin = -(Tuple.second topFrame.botRight)*0.75 - 0.1
+            botOrigin = -(Tuple.second botFrame.topLeft)*0.75 + 0.1
             up = topOrigin + (Tuple.second topFrame.topLeft)*0.75
             bot = botOrigin + (Tuple.second botFrame.botRight)*0.75
         in
             (   {   data = Position
-                    [   {   frame = {data = BaseFrame {strokes = [Move (0, 0.25), Line (width, 0.25)], elem = s }, topLeft = (0,0), botRight = (0,width)}
+                    [   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (width, 0)], elem = s }, topLeft = (0,0), botRight = (0,width)}
                         , origin = (0,0), scale = 1 }
                     ,   {   frame = topFrame
-                        ,   origin = (0.125 + (maxWidth - (Tuple.first topFrame.botRight))*0.75, topOrigin)
+                        ,   origin = (0.125 + (maxWidth - (Tuple.first topFrame.botRight))*0.375, topOrigin)
                         ,   scale = 0.75
                         }
                     ,   {   frame = botFrame
-                        ,   origin = (0.125 + (maxWidth - (Tuple.first botFrame.botRight))*0.75, botOrigin)
+                        ,   origin = (0.125 + (maxWidth - (Tuple.first botFrame.botRight))*0.375, botOrigin)
                         ,   scale = 0.75
                         }
                     ]
