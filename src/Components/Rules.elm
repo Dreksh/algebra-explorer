@@ -127,25 +127,35 @@ process combine convert tree =
                     then [convert "(", process combine convert elem, convert ")"]
                     else [process combine convert elem]
                 )
-                |> \inner -> if List.isEmpty children then inner else children ++ (convert (Math.getName root) :: inner)
+                |> \inner ->
+                    if List.isEmpty children then inner
+                    else if (Math.getName root) == "+" && (Math.getName elem) == "-" then children ++ inner
+                    else children ++ (convert (Math.getName root) :: inner)
             ) [] (Math.getChildren root)
+
+        unaryStr root child =
+            convert "-" :: (
+                if priority_ child >= priority_ root
+                then [convert "(", process combine convert child, convert ")"]
+                else [process combine convert child]
+            )
     in
         (
             case tree of
             Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
             Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
+            Math.UnaryNode n -> unaryStr tree n.child
             _ -> case Math.getName tree of
                 "+" -> infixStr tree
                 "/" -> infixStr tree
                 "=" -> infixStr tree
                 "*" -> infixStr tree -- Maybe do something smart to remove unnecessary multiplication symbols?
-                "-" -> (convert "-" :: (Math.getChildren tree |> List.map (process combine convert)))
                 _ ->
                     (convert ("\\" ++ Math.getName tree ++ "("))
                     ::
                     ((Math.getChildren tree |> List.map (process combine convert) |> List.intersperse (convert ",")) ++ [convert ")"])
         )
-        |> \children -> combine (Math.getState tree) children
+        |> combine (Math.getState tree)
 
 toLatex: Model -> Matcher.Equation s -> Result String (Latex.Model (Matcher.State s))
 toLatex model eq = toLatex_ model eq.root
