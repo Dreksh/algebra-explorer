@@ -121,7 +121,23 @@ priority_ root = case Math.getName root of
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
-        infixStr root abbreviation =
+        unaryStr root child =
+            convert (Math.getName root) :: (
+                if priority_ child >= priority_ root
+                then [convert "(", process combine convert child, convert ")"]
+                else [process combine convert child]
+            )
+
+        infixStr root =
+            List.foldl (\elem children ->
+                (   if priority_ elem >= priority_ tree
+                    then [convert "(", process combine convert elem, convert ")"]
+                    else [process combine convert elem]
+                )
+                |> \inner -> if List.isEmpty children then inner else children ++ (convert (Math.getName root) :: inner)
+            ) [] (Math.getChildren root)
+
+        plusStr root =
             List.foldl (\elem children ->
                 (   if priority_ elem >= priority_ tree
                     then [convert "(", process combine convert elem, convert ")"]
@@ -129,16 +145,9 @@ process combine convert tree =
                 )
                 |> \inner ->
                     if List.isEmpty children then inner
-                    else if abbreviation == Just (Math.getName elem) then children ++ inner
+                    else if Math.getName elem == "-" then children ++ inner  -- this abbreviates +- to just -
                     else children ++ (convert (Math.getName root) :: inner)
             ) [] (Math.getChildren root)
-
-        unaryStr root child =
-            convert (Math.getName root) :: (
-                if priority_ child >= priority_ root
-                then [convert "(", process combine convert child, convert ")"]
-                else [process combine convert child]
-            )
     in
         (
             case tree of
@@ -146,10 +155,10 @@ process combine convert tree =
             Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
             Math.UnaryNode n -> unaryStr tree n.child
             _ -> case Math.getName tree of
-                "+" -> infixStr tree (Just "-")
-                "/" -> infixStr tree Maybe.Nothing
-                "=" -> infixStr tree Maybe.Nothing
-                "*" -> infixStr tree Maybe.Nothing -- Maybe do something smart to remove unnecessary multiplication symbols?
+                "+" -> plusStr tree
+                "/" -> infixStr tree
+                "=" -> infixStr tree
+                "*" -> infixStr tree -- Maybe do something smart to remove unnecessary multiplication symbols?
                 _ ->
                     (convert ("\\" ++ Math.getName tree ++ "("))
                     ::
