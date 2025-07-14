@@ -121,28 +121,24 @@ priority_ root = case Math.getName root of
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
-        unaryStr root child =
-            convert (Math.getName root) :: (
-                if priority_ child >= priority_ root
-                then [convert "(", process combine convert child, convert ")"]
-                else [process combine convert child]
-            )
+        addBrackets parent child =
+            if priority_ child >= priority_ parent
+            then [convert "(", process combine convert child, convert ")"]
+            else [process combine convert child]
+
+        unaryStr root child = convert (Math.getName root) :: addBrackets root child
 
         infixStr root =
             List.foldl (\elem children ->
-                (   if priority_ elem >= priority_ tree
-                    then [convert "(", process combine convert elem, convert ")"]
-                    else [process combine convert elem]
-                )
-                |> \inner -> if List.isEmpty children then inner else children ++ (convert (Math.getName root) :: inner)
+                addBrackets root elem
+                |> \inner ->
+                    if List.isEmpty children then inner
+                    else children ++ (convert (Math.getName root) :: inner)
             ) [] (Math.getChildren root)
 
         plusStr root =
             List.foldl (\elem children ->
-                (   if priority_ elem >= priority_ tree
-                    then [convert "(", process combine convert elem, convert ")"]
-                    else [process combine convert elem]
-                )
+                addBrackets root elem
                 |> \inner ->
                     if List.isEmpty children then inner
                     else if Math.getName elem == "-" then children ++ inner  -- this abbreviates +- to just -
