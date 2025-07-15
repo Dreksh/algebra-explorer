@@ -1,4 +1,4 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, decoder, encode)
+module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, symbolToStr, decoder, encode)
 
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -79,12 +79,15 @@ strToSymbol_ str = case str of
     "int" -> Ok Integration
     _ -> Err ("symbol not found: '" ++ str ++ "'")
 
+symbolToStr: Symbol -> String
+symbolToStr s = case s of
+    AlphaLower -> "alpha"
+    BetaLower -> "beta"
+    CrossMultiplcation -> "cross"
+    Integration -> "int"
+
 encodeSymbol_: Symbol -> Encode.Value
-encodeSymbol_ s = case s of
-    AlphaLower -> Encode.string "alpha"
-    BetaLower -> Encode.string "beta"
-    CrossMultiplcation -> Encode.string "cross"
-    Integration -> Encode.string "int"
+encodeSymbol_ = symbolToStr >> Encode.string
 
 -- https://www.overleaf.com/learn/latex/List_of_Greek_letters_and_math_symbols
 -- The set is only for symbols, not functional stuff like \frac (that is done separately)

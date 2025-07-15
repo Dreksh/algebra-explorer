@@ -162,7 +162,7 @@ toLatex_ model tree =
                 Just (l, _) ->
                     Helper.resultList (\elem list -> toLatex_ model elem
                         |> Result.map (\inner -> if priority_ elem >= p
-                            then [Latex.Bracket state inner]
+                            then [Latex.Bracket (Math.getState elem) inner]
                             else inner
                         )
                         |> Result.map (\inner -> if List.isEmpty list
@@ -355,7 +355,7 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         ,   Menu.Section {name = "Substitute", icon = Nothing}
             [   Menu.Content
                 [   h3 [] [text "Given x=y, f(x)=f(y)"]
-                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurances with one by the other."]
+                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurences with one by the other."]
                 ]
             ]
         ,   Menu.Section {name = "Group", icon = Nothing}

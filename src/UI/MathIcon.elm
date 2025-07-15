@@ -5,8 +5,10 @@ import Html
 import Svg
 import Svg.Attributes exposing (d, fill, opacity, stroke, strokeWidth, viewBox)
 -- Ours
+import Algo.BFS as BFS
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
+import UI.Animation as Animation
 import UI.Animation as Animation
 import UI.Animation as Animation
 
@@ -19,11 +21,15 @@ type Stroke =
     | Curve Vector2 Vector2 Vector2
 
 type alias AnimationFrame =
-    {   data: List {strokes: List Stroke, origin: Animation.EaseState Vector2, scale: Animation.EaseState Float} -- This is for parts that are split, i.e. commas in the function
+    {   strokes: List Stroke
+    ,   origin: Animation.EaseState Vector2
+    ,   scale: Animation.EaseState Float
     ,   opacity: Animation.EaseState Float
     }
 type alias Model =
-    {   frames: Dict.Dict Int (Dict.Dict Int AnimationFrame) -- prevID and then regular ID
+    {   frames: Dict.Dict (Int, Int) AnimationFrame -- keyed by NodeID + occurence (i.e. commas in functions)
+    ,   deleting: List AnimationFrame
+    ,   current: Latex.Model State
     ,   topLeft: Animation.EaseState Vector2
     ,   botRight: Animation.EaseState Vector2
     }
@@ -31,33 +37,194 @@ type alias Model =
 blank: Model
 blank =
     {   frames = Dict.empty
+    ,   current = []
+    ,   deleting = []
     ,   topLeft = Animation.newEase 300 (0,0) (0,0)
     ,   botRight = Animation.newEase 300 (0,0) (0,0)
     }
 
-init: Latex.Model State -> Model
-init root = blank
+init: Animation.Tracker -> Latex.Model State -> (Model, Animation.Tracker)
+init tracker current = let frames = latexToFrames_ current in
+    toAnimationDict_ frames
+    |> Dict.foldl newAnimation_ (Dict.empty, tracker)
+    |> \(newFrames,t) ->
+        (   {   frames = newFrames
+            ,   current = current
+            ,   deleting = []
+            ,   topLeft = Animation.newEase 300 (0,0) (Animation.scaleVector2 20 frames.topLeft)
+            ,   botRight = Animation.newEase 300 (0,0) (Animation.scaleVector2 20 frames.botRight)
+            }
+        ,   t
+        )
 
 advanceTime: Float -> Model -> Model
 advanceTime time model =
-    {   model
-    |   frames = Dict.map (\_ -> Dict.map (\_ animation ->
-            {   animation
-            |   data = List.map (\data ->
-                    {   data
-                    |   origin = Animation.smoothDampVector2 time data.origin
-                    ,   scale = Animation.smoothDampFloat time data.scale
-                    }
-                ) animation.data
-            ,   opacity = Animation.smoothDampFloat time animation.opacity
+    let
+        incrementFrame f =
+            {   f
+            |   origin = Animation.smoothDampVector2 time f.origin
+            ,   scale = Animation.smoothDampFloat time f.scale
+            ,   opacity = Animation.smoothDampFloat time f.opacity
             }
-            )
-        )
-        model.frames
+    in
+    {   model
+    |   frames = Dict.map (\_ -> incrementFrame) model.frames
+    ,   deleting = List.map incrementFrame model.deleting
+    ,   topLeft = Animation.smoothDampVector2 time model.topLeft
+    ,   botRight = Animation.smoothDampVector2 time model.botRight
     }
 
 set: Animation.Tracker -> Latex.Model State -> Model -> (Model, Animation.Tracker)
-set tracker root model = (model, tracker)
+set tracker new model =
+    let
+        frames = latexToFrames_ new
+        matches = BFS.minDiff equalPart_ iteratorToPart_ (latexIterator_ new) (latexIterator_ model.current)
+            |> toMatches_
+    in
+    toAnimationDict_ frames
+    -- Set frames based on existing frames
+    |> Dict.foldl (\key value (result, delDict, t) -> case Dict.get key matches of
+        Nothing -> newAnimation_ key value (result, t) |> \(d, newT) -> (d, delDict, newT)
+        Just e -> case Dict.get (e.id, e.occurence) model.frames of
+            Nothing -> newAnimation_ key value (result, t) |> \(d, newT) -> (d, delDict, newT)
+            Just f ->
+                let
+                    (newO, t1) = Animation.setEase t value.origin f.origin
+                    (newS, t2) = Animation.setEase t1 value.scale f.scale
+                in
+                    (Dict.insert key {f| origin = newO, scale = newS} result, Dict.remove (e.id, e.occurence) delDict, t2)
+        )
+        (Dict.empty, model.frames, tracker)
+    -- Handle frame deletion + pruning of frame deletion
+    |> \(finalFrames, oldFrames, inT) ->
+        let
+            (finalDel, finalTracker) = Dict.toList oldFrames
+                |> List.foldl (\(_, frame) (list, t) -> let (op, newT) = Animation.setEase t 0 frame.opacity in
+                    ({frame | opacity = op} :: list, newT)
+                ) (model.deleting, inT)
+        in
+            (finalFrames, List.filter (\f -> Animation.current f.opacity /= 0) finalDel, finalTracker)
+    |> \(newFrames, del, t) ->
+        let
+            (topLeft, t1) = Animation.setEase t (Animation.scaleVector2 20 frames.topLeft) model.topLeft
+            (botRight, t2) = Animation.setEase t1 (Animation.scaleVector2 20 frames.botRight) model.botRight
+        in
+            (   {   frames = newFrames
+                ,   current = new
+                ,   deleting = del
+                ,   topLeft = topLeft
+                ,   botRight = botRight
+                }
+            ,   t2
+            )
+
+{- diff -}
+type alias Part =
+    {   str: String
+    ,   id: Int
+    ,   occurence: Int
+    }
+
+equalPart_: Part -> Part -> Bool
+equalPart_ left right = left.id == right.id && left.str == right.str
+
+type alias Iterator =
+    {   remaining: Latex.Model (State, Bool) -- The boolean stands for whether the special symbol has been seen
+    ,   lastIndex: Dict.Dict Int Int
+    }
+
+latexIterator_: Latex.Model State -> Iterator
+latexIterator_ origin = {remaining= Latex.map (\s -> (s, False)) origin, lastIndex = Dict.empty}
+
+iteratorToPart_: Iterator -> (Iterator, Maybe Part)
+iteratorToPart_ it =
+    let
+        result remaining id str =
+            (   case Dict.get id it.lastIndex of
+                    Nothing -> 0
+                    Just n -> n + 1
+            )
+            |> \occurence ->
+                (   {remaining = remaining, lastIndex = Dict.insert id occurence it.lastIndex}
+                ,   Just {str = str, id = id, occurence = occurence}
+                )
+    in
+    case it.remaining of
+        [] -> (it, Nothing)
+        (current::next) -> case current of
+            Latex.Fraction (s, seen) top bot -> if seen
+                then if List.isEmpty bot then result next (Matcher.getID s) " )"
+                    else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
+                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) (Matcher.getID s) " /"
+                    else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
+            Latex.Text (s, _) text -> result next (Matcher.getID s) text
+            Latex.SymbolPart (s, _) symbol -> result next (Matcher.getID s) (" " ++ Latex.symbolToStr symbol)
+            Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript (s, False) innerIt.remaining :: next}, part)
+            Latex.Subscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript (s, False) innerIt.remaining :: next}, part)
+            Latex.Bracket (s, seen) inner -> if seen then
+                    if List.isEmpty inner then result next (Matcher.getID s) " )"
+                    else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
+                else result (Latex.Bracket (s, True) inner :: next) (Matcher.getID s) " ("
+            Latex.Sqrt (s, seen) inner -> if seen then
+                    if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                    else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
+                else result (Latex.Sqrt (s, True) inner :: next) (Matcher.getID s) " sqrt"
+            Latex.Argument (s, _) num -> result next (Matcher.getID s) (" " ++ String.fromInt num)
+
+toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
+toMatches_ input =
+    let
+        matchID part = (part.id, part.str)
+        insert part dict = case Dict.get (matchID part) dict of
+            Nothing -> Dict.insert (matchID part) [part] dict
+            Just l -> Dict.insert (matchID part) (l ++ [part]) dict
+    in
+    List.foldl (\change (pending, done, (found, del)) -> case change of
+        BFS.Add new -> (new :: pending, done, (found, del))
+        BFS.Delete old -> (pending, done, (found, insert old del))
+        BFS.None new old -> (pending, Dict.insert (new.id, new.occurence) old done, (insert old found, del))
+    ) ([], Dict.empty, (Dict.empty, Dict.empty)) input
+    |> \(pending, done, (found, del)) -> List.reverse pending
+        |> List.foldl (\part (doneDict, (foundDict, delDict)) ->
+        -- Try to match with deleted values first
+        case Dict.get (matchID part) delDict of
+            Just (entry::next) -> (Dict.insert (part.id, part.occurence) entry doneDict, (insert entry foundDict, Dict.insert (matchID part) next delDict))
+            -- Try to match with found values
+            _ -> case Dict.get (matchID part) foundDict of
+                Just (entry::_) -> (Dict.insert (part.id, part.occurence) entry doneDict, (foundDict, delDict))
+                _ -> (doneDict, (foundDict, delDict))
+        )
+        (done, (found,del))
+    |> Tuple.first
+
+toAnimationDict_: Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
+toAnimationDict_ = processFrame_ (\s strokes origin scale dict -> let id = Matcher.getID s in
+        Dict.insert
+        (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
+        {strokes = strokes, origin = origin, scale = scale}
+        dict
+    )
+    (0,0) 20 Dict.empty
+
+newAnimation_: (Int, Int) -> {strokes: List Stroke, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
+newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEase 300 0 0 |> Animation.setEase t 1 in
+    (   Dict.insert key
+        {   strokes = value.strokes
+        ,   origin = Animation.newEase 300 (0,0) value.origin
+        ,   scale = Animation.newEase 300 0 value.scale
+        ,   opacity = op
+        }
+        dict
+    ,   newT
+    )
 
 {- toFrames -}
 
@@ -179,21 +346,16 @@ symbolsToFrames_ ref elem = case elem of
             )
     Latex.Argument s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
 
-processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> (end, Vector2, Vector2)
-processFrame_ combine origin scale initial frame =
-    (   case frame.data of
-            BaseFrame s -> combine s.elem s.strokes origin scale initial
-            Position list -> List.foldl (\elem result ->
-                    processFrame_ combine
-                    (Animation.scaleVector2 scale elem.origin |> Animation.addVector2 origin)
-                    (scale * elem.scale)
-                    result
-                    elem.frame
-                    |> \(a,_,_) -> a
-                ) initial list
-    ,   Animation.scaleVector2 scale frame.topLeft
-    ,   Animation.scaleVector2 scale frame.botRight
-    )
+processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
+processFrame_ combine origin scale initial frame = case frame.data of
+    BaseFrame s -> combine s.elem s.strokes origin scale initial
+    Position list -> List.foldl (\elem result ->
+            processFrame_ combine
+            (Animation.scaleVector2 scale elem.origin |> Animation.addVector2 origin)
+            (scale * elem.scale)
+            result
+            elem.frame
+        ) initial list
 
 {- toStrokes
 
@@ -309,22 +471,30 @@ rightShiftStrokes_ left = List.map (\elem -> case elem of
 {- UI -}
 
 static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
-static attrs l = latexToFrames_ l
-    |> processFrame_ (\_ strokes origin scale list ->
+static attrs l = let frames = latexToFrames_ l in
+    processFrame_ (\_ strokes origin scale list ->
         Svg.path [d (strokeToPath_ origin scale strokes), stroke "currentColor", strokeWidth "1", fill "none"] []
         :: list
-        ) (0,0) 20 []
-    |> \(children, topLeft, botRight) -> Svg.svg (toViewBox_ topLeft botRight :: attrs) children
+        ) (0,0) 20 [] frames
+    |>  Svg.svg
+        (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
+        ::  attrs
+        )
 
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
-view convert attrs model = Dict.toList model.frames
-    |> List.concatMap (\(_, f) -> Dict.toList f
-        |> List.concatMap (\(id, frame) ->
-            List.map (\s ->
-                Svg.path (d (strokeToPath_ (Animation.current s.origin) (Animation.current s.scale) s.strokes) :: (opacity (Animation.current frame.opacity |> String.fromFloat) ::convert id)) []
-            ) frame.data
-        )
-    )
+view convert attrs model =
+    let
+        toAttrs f =
+            [   d (strokeToPath_ (Animation.current f.origin) (Animation.current f.scale) f.strokes)
+            ,   stroke "currentColor"
+            ,   strokeWidth "1"
+            ,   fill "none"
+            ,   opacity (Animation.current f.opacity |> String.fromFloat)
+            ]
+    in
+    Dict.toList model.frames
+    |> List.map (\((id, _), frame) -> Svg.path (toAttrs frame ++ convert id) [])
+    |> (++) (List.map (toAttrs >> \a -> Svg.path a []) model.deleting)
     |> Svg.svg (toViewBox_ (Animation.current model.topLeft) (Animation.current model.botRight) :: attrs)
 
 toViewBox_: Vector2 -> Vector2 -> Html.Attribute msg
