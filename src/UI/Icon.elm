@@ -1,9 +1,9 @@
 module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, default)
+    verticalLine, history, default, block, written)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg, text, text_)
-import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
+import Svg.Attributes exposing (cx, cy, d, fill, fontSize, height, id, mask, r, rx, stroke, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
 class: String -> Html.Attribute msg
@@ -90,4 +90,15 @@ default attr = svg (viewBox "0 0 24 24" :: attr)
     ,   path [d "M11 13V17A5 5 0 0 0 17 17V13", stroke "currentColor", strokeWidth "1", fill "none"] []
     ,   path [d "M11 15A5 5 0 0 0 16 15.5", stroke "currentColor", strokeWidth "1", fill "none"] []
     ,   path [d "M13 14A8 8 0 0 0 12 10A8 8 0 0 0 16 10A8 8 0 0 0 15 14", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ]
+
+block: List (Html.Attribute msg) -> Html.Html msg
+block attr = svg (viewBox "0 0 24 24" :: attr)
+    [   rect [x "1", y "1", width "22", height "22", rx "2", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   text_ [x "6", y "18", fontSize "12", stroke "currentColor"] [text "A"]
+    ]
+
+written: List (Html.Attribute msg) -> Html.Html msg
+written attr = svg (viewBox "0 0 24 24" :: attr)
+    [   text_ [x "4", y "18", fontSize "12", stroke "currentColor"] [text "Aa"]
     ]

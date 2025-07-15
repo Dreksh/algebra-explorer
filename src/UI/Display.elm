@@ -55,6 +55,7 @@ type alias Entry =
 type Event =
     Select Int Int Bool
     | ToggleHide Int
+    | ToggleUI Int
     | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
@@ -318,6 +319,14 @@ update size tracker event model = case event of
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, tracker, Cmd.none)
+    ToggleUI eq -> case Dict.get eq model.equations of
+        Nothing -> (model, tracker, Cmd.none)
+        Just entry -> let (equation, latex) = History.current entry.history in
+            case entry.ui of
+                Blocks _ -> MathIcon.init tracker latex
+                    |> \(e, t) -> ({model | equations = Dict.insert eq {entry | ui = Written e} model.equations}, t, Cmd.none)
+                Written _ -> Bricks.init tracker equation.root
+                    |> \(b, t) -> ({model | equations = Dict.insert eq {entry | ui = Blocks b} model.equations}, t, Cmd.none)
     HistoryEvent eq he -> case Dict.get eq model.equations of
         Nothing ->(model, tracker, Cmd.none)
         Just entry ->
@@ -354,11 +363,18 @@ newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member
 
 menu: (Event -> msg) -> Model -> List (Menu.Part msg)
 menu convert model = Dict.toList model.equations
-    |> List.map (\(num, entry) -> Menu.Content [a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
-        [   if entry.show then Icon.shown [] else Icon.hidden []
-        ,   span [class "space"] []
-        ,   p [] [text (History.current entry.history |> Tuple.first |> .root |> treeToString_)]
-        ]]
+    |> List.map (\(num, entry) -> Menu.Content
+        [   a [class "clickable", HtmlEvent.onClick (convert (ToggleUI num))]
+            [   case entry.ui of
+                    Blocks _ -> Icon.written []
+                    Written _ -> Icon.block []
+            ]
+        ,   a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
+            [   if entry.show then Icon.shown [] else Icon.hidden []
+            ,   span [class "space"] []
+            ,   p [] [text (History.current entry.history |> Tuple.first |> .root |> treeToString_)]
+            ]
+        ]
     )
 
 treeToString_: Math.Tree s -> String
