@@ -9,8 +9,7 @@ import Algo.BFS as BFS
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
-import UI.Animation as Animation
-import UI.Animation as Animation
+import UI.Icon as Icon
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -122,6 +121,7 @@ set tracker new model =
 type alias Part =
     {   str: String
     ,   id: Int
+    ,   prevID: Int
     ,   occurence: Int
     }
 
@@ -139,28 +139,28 @@ latexIterator_ origin = {remaining= Latex.map (\s -> (s, False)) origin, lastInd
 iteratorToPart_: Iterator -> (Iterator, Maybe Part)
 iteratorToPart_ it =
     let
-        result remaining id str =
+        result remaining s str = let id = Matcher.getID s in
             (   case Dict.get id it.lastIndex of
                     Nothing -> 0
                     Just n -> n + 1
             )
             |> \occurence ->
                 (   {remaining = remaining, lastIndex = Dict.insert id occurence it.lastIndex}
-                ,   Just {str = str, id = id, occurence = occurence}
+                ,   Just {str = str, id = id, prevID = Matcher.getState s |> .prevID, occurence = occurence}
                 )
     in
     case it.remaining of
         [] -> (it, Nothing)
         (current::next) -> case current of
             Latex.Fraction (s, seen) top bot -> if seen
-                then if List.isEmpty bot then result next (Matcher.getID s) " )"
+                then if List.isEmpty bot then result next s " )"
                     else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
-                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) (Matcher.getID s) " /"
+                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) s " /"
                     else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
-            Latex.Text (s, _) text -> result next (Matcher.getID s) text
-            Latex.SymbolPart (s, _) symbol -> result next (Matcher.getID s) (" " ++ Latex.symbolToStr symbol)
+            Latex.Text (s, _) text -> result next s text
+            Latex.SymbolPart (s, _) symbol -> result next s (" " ++ Latex.symbolToStr symbol)
             Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                     |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript (s, False) innerIt.remaining :: next}, part)
@@ -168,21 +168,21 @@ iteratorToPart_ it =
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                     |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript (s, False) innerIt.remaining :: next}, part)
             Latex.Bracket (s, seen) inner -> if seen then
-                    if List.isEmpty inner then result next (Matcher.getID s) " )"
+                    if List.isEmpty inner then result next s " )"
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
-                else result (Latex.Bracket (s, True) inner :: next) (Matcher.getID s) " ("
+                else result (Latex.Bracket (s, True) inner :: next) s " ("
             Latex.Sqrt (s, seen) inner -> if seen then
                     if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
-                else result (Latex.Sqrt (s, True) inner :: next) (Matcher.getID s) " sqrt"
-            Latex.Argument (s, _) num -> result next (Matcher.getID s) (" " ++ String.fromInt num)
+                else result (Latex.Sqrt (s, True) inner :: next) s " sqrt"
+            Latex.Argument (s, _) num -> result next s (" " ++ String.fromInt num)
 
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
 toMatches_ input =
     let
-        matchID part = (part.id, part.str)
+        matchID part = (part.prevID, part.str) -- Secondary matching is with prevID
         insert part dict = case Dict.get (matchID part) dict of
             Nothing -> Dict.insert (matchID part) [part] dict
             Just l -> Dict.insert (matchID part) (l ++ [part]) dict
@@ -486,9 +486,7 @@ view convert attrs model =
     let
         toAttrs f =
             [   d (strokeToPath_ (Animation.current f.origin) (Animation.current f.scale) f.strokes)
-            ,   stroke "currentColor"
-            ,   strokeWidth "1"
-            ,   fill "none"
+            ,   Icon.class "stroke"
             ,   opacity (Animation.current f.opacity |> String.fromFloat)
             ]
     in

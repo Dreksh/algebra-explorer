@@ -12,6 +12,7 @@ import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
+import Svg.Attributes
 -- Ours
 import Helper
 import Algo.History as History
@@ -405,7 +406,14 @@ views converter model = Dict.toList model.equations
                                 Html.text eq.root
                             ,   Bricks.view eqNum highlight Select b
                             ]
-                        Written w -> [MathIcon.view (\_ -> []) [] w]
+                        Written w ->
+                            [   MathIcon.view (\id -> List.filterMap identity
+                                    [   HtmlEvent.onShiftClick (Select eqNum id) |> Just
+                                    ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
+                                    ]
+                                )
+                                [] w
+                            ]
                     )
                     |>  Html.map converter
                 ,   Icon.verticalLine []

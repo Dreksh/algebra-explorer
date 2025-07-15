@@ -380,10 +380,21 @@ dialog svg {
     user-select: none;
 }
 .brick:hover .brickRect {
-    stroke: var(--color-highlight)
+    stroke: var(--color-highlight);
 }
 .brick.selected .brickRect {
     fill: var(--color-selected);
+}
+.stroke {
+    stroke: var(--color-text);
+    stroke-width: 1;
+    fill: none;
+}
+.stroke:not(.selected):hover {
+    stroke: var(--color-highlight);
+}
+.stroke.selected {
+    stroke: var(--color-selected);
 }
 /* Equation */
 div.history {
