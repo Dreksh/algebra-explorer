@@ -256,7 +256,7 @@ latexToFrames_ = List.foldl
             )
     )
     (([], (0,0), (0, 0)), {body = 0, top = 0, bot = 0})
-    >> \((list, topLeft, botRight),_) -> {data = Position list, topLeft = topLeft, botRight = botRight}
+    >> \((list, topLeft, botRight),_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
 
 symbolsToFrames_: Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ ref elem = case elem of
@@ -272,12 +272,12 @@ symbolsToFrames_ ref elem = case elem of
             bot = botOrigin + (Tuple.second botFrame.botRight)*0.75
         in
             (   {   data = Position
-                    [   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (width, 0)], elem = s }, topLeft = (0,0), botRight = (0,width)}
-                        , origin = (0,0), scale = 1 }
-                    ,   {   frame = topFrame
+                    [   {   frame = topFrame
                         ,   origin = (0.125 + (maxWidth - (Tuple.first topFrame.botRight))*0.375, topOrigin)
                         ,   scale = 0.75
                         }
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (width, 0)], elem = s }, topLeft = (0,0), botRight = (0,width)}
+                        , origin = (0,0), scale = 1 }
                     ,   {   frame = botFrame
                         ,   origin = (0.125 + (maxWidth - (Tuple.first botFrame.botRight))*0.375, botOrigin)
                         ,   scale = 0.75
@@ -327,8 +327,8 @@ symbolsToFrames_ ref elem = case elem of
                 (midTop, midBot) = ((2*top + bot)/3, (top + 2*bot)/3 )
             in
             (   {   data = Position
-                    [   {frame = new, origin = (0.3, 0), scale = 1}
-                    ,   {frame = {data = BaseFrame {strokes = [Move (0.2, top), Curve (0, midTop) (0, midBot) (0.2, bot)], elem = s}, topLeft = (0,top), botRight = (0.3,bot)}, origin = (0,0), scale = 1}
+                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, top), Curve (0, midTop) (0, midBot) (0.2, bot)], elem = s}, topLeft = (0,top), botRight = (0.3,bot)}, origin = (0,0), scale = 1}
+                    ,   {frame = new, origin = (0.3, 0), scale = 1}
                     ,   {frame = {data = BaseFrame {strokes = [Move (0.1, top), Curve (0.3, midTop) (0.3, midBot) (0.1, bot)], elem = s}, topLeft = (0,top), botRight = (0.3,bot)}, origin = (Tuple.first new.botRight + 0.3, 0), scale = 1}
                     ]
                 ,   topLeft = new.topLeft

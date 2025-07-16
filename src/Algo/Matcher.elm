@@ -311,7 +311,7 @@ groupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id)
             else if not n.commutative then Err "Not implemented for non-commutative"
             else let (pre,group,post) = groupPartition_ (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
                 if (List.length pre + List.length post == 0) || List.isEmpty group then Err "Grouping all or none does nothing"
-                else let (newS, newT) = addNode_ Nothing (getID n.state) subEq.tracker in
+                else let (newS, newT) = addNode_ (Just n.state) (getID n.state) subEq.tracker in
                     let newP = List.foldl (\c -> Dict.insert (Math.getState c |> getID) (getID newS)) newT.parent group in
                     Ok (getID newS, {root = Math.BinaryNode
                         {   n
