@@ -355,7 +355,7 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         ,   Menu.Section {name = "Substitute", icon = Nothing}
             [   Menu.Content
                 [   h3 [] [text "Given x=y, f(x)=f(y)"]
-                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurences with one by the other."]
+                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurrences with one by the other."]
                 ]
             ]
         ,   Menu.Section {name = "Group", icon = Nothing}

@@ -26,7 +26,7 @@ type alias AnimationFrame =
     ,   opacity: Animation.EaseState Float
     }
 type alias Model =
-    {   frames: Dict.Dict (Int, Int) AnimationFrame -- keyed by NodeID + occurence (i.e. commas in functions)
+    {   frames: Dict.Dict (Int, Int) AnimationFrame -- keyed by NodeID + occurrence (i.e. commas in functions)
     ,   deleting: List AnimationFrame
     ,   current: Latex.Model State
     ,   topLeft: Animation.EaseState Vector2
@@ -84,14 +84,14 @@ set tracker new model =
     -- Set frames based on existing frames
     |> Dict.foldl (\key value (result, delDict, t) -> case Dict.get key matches of
         Nothing -> newAnimation_ key value (result, t) |> \(d, newT) -> (d, delDict, newT)
-        Just e -> case Dict.get (e.id, e.occurence) model.frames of
+        Just e -> case Dict.get (e.id, e.occurrence) model.frames of
             Nothing -> newAnimation_ key value (result, t) |> \(d, newT) -> (d, delDict, newT)
             Just f ->
                 let
                     (newO, t1) = Animation.setEase t value.origin f.origin
                     (newS, t2) = Animation.setEase t1 value.scale f.scale
                 in
-                    (Dict.insert key {f| origin = newO, scale = newS} result, Dict.remove (e.id, e.occurence) delDict, t2)
+                    (Dict.insert key {f| origin = newO, scale = newS} result, Dict.remove (e.id, e.occurrence) delDict, t2)
         )
         (Dict.empty, model.frames, tracker)
     -- Handle frame deletion + pruning of frame deletion
@@ -122,7 +122,7 @@ type alias Part =
     {   str: String
     ,   id: Int
     ,   prevID: Int
-    ,   occurence: Int
+    ,   occurrence: Int
     }
 
 equalPart_: Part -> Part -> Bool
@@ -144,9 +144,9 @@ iteratorToPart_ it =
                     Nothing -> 0
                     Just n -> n + 1
             )
-            |> \occurence ->
-                (   {remaining = remaining, lastIndex = Dict.insert id occurence it.lastIndex}
-                ,   Just {str = str, id = id, prevID = Matcher.getState s |> .prevID, occurence = occurence}
+            |> \occurrence ->
+                (   {remaining = remaining, lastIndex = Dict.insert id occurrence it.lastIndex}
+                ,   Just {str = str, id = id, prevID = Matcher.getState s |> .prevID, occurrence = occurrence}
                 )
     in
     case it.remaining of
@@ -190,16 +190,16 @@ toMatches_ input =
     List.foldl (\change (pending, done, (found, del)) -> case change of
         BFS.Add new -> (new :: pending, done, (found, del))
         BFS.Delete old -> (pending, done, (found, insert old del))
-        BFS.None new old -> (pending, Dict.insert (new.id, new.occurence) old done, (insert old found, del))
+        BFS.None new old -> (pending, Dict.insert (new.id, new.occurrence) old done, (insert old found, del))
     ) ([], Dict.empty, (Dict.empty, Dict.empty)) input
     |> \(pending, done, (found, del)) -> List.reverse pending
         |> List.foldl (\part (doneDict, (foundDict, delDict)) ->
         -- Try to match with deleted values first
         case Dict.get (matchID part) delDict of
-            Just (entry::next) -> (Dict.insert (part.id, part.occurence) entry doneDict, (insert entry foundDict, Dict.insert (matchID part) next delDict))
+            Just (entry::next) -> (Dict.insert (part.id, part.occurrence) entry doneDict, (insert entry foundDict, Dict.insert (matchID part) next delDict))
             -- Try to match with found values
             _ -> case Dict.get (matchID part) foundDict of
-                Just (entry::_) -> (Dict.insert (part.id, part.occurence) entry doneDict, (foundDict, delDict))
+                Just (entry::_) -> (Dict.insert (part.id, part.occurrence) entry doneDict, (foundDict, delDict))
                 _ -> (doneDict, (foundDict, delDict))
         )
         (done, (found,del))
