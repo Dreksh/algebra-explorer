@@ -125,7 +125,7 @@ coreTopic_ rModel selection = case selection of
 coreToList_: CoreTopicState -> List (String, State)
 coreToList_ state =
     [   ("Evaluate", state.evaluate)
-    ,   ("Number Substitution", state.numSubstitute)
+    ,   ("Expand", state.numSubstitute)
     ,   ("Substitution", state.substitute)
     ,   ("Group", state.group)
     ,   ("Ungroup", state.ungroup)

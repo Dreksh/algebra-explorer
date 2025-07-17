@@ -475,7 +475,7 @@ substitutionDialog_ eqNum selected model =
 
 numSubDialog_: Int -> Int -> Float -> Dialog.Model Event
 numSubDialog_ eqNum root target =
-    {   title = "Substitute a number for an expression"
+    {   title = "Expand a number into an expression"
     ,   sections =
         [{  subtitle = "The expression to replace " ++ String.fromFloat target
         ,   lines = [[Dialog.Text {id="expr"}]]

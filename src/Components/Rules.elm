@@ -365,7 +365,7 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
                 ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
                 ]
             ]
-        ,   Menu.Section {name = "Number Substitution", icon = Nothing}
+        ,   Menu.Section {name = "Expand", icon = Nothing}
             [   Menu.Content
                 [   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
