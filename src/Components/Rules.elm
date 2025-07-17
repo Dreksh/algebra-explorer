@@ -110,23 +110,27 @@ functionProperties model = Dict.map (\_ (f, _) -> f.properties) model.functions
 
 priority_: Math.Tree s -> Int
 priority_ root = case Math.getName root of
-    -- Following https://en.wikipedia.org/wiki/Order_of_operations#Programming_languages
-    "-" -> 2 -- Following the unary operator
-    "*" -> 3
-    "/" -> 3
-    "+" -> 4
-    "=" -> 7 -- Equivalent to == in programming languages
-    _ -> 1 -- Assume other functions will be called as "func()"
+    "-" -> 20 -- Following the unary operator
+    "/" -> 30
+    "*" -> 40
+    "+" -> 50
+    "=" -> 70 -- Equivalent to == in programming languages
+    _ -> 10 -- Assume other functions will be called as "func()"
 
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
+        addUnaryBrackets parent child =
+            if priority_ child > priority_ parent
+            then [convert "(", process combine convert child, convert ")"]
+            else [process combine convert child]
+
+        unaryStr root child = convert (Math.getName root) :: addUnaryBrackets root child
+
         addBrackets parent child =
             if priority_ child >= priority_ parent
             then [convert "(", process combine convert child, convert ")"]
             else [process combine convert child]
-
-        unaryStr root child = convert (Math.getName root) :: addBrackets root child
 
         infixStr root =
             List.foldl (\elem children ->
