@@ -274,7 +274,7 @@ update event core = let model = core.swappable in
             Rules.Group eqNum root children -> case Display.groupChildren core.animation (Rules.toLatex model.rules) eqNum root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
-            Rules.Ungroup eqNum root selected -> case Display.ungroupChildren core.animation (Rules.toLatex model.rules) eqNum root selected model.display of
+            Rules.Ungroup eqNum root -> case Display.ungroupChildren core.animation (Rules.toLatex model.rules) eqNum root model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
             Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"

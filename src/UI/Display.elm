@@ -64,7 +64,7 @@ type Event =
 type alias SelectedNode =
     {   eq: Int
     ,   root: Int
-    ,   tree: Math.Tree State
+    ,   tree: Matcher.Equation Animation.State
     ,   selected: Set.Set Int
     ,   nodes: Set.Set Int
     }
@@ -131,8 +131,10 @@ updatePositions_ model =
 getSelected: Model -> Maybe SelectedNode
 getSelected model = model.selected
     |> Maybe.andThen (\(eqNum, ids) -> Dict.get eqNum model.equations
-        |> Maybe.andThen (.history >> History.current >> Tuple.first >> Matcher.selectedSubtree ids >> Result.toMaybe)
-        |> Maybe.map (\(root, nodes, tree) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = tree})
+        |> Maybe.map (.history >> History.current >> Tuple.first)
+        |> Maybe.andThen (\eq -> Matcher.selectedSubtree ids eq |> Result.toMaybe
+            |> Maybe.map (\(root, nodes) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = eq})
+        )
     )
 
 updateBricks: Animation.Tracker -> Entry -> (Entry, Animation.Tracker)
@@ -209,17 +211,17 @@ groupChildren tracker convert eqNum root children model = case Dict.get eqNum mo
             )
         )
 
-ungroupChildren: Animation.Tracker -> LatexConverter -> Int -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
-ungroupChildren tracker convert eqNum id selected model = case Dict.get eqNum model.equations of
+ungroupChildren: Animation.Tracker -> LatexConverter -> Int -> Int -> Model -> Result String (Model, Animation.Tracker)
+ungroupChildren tracker convert eqNum id model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
         |> Tuple.first
-        |> Matcher.ungroupSubtree id selected
-        |> Result.andThen (\newEq -> convert newEq
+        |> Matcher.ungroupSubtree id
+        |> Result.andThen (\(newID,newEq) -> convert newEq
             |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, l) entry.history} in
                 (   {   model
                     |   equations = Dict.insert eqNum newEntry model.equations
-                    ,   selected = Just (eqNum, Set.singleton id)
+                    ,   selected = Just (eqNum, Set.singleton newID)
                     }
                 ,   newTracker
                 )

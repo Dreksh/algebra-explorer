@@ -1,6 +1,6 @@
 module Algo.Matcher exposing (
     State, getID, getState, getName, encodeState, stateDecoder,
-    Equation, parseEquation, encodeEquation, equationDecoder,
+    Equation, parseEquation, getNode, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
@@ -64,6 +64,10 @@ addNode_ previous parent tracker =
         )
     ,   {tracker | nextID = tracker.nextID + 1, parent = Dict.insert tracker.nextID parent tracker.parent}
     )
+
+getNode: Int -> Equation state -> Maybe (Math.Tree (State state))
+getNode num eq = processSubtree_ (searchPath_ eq.tracker.parent num) (\e -> Ok (e.root, e)) eq
+    |> Result.map Tuple.first |> Result.toMaybe
 
 {--
 Matcher is for pattern matching, allowing variables to be extracted
@@ -234,11 +238,8 @@ toInternalReplacement_ argDict = Math.map (\_ node _ -> case node of
     >> Tuple.first
 
 -- ## selectSubtree: If there is a subtree, it returns the root node as well as the affected subtrees
-selectedSubtree: Set.Set Int -> Equation state -> Result String (Int, Set.Set Int, Math.Tree (State state))
-selectedSubtree ids eq = case affectedSubtree_ ids eq.tracker.parent of
-    Nothing -> Err "Nodes not found"
-    Just (id, nodes) -> processSubtree_ (searchPath_ eq.tracker.parent id) (\subEq -> Ok (subEq.root, subEq)) eq
-        |> Result.map (\(root, _) -> (id, nodes, root))
+selectedSubtree: Set.Set Int -> Equation state -> Result String (Int, Set.Set Int)
+selectedSubtree ids eq = affectedSubtree_ ids eq.tracker.parent |> Result.fromMaybe "Nodes not found"
 
 affectedSubtree_: Set.Set Int -> Dict.Dict Int Int -> Maybe (Int, Set.Set Int)
 affectedSubtree_ nodes parent = case Set.toList nodes of
@@ -333,35 +334,33 @@ groupPartition_ check = List.foldl
     ([],[],[])
 
 -- ## ungroupSubtree: merge children back into the parent
-ungroupSubtree: Int -> Set.Set Int -> Equation state -> Result String (Equation state)
-ungroupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id) (ungroupChild_ eq.tracker id nodes) eq
-    |> Result.map Tuple.second
+ungroupSubtree: Int -> Equation state -> Result String (Int, Equation state)
+ungroupSubtree id eq = processSubtree_
+    (searchPath_ eq.tracker.parent id |> \list -> List.take (List.length list - 1) list)
+    (ungroupChild_ eq.tracker id)
+    eq
 
-ungroupChild_: Tracker_ state -> Int -> Set.Set Int -> Equation state -> Result String ((), Equation state)
-ungroupChild_ tracker id nodes subEq =
-    case subEq.root of
-        Math.BinaryNode n ->
-            if not n.associative then Err "Node is not associative"
-            else
-                let
-                    updateParent s = List.foldl
-                        (\c -> Dict.insert (Math.getState c |> getID) id)
-                        (Dict.remove (getID s.state) tracker.parent)
-                        s.children
-                    traverseRemaining unselectedFound children = case children of
-                        [] -> Err "All children are ungrouped"
-                        (c::other) -> case c of
-                            Math.BinaryNode m -> if m.name /= n.name then traverseRemaining unselectedFound other |> Result.map (\(list, t) -> (c::list, t))
-                                else if Set.member (getID m.state) nodes then Ok (m.children ++ other, {tracker | parent = updateParent m})
-                                else case traverseRemaining True other of
-                                    Ok (list, t) -> Ok (c::list, t)
-                                    Err errStr -> if unselectedFound then Err errStr -- Keep propagating
-                                        else Ok (m.children ++ other, {tracker | parent = updateParent m})
-                            _ -> traverseRemaining unselectedFound other |> Result.map (\(list, t) -> (c::list, t))
-                in
-                    traverseRemaining False n.children
-                    |> Result.map (\(list, t) -> ((), {root = Math.BinaryNode {n | children = list}, tracker= t}))
-        _ -> Err "Node is not associative"
+ungroupChild_: Tracker_ state -> Int -> Equation state -> Result String (Int, Equation state)
+ungroupChild_ tracker id subEq = case subEq.root of
+    Math.BinaryNode n ->
+        if not n.associative then Err "Parent node is not associative"
+        else
+            let
+                traverseRemaining next = case next of
+                    [] -> Err "Node not found"
+                    (c::other) -> if (Math.getState c |> getID) /= id
+                        then traverseRemaining other |> Result.map (\(list, t) -> (c :: list, t))
+                        else case c of
+                            Math.BinaryNode m -> if m.name /= n.name then Err "Cannot ungroup into a different function"
+                                else List.foldl (\node t->
+                                        {t | parent = Dict.insert (Math.getState node |> getID) (getID n.state) t.parent}
+                                    ) tracker m.children
+                                    |> \t -> Ok (m.children ++ other, t)
+                            _ -> Err "Node cannot be ungrouped"
+            in
+                traverseRemaining n.children
+                |> Result.map (\(list, t) -> (getID n.state, {root = Math.BinaryNode {n | children = list}, tracker= t}))
+    _ -> Err "Node is not associative"
 
 -- ## replaceRealNode: merge children back into the parent
 replaceRealNode: Int -> Float -> Replacement -> Equation state -> Result String (Int, Equation state)

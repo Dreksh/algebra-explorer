@@ -1,5 +1,6 @@
 module UI.ActionView exposing (Model, Event(..), init, update, view, isOpen, hide, encode, decoder)
 
+import Dict
 import Html
 import Html.Attributes exposing (id, class)
 import Html.Keyed exposing (node)
@@ -51,14 +52,16 @@ view ruleConvert eventConvert rModel selectedNode vModel =
         loadedTopics = Rules.loadedTopics rModel
         (current, show) = case vModel of
             Current c s -> (min c (List.length loadedTopics), s)
+        newSelectedNode = selectedNode
+            |> Maybe.andThen (\n -> Matcher.getNode n.root n.tree |> Maybe.map (\m -> (n, m)))
     in
     Html.div [id "actions"]
     [    Icon.left ( if current <= 0 then [] else [HtmlEvent.onClick (Next (current - 1) |> eventConvert), Icon.class "clickable"])
     ,   node "ul" []
-        (   ("Core", coreTopic_ rModel selectedNode |> coreToList_ |> displayTopic_ ruleConvert eventConvert current show "Core" 0)
+        (   ("Core", coreTopic_ rModel newSelectedNode |> coreToList_ |> displayTopic_ ruleConvert eventConvert current show "Core" 0)
         ::  (   List.indexedMap (\i topic ->
                 (   topic.name
-                ,   List.map (matchRule_ selectedNode) topic.rules
+                ,   List.map (matchRule_ newSelectedNode) topic.rules
                     |> displayTopic_ ruleConvert eventConvert current show topic.name (i+1)
                 )
                 )
@@ -94,29 +97,28 @@ type alias CoreTopicState =
     ,   evaluate: State
     }
 
-coreTopic_: Rules.Model -> Maybe Display.SelectedNode -> CoreTopicState
+coreTopic_: Rules.Model -> Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> CoreTopicState
 coreTopic_ rModel selection = case selection of
     Nothing -> CoreTopicState DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
-    Just selected ->
+    Just (selected, root) ->
         let
-            evaluateState = case Rules.evaluateStr rModel selected.tree of
+            evaluateState = case Rules.evaluateStr rModel root of
                 Err _ -> Disallowed
                 Ok str -> Rules.Evaluate selected.eq selected.root str |> Allowed
             result = CoreTopicState (Rules.Substitute selected.eq selected.selected |> Allowed) Disallowed Disallowed Disallowed evaluateState
         in
-        case selected.tree of
+        case root of
             Math.BinaryNode n -> if not n.associative then result
                 else
                     let
-                        sameBinaryNode = List.any
-                            (\child -> case child of
-                                Math.BinaryNode m -> n.name == m.name
+                        sameBinaryNode = case Dict.get selected.root selected.tree.tracker.parent of
+                            Nothing -> False
+                            Just parent -> case Matcher.getNode parent selected.tree of
+                                Just (Math.BinaryNode m) -> m.name == n.name
                                 _ -> False
-                            )
-                            n.children
                         selectedChildren = List.filter (\child -> Set.member (Math.getState child |> Matcher.getID) selected.nodes) n.children |> List.length
                     in
-                    let ungroupRes = if sameBinaryNode then {result | ungroup = Rules.Ungroup selected.eq selected.root selected.nodes |> Allowed} else result in
+                    let ungroupRes = if sameBinaryNode then {result | ungroup = Rules.Ungroup selected.eq selected.root |> Allowed} else result in
                     if List.length n.children == selectedChildren || selectedChildren < 2 then ungroupRes
                     else {ungroupRes | group = Rules.Group selected.eq selected.root selected.nodes |> Allowed }
             Math.RealNode n -> {result | numSubstitute = Rules.NumericalSubstitution selected.eq selected.root n.value |> Allowed, substitute = Disallowed}
@@ -131,13 +133,13 @@ coreToList_ state =
     ,   ("Ungroup", state.ungroup)
     ]
 
-matchRule_: Maybe Display.SelectedNode -> Rules.Rule -> (String, State)
+matchRule_: Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> Rules.Rule -> (String, State)
 matchRule_ selected rule = (rule.title,
     case selected of
         Nothing -> DisplayOnly
-        Just n ->
+        Just (n, root) ->
             let
-                matches = List.filterMap (\m -> Matcher.matchSubtree n.nodes m.from.root n.tree
+                matches = List.filterMap (\m -> Matcher.matchSubtree n.nodes m.from.root root
                     |> Maybe.map (\result -> {from = result, replacements = m.to})
                     ) rule.matches
             in

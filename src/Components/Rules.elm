@@ -18,7 +18,6 @@ import Components.Latex as Latex
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Menu as Menu
-import UI.Menu as Menu
 
 {-
 ## Modeling rules
@@ -82,7 +81,7 @@ type LoadState_ obj =
 type Event treeState =
     Apply (Parameters treeState)
     | Group Int Int (Set.Set Int) -- eq root children
-    | Ungroup Int Int (Set.Set Int) -- eq root selected
+    | Ungroup Int Int -- eq root
     | NumericalSubstitution Int Int Float -- eq root matching value
     | Substitute Int (Set.Set Int) -- eq selected
     | Download String
