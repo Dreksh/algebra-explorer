@@ -183,3 +183,16 @@ xxx|xxxx
   * it is not where the node came from in the previous equation, but it signals which nodes are literally the same thing
   * i.e. a node can have a prevID that doesn't even exist in the previous equation
   * every node gets a new ID on every operation
+
+### query
+* Query.elm stores a list of strings as equations, but also sources
+  * sources is where topics comes from
+  * Main.elm `parseEquations_` parses the `Query.Model` into our AST
+  * then it gets turned back into they url via `updateQuery` which is passed into `Display.init`
+    * this uses `Query.pushEquations` which captures the current `Query.Model` in a lambda
+      * this is then used in `updateQueryCmd` which is called everywhere
+      * it also takes `Animation.Tracker` because equations have to fade in at the start
+    * this then eventually calls `Rules.process` which converts the `Math.Tree` back into the string format
+      * the arguments are `combine convert`, they are used to convert to types other than strings if you so wish
+        * the other type used here is in Display.elm when rendering the symbolicated equation above the blocks
+        * WAIT this means that the word symbolicate doesn't exist anymore! lol

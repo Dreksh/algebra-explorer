@@ -121,31 +121,46 @@ priority_ root = case Math.getName root of
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
+        addBrackets parent child =
+            if priority_ child >= priority_ parent
+            then [convert "(", process combine convert child, convert ")"]
+            else [process combine convert child]
+
+        unaryStr root child = convert (Math.getName root) :: addBrackets root child
+
         infixStr root =
             List.foldl (\elem children ->
-                (   if priority_ elem >= priority_ tree
-                    then [convert "(", process combine convert elem, convert ")"]
-                    else [process combine convert elem]
-                )
-                |> \inner -> if List.isEmpty children then inner else children ++ (convert (Math.getName root) :: inner)
+                addBrackets root elem
+                |> \inner ->
+                    if List.isEmpty children then inner
+                    else children ++ (convert (Math.getName root) :: inner)
+            ) [] (Math.getChildren root)
+
+        plusStr root =
+            List.foldl (\elem children ->
+                addBrackets root elem
+                |> \inner ->
+                    if List.isEmpty children then inner
+                    else if Math.getName elem == "-" then children ++ inner  -- this abbreviates +- to just -
+                    else children ++ (convert (Math.getName root) :: inner)
             ) [] (Math.getChildren root)
     in
         (
             case tree of
             Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
             Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
+            Math.UnaryNode n -> unaryStr tree n.child
             _ -> case Math.getName tree of
-                "+" -> infixStr tree
+                "+" -> plusStr tree
                 "/" -> infixStr tree
                 "=" -> infixStr tree
                 "*" -> infixStr tree -- Maybe do something smart to remove unnecessary multiplication symbols?
-                "-" -> (convert "-" :: (Math.getChildren tree |> List.map (process combine convert)))
                 _ ->
                     (convert ("\\" ++ Math.getName tree ++ "("))
                     ::
                     ((Math.getChildren tree |> List.map (process combine convert) |> List.intersperse (convert ",")) ++ [convert ")"])
         )
-        |> \children -> combine (Math.getState tree) children
+        |> combine (Math.getState tree)
 
 toLatex: Model -> Matcher.Equation s -> Result String (Latex.Model (Matcher.State s))
 toLatex model eq = toLatex_ model eq.root
