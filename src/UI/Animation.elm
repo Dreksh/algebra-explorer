@@ -68,7 +68,7 @@ newEaseFloat duration initial = newEase duration 0 (+) (*) initial
 setEase: Tracker -> t -> EaseState t -> (EaseState t, Tracker)
 setEase tracker value (EaseState n) = if n.target == value
     then (EaseState n, tracker)
-    else let diff = n.scale -1 value |> n.addition n.target in
+    else let diff = n.scale -1 value |> n.addition n.current in
         if n.remainingTime == 0
         then
             (  EaseState
