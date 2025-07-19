@@ -12,7 +12,6 @@ import Algo.Math as Math
 import Algo.Matcher as Matcher
 import UI.Animation as Animation
 import UI.BrickSvg as BrickSvg
-import UI.HtmlEvent as HtmlEvent
 
 
 type alias Rect =
@@ -22,6 +21,7 @@ type alias Rect =
     ,   bottomLeft: Animation.EaseState Animation.Vector2
     ,   topRight: Animation.EaseState Animation.Vector2
     ,   opacity: Animation.EaseState Float
+    ,   draggable: Maybe (Int, List Float)
     }
 
 type alias Model =
@@ -58,23 +58,23 @@ advanceTime millis model =
     in
         { model | rects = newRects, viewBox = newViewBox }
 
-view: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Model -> Html e
-view eq highlight onShiftClick model =
+view: Set.Set Int -> (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
+view highlight events model =
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
-        visBricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick True) []
-        bricks = model.rects |> Dict.foldl (foldRectToBrick eq highlight onShiftClick False) visBricks
+        visBricks = model.rects |> Dict.foldl (foldRectToBrick highlight events True) []
+        bricks = model.rects |> Dict.foldl (foldRectToBrick highlight events False) visBricks
         (maxX, maxY) = Animation.current model.viewBox
     in
         BrickSvg.bricks maxX maxY bricks
 
-foldRectToBrick: Int -> Set.Set Int -> (Int -> Int -> Bool -> e) -> Bool -> Int -> Rect -> List (Html e) -> List (Html e)
-foldRectToBrick eq highlight onShiftClick includeVisible id rect foldBricks =
+foldRectToBrick: Set.Set Int -> (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Bool -> Int -> Rect -> List (Html e) -> List (Html e)
+foldRectToBrick highlight event includeVisible id rect foldBricks =
     if rect.visible /= includeVisible
     then foldBricks
     else
         let
-            onClick = HtmlEvent.onShiftClick (onShiftClick eq id)
+            onClick = event id rect.draggable
             selected = highlight |> Set.member id
             (blX, blY) = Animation.current rect.bottomLeft
             (trX, trY) = Animation.current rect.topRight
@@ -95,8 +95,7 @@ updateTree tracker root model =
 calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict Int Rect -> (Dict.Dict Int Rect, Animation.Vector2, Animation.Tracker)
 calculateTree_ animation root rects =
     let
-        emptyGrid = (Grid Dict.empty (Array.initialize 1 (\_ -> 0)))
-        grid = stackRecursive_ 0 root emptyGrid
+        (grid, _) = stackRecursive_ 0 root ({items = Dict.empty, lines = Array.empty}, -1)
 
         -- don't tween if they aren't visible
         oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
@@ -106,8 +105,8 @@ calculateTree_ animation root rects =
 
         (visibleRects, newAnimaiton) = grid.items |> Dict.foldl (\id item (foldRects, a0) ->
             let
-                blTarget = (grid.lines |> getLine item.colStart, toFloat item.rowStart)
-                trTarget = (grid.lines |> getLine item.colEnd, toFloat item.rowEnd)
+                blTarget = (getLine item.colStart grid.lines, toFloat item.rowStart)
+                trTarget = (getLine item.colEnd grid.lines, toFloat item.rowEnd)
 
                 -- TODO: use prevID more correctly
                 --   e.g. the new rect may jerkily appear outside the current frame if there is nothing to tween from
@@ -115,7 +114,7 @@ calculateTree_ animation root rects =
                 thisOld = oldRects |> Dict.get id
                 prevOld = oldRects |> Dict.get item.prevID
                 nextOld = oldRects |> Dict.get (nextIDs |> Dict.get id |> Maybe.withDefault -1)
-                noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0)
+                noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0) Nothing
                 old = thisOld |> Maybe.withDefault (prevOld |> Maybe.withDefault (nextOld |> Maybe.withDefault noOld))
 
                 (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft
@@ -129,6 +128,10 @@ calculateTree_ animation root rects =
                     ,   bottomLeft = bl
                     ,   topRight = tr
                     ,   opacity = op
+                    ,   draggable = item.draggable
+                            |> Maybe.map (\(index, list) ->
+                                (index, List.map (\(sCol,eCol) -> (getLine sCol grid.lines + getLine eCol grid.lines)/2 ) list)
+                            )
                     })
             in
                 (Dict.insert id new foldRects, a3)
@@ -163,6 +166,7 @@ type alias GridItem =
     ,   colEnd: Int
     ,   rowStart: Int
     ,   rowEnd: Int
+    ,   draggable: Maybe (Int, List (Int, Int))
     }
 
 type alias Grid =
@@ -171,52 +175,62 @@ type alias Grid =
     }
 
 getLine: Int -> Array.Array Float -> Float
-getLine col lines =
-    -- I would assert col < length lines here if I could
-    lines |> Array.get col |> Maybe.withDefault -1
+getLine col = Array.get col >> Maybe.withDefault 0
 
 -- We are using 0.5pt font so the width should match 0.5 units
 textWidth_: Float
 textWidth_ = 0.5
 
-stackRecursive_: Int  -> Math.Tree (Matcher.State Animation.State) -> Grid -> Grid
-stackRecursive_ depth node grid =
+stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int) -> (Grid, Int)
+stackRecursive_ depth node (grid, colStart) =
     let
-        id = Math.getState node |> Matcher.getID
-        prevID = Math.getState node |> Matcher.getState |> .prevID
         text = Math.getName node
-        colStart = (Array.length grid.lines) - 1
-        lineStart = grid.lines |> getLine colStart
         width = (toFloat (String.length text)) * textWidth_ + (1 - textWidth_)
-        children = Math.getChildren node
+        insertItem colEnd dict =
+            GridItem
+            (Math.getState node |> Matcher.getState |> .prevID)
+            text colStart colEnd depth (depth + 1) Nothing
+            |> \item -> Dict.insert (Math.getState node |> Matcher.getID) item dict
     in
-        if List.isEmpty children
-        then
-            {   grid
-            |   items = grid.items |> Dict.insert id (GridItem prevID text colStart (colStart+1) depth (depth+1))
-            ,   lines = grid.lines |> Array.push (lineStart + width)
-            }
-        else
-            let
-                childrenGrid = children |>
-                    List.foldl (stackRecursive_ (depth+1)) grid
-                colEnd = (Array.length childrenGrid.lines) - 1
-                lineEndChildren = childrenGrid.lines |> getLine colEnd
-
-                -- if the parent is wider than all its children, then expand all contained columns to fit inside parent
-                lineEndNode = lineStart + width
-                expandedGrid =
-                    if lineEndNode > lineEndChildren
-                    then
-                        {   childrenGrid
-                        |   lines = childrenGrid.lines |> Array.indexedMap (\col line ->
-                                if col >= colStart
-                                then line * (lineEndNode / lineEndChildren)
-                                else line
-                            )
+        case Math.getChildren node of
+            [] ->
+                let
+                    prevWidth = getLine colStart grid.lines
+                    colEnd = colStart + 1
+                in
+                (   { grid
+                    | items = insertItem colEnd grid.items
+                    , lines = Array.push (width + prevWidth) grid.lines
+                    }
+                ,   colEnd
+                )
+            children -> List.foldl (\elem ((input, prevIndex), list) -> let (cGrid, cEnd) = stackRecursive_ (depth+1) elem (input, prevIndex) in
+                        ((cGrid, cEnd), (prevIndex, cEnd) :: list)
+                    ) ((grid, colStart), []) children
+                |> \((childrenGrid, colEnd), revRange) -> let childrenWidth = getLine colEnd childrenGrid.lines in
+                    (   {   childrenGrid
+                        |   items =
+                                let
+                                    added = insertItem colEnd childrenGrid.items
+                                    updateChildren allChildren = let childRanges = List.reverse revRange in
+                                        List.foldl (\child (dict, index) -> let num = Math.getState child |> Matcher.getID in
+                                            (   Dict.update num (Maybe.map (\entry -> {entry | draggable = Just (index, childRanges)})) dict
+                                            ,   index + 1
+                                            )
+                                        ) (added, 0) allChildren
+                                        |> Tuple.first
+                                in
+                                case node of
+                                    Math.BinaryNode n -> if n.commutative then updateChildren n.children else added
+                                    Math.DeclarativeNode n -> updateChildren n.children -- Assume it's commutative for now (until we introduce inequalities)
+                                    _ -> added
+                        ,   lines = if width <= childrenWidth then childrenGrid.lines
+                                -- if the parent is wider than all its children, then expand all contained columns to fit inside parent
+                                else Array.indexedMap (\col line ->
+                                        if col >= colStart
+                                        then line * (width / childrenWidth)
+                                        else line
+                                    ) childrenGrid.lines
                         }
-                    else childrenGrid
-            in
-                {   expandedGrid
-                |   items = expandedGrid.items |> Dict.insert id (GridItem prevID text colStart colEnd depth (depth+1))
-                }
+                    ,   colEnd
+                    )

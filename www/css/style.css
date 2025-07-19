@@ -9,6 +9,7 @@
     --color-text: black;
     --color-textbox: white;
     --color-textbox-alternate: rgb(230,230,230);
+    --color-drag: rgb(230,230,230);
     --color-selected: lightgreen;
 }
 html, body {
@@ -379,11 +380,18 @@ dialog svg {
     fill: black;
     user-select: none;
 }
-.brick:hover .brickRect {
+.brick:hover > .brickRect {
     stroke: var(--color-highlight);
 }
-.brick.selected .brickRect {
+.brick.selected > .brickRect {
     fill: var(--color-selected);
+}
+.brick.draggable:active > .brickRect {
+    stroke: var(--color-drag);
+    cursor: grabbing;
+}
+.brick.draggable > .brickRect {
+    cursor: ew-resize;
 }
 .stroke {
     stroke: var(--color-text);

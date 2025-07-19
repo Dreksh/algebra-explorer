@@ -4,8 +4,8 @@ module Algo.Matcher exposing (
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
-    groupSubtree, ungroupSubtree, selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode,
-    replaceAllOccurrences
+    groupSubtree, ungroupSubtree, setChildIndex,
+    selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
     )
 
 import Dict
@@ -361,6 +361,40 @@ ungroupChild_ tracker id subEq = case subEq.root of
                 traverseRemaining n.children
                 |> Result.map (\(list, t) -> (getID n.state, {root = Math.BinaryNode {n | children = list}, tracker= t}))
     _ -> Err "Node is not associative"
+
+-- ## setChildIndex: Inserting a dragged block into a specific position
+setChildIndex: Int -> Int -> Equation state -> Result String (Equation state)
+setChildIndex root newIndex eq = processSubtree_
+    (searchPath_ eq.tracker.parent root |> \list -> List.take (List.length list - 1) list)
+    (\subEq ->
+        let
+            extract next = case next of
+                [] -> Err "Node not found"
+                (current::other) -> if (Math.getState current |> getID) == root
+                    then Ok (0, current, other)
+                    else extract other |> Result.map (\(index, child, rest) -> (index+1, child, current::rest))
+            insert index item list = if index == 0
+                then Ok (item :: list)
+                else case list of
+                    [] -> Err "New index is out of bounds"
+                    (x::next) -> insert (index - 1) item next |> Result.map ((::) x)
+            processChildren finalize next = extract next
+                |> Result.andThen (\(originalIndex, child, others) ->
+                    if originalIndex == newIndex then Err "No change detected"
+                    else insert newIndex child others
+                        |> Result.map (\newChildren ->
+                            ((), {root = finalize newChildren, tracker = subEq.tracker})
+                        )
+                )
+        in
+        case subEq.root of
+            Math.BinaryNode n -> if not n.commutative then Err "Parent node is not commutative"
+                else processChildren (\c -> Math.BinaryNode {n | children = c}) n.children
+            Math.DeclarativeNode n -> processChildren (\c -> Math.DeclarativeNode {n | children =c}) n.children
+            _ -> Err "Parent node is not commutative"
+    )
+    eq
+    |> Result.map Tuple.second
 
 -- ## replaceRealNode: merge children back into the parent
 replaceRealNode: Int -> Float -> Replacement -> Equation state -> Result String (Int, Equation state)

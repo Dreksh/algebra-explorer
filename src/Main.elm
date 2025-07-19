@@ -55,9 +55,14 @@ port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
+port svgMouseBegin: {id: Int} -> Cmd msg
+port svgMouseEvent: ({final: Bool, id: Int, x: Float, y: Float, time: Float} -> msg) -> Sub msg
 
 setCapture: Bool -> String -> Encode.Value -> Cmd msg
 setCapture s e p = capture {set = s, eId = e, pId = p}
+
+svgMouseCmd: Int -> Cmd msg
+svgMouseCmd id = svgMouseBegin {id = id}
 
 -- Types
 
@@ -134,7 +139,7 @@ init flags url key =
         (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
         (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
-        (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) -1 eqs
+        (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) svgMouseCmd -1 eqs
     in
     (   {   swappable =
             { display = newDisplay
@@ -176,6 +181,7 @@ subscriptions model = Sub.batch
     [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
+    ,   svgMouseEvent (Display.svgDragEvent >> DisplayEvent)
     ,   if model.animation >= 0 then BrowserEvent.onAnimationFrameDelta AnimationDelta else Sub.none
     ]
 
@@ -189,7 +195,7 @@ update event core = let model = core.swappable in
     case event of
         EventUrlRequest _ -> (core, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
-        DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation e model.display in
+        DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation (Rules.toLatex model.rules) e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
@@ -511,7 +517,7 @@ quarter w x y z = ((w,x),(y,z))
 swappableDecoder: (List (Matcher.Equation Animation.State) -> Cmd Display.Event) -> Decode.Decoder (Swappable, Animation.Tracker)
 swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
-        (Decode.field "display" (Display.decoder setCapture updateQuery))
+        (Decode.field "display" (Display.decoder setCapture updateQuery svgMouseCmd))
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )
