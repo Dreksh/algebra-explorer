@@ -86,8 +86,8 @@ setEase tracker value (EaseState n) = if n.target == value
                 |   remainingTime = n.changeDuration
                 ,   firstSpline = diff
                 ,   secondSpline = diff
-                        |> n.addition (n.scale (-time*time) n.firstSpline)
-                        |> n.addition (n.scale (time*(3*time-2)) n.secondSpline)
+                        |> n.addition (n.scale (-time*time*time) n.firstSpline)
+                        |> n.addition (n.scale (time*time*(4*time-3)) n.secondSpline)
                 ,   target = value
                 }
             , max tracker n.changeDuration
@@ -124,8 +124,8 @@ advance deltaTime (EaseState state) = let remainingTime = state.remainingTime - 
         EaseState
         {   state
         |   current = state.addition
-                (state.scale (time*time*time) state.firstSpline)
-                (state.scale (3*time*time*(1-time)) state.secondSpline)
+                (state.scale (time*time*time*time) state.firstSpline)
+                (state.scale (4*time*time*time*(1-time)) state.secondSpline)
                 |> state.addition state.target
         ,   remainingTime = remainingTime
         }

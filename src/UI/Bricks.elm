@@ -30,7 +30,7 @@ type alias Model =
     }
 
 smoothTime_: Float
-smoothTime_ = 300
+smoothTime_ = 750
 
 init: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> (Model, Animation.Tracker)
 init tracker root =

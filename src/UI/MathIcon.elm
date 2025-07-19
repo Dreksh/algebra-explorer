@@ -33,6 +33,9 @@ type alias Model =
     ,   botRight: Animation.EaseState Vector2
     }
 
+animationTime_: Float
+animationTime_ = 750
+
 init: Animation.Tracker -> Latex.Model State -> (Model, Animation.Tracker)
 init tracker current = let frames = latexToFrames_ current in
     toAnimationDict_ frames
@@ -41,8 +44,8 @@ init tracker current = let frames = latexToFrames_ current in
         (   {   frames = newFrames
             ,   current = current
             ,   deleting = []
-            ,   topLeft = Animation.newEaseVector2 300 (Animation.scaleVector2 20 frames.topLeft)
-            ,   botRight = Animation.newEaseVector2 300 (Animation.scaleVector2 20 frames.botRight)
+            ,   topLeft = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.topLeft)
+            ,   botRight = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.botRight)
             }
         ,   t
         )
@@ -206,11 +209,11 @@ toAnimationDict_ = processFrame_ (\s strokes origin scale dict -> let id = Match
     (0,0) 20 Dict.empty
 
 newAnimation_: (Int, Int) -> {strokes: List Stroke, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
-newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat 300 0 |> Animation.setEase t 1 in
+newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t 1 in
     (   Dict.insert key
         {   strokes = value.strokes
-        ,   origin = Animation.newEaseVector2 300 value.origin
-        ,   scale = Animation.newEaseFloat 300 value.scale
+        ,   origin = Animation.newEaseVector2 animationTime_ value.origin
+        ,   scale = Animation.newEaseFloat animationTime_ value.scale
         ,   opacity = op
         }
         dict
