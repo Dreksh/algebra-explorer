@@ -37,10 +37,10 @@ type EaseState t = EaseState
     ,   changeDuration: Float
     -- For displaying
     ,   current: t
-    -- For calculationg
+    -- For calculating
     ,   target: t
-    ,   firstSpline: t -- coefficient of t^3
-    ,   secondSpline: t -- coefficient of 3t^2(t-1)
+    ,   firstSpline: t -- coefficient of t^4
+    ,   secondSpline: t -- coefficient of 4t^3(t-1)
     ,   addition: t -> t -> t
     ,   scale: Float -> t -> t
     ,   remainingTime: Float -- We're going from t=1 to t=0, where t is remainingTime / changeDuration
