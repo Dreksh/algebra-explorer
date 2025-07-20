@@ -30,23 +30,23 @@ type alias Model =
     }
 
 smoothTime_: Float
-smoothTime_ = 300
+smoothTime_ = 750
 
 init: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> (Model, Animation.Tracker)
 init tracker root =
     let
         (movingTree, viewBox, newT) = calculateTree_ tracker root Dict.empty
     in
-        ({rects = movingTree, viewBox = Animation.newEase smoothTime_ (0,0) viewBox}, newT)
+        ({rects = movingTree, viewBox = Animation.newEaseVector2 smoothTime_ viewBox}, newT)
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
             let
-                newBottomLeft = rect.bottomLeft |> Animation.smoothDampVector2 millis
-                newTopRight = rect.topRight |> Animation.smoothDampVector2 millis
-                newOpacity = rect.opacity |> Animation.smoothDampFloat millis
+                newBottomLeft = rect.bottomLeft |> Animation.advance millis
+                newTopRight = rect.topRight |> Animation.advance millis
+                newOpacity = rect.opacity |> Animation.advance millis
             in
                 {   rect
                 |   bottomLeft = newBottomLeft
@@ -54,7 +54,7 @@ advanceTime millis model =
                 ,   opacity = newOpacity
                 }
             )
-        newViewBox = model.viewBox |> Animation.smoothDampVector2 millis
+        newViewBox = model.viewBox |> Animation.advance millis
     in
         { model | rects = newRects, viewBox = newViewBox }
 
@@ -115,7 +115,7 @@ calculateTree_ animation root rects =
                 thisOld = oldRects |> Dict.get id
                 prevOld = oldRects |> Dict.get item.prevID
                 nextOld = oldRects |> Dict.get (nextIDs |> Dict.get id |> Maybe.withDefault -1)
-                noOld = Rect item.text id True (Animation.newEase smoothTime_ (0,0) blTarget) (Animation.newEase smoothTime_ (0, 0) trTarget) (Animation.newEase (smoothTime_/2) 0 0)
+                noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0)
                 old = thisOld |> Maybe.withDefault (prevOld |> Maybe.withDefault (nextOld |> Maybe.withDefault noOld))
 
                 (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft

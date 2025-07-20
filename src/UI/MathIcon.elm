@@ -1,4 +1,4 @@
-module UI.MathIcon exposing (Model, blank, init, set, advanceTime, view, static)
+module UI.MathIcon exposing (Model, init, set, advanceTime, view, static)
 
 import Dict
 import Html
@@ -33,14 +33,8 @@ type alias Model =
     ,   botRight: Animation.EaseState Vector2
     }
 
-blank: Model
-blank =
-    {   frames = Dict.empty
-    ,   current = []
-    ,   deleting = []
-    ,   topLeft = Animation.newEase 300 (0,0) (0,0)
-    ,   botRight = Animation.newEase 300 (0,0) (0,0)
-    }
+animationTime_: Float
+animationTime_ = 750
 
 init: Animation.Tracker -> Latex.Model State -> (Model, Animation.Tracker)
 init tracker current = let frames = latexToFrames_ current in
@@ -50,8 +44,8 @@ init tracker current = let frames = latexToFrames_ current in
         (   {   frames = newFrames
             ,   current = current
             ,   deleting = []
-            ,   topLeft = Animation.newEase 300 (0,0) (Animation.scaleVector2 20 frames.topLeft)
-            ,   botRight = Animation.newEase 300 (0,0) (Animation.scaleVector2 20 frames.botRight)
+            ,   topLeft = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.topLeft)
+            ,   botRight = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.botRight)
             }
         ,   t
         )
@@ -61,16 +55,16 @@ advanceTime time model =
     let
         incrementFrame f =
             {   f
-            |   origin = Animation.smoothDampVector2 time f.origin
-            ,   scale = Animation.smoothDampFloat time f.scale
-            ,   opacity = Animation.smoothDampFloat time f.opacity
+            |   origin = Animation.advance time f.origin
+            ,   scale = Animation.advance time f.scale
+            ,   opacity = Animation.advance time f.opacity
             }
     in
     {   model
     |   frames = Dict.map (\_ -> incrementFrame) model.frames
     ,   deleting = List.map incrementFrame model.deleting
-    ,   topLeft = Animation.smoothDampVector2 time model.topLeft
-    ,   botRight = Animation.smoothDampVector2 time model.botRight
+    ,   topLeft = Animation.advance time model.topLeft
+    ,   botRight = Animation.advance time model.botRight
     }
 
 set: Animation.Tracker -> Latex.Model State -> Model -> (Model, Animation.Tracker)
@@ -215,11 +209,11 @@ toAnimationDict_ = processFrame_ (\s strokes origin scale dict -> let id = Match
     (0,0) 20 Dict.empty
 
 newAnimation_: (Int, Int) -> {strokes: List Stroke, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
-newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEase 300 0 0 |> Animation.setEase t 1 in
+newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t 1 in
     (   Dict.insert key
         {   strokes = value.strokes
-        ,   origin = Animation.newEase 300 (0,0) value.origin
-        ,   scale = Animation.newEase 300 0 value.scale
+        ,   origin = Animation.newEaseVector2 animationTime_ value.origin
+        ,   scale = Animation.newEaseFloat animationTime_ value.scale
         ,   opacity = op
         }
         dict
