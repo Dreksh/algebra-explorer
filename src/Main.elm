@@ -94,6 +94,7 @@ type Event =
     | InputEvent Input.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
+    | RedirectTo String
     | PressedKey {ctrl: Bool, shift: Bool, key: String}
     | EnterCreateMode
     | ToggleMenu
@@ -187,7 +188,17 @@ update: Event -> Model -> ( Model, Cmd Event )
 update event core = let model = core.swappable in
     let updateCore newModel = {core | swappable = newModel} in
     case event of
-        EventUrlRequest _ -> (core, Cmd.none)
+        EventUrlRequest req ->
+            (   {   core
+                |   dialog = (
+                        case req of
+                            Browser.Internal inReq -> Url.toString inReq
+                            Browser.External exReq -> exReq
+                    )
+                    |> \str -> Just (leaveDialog_ str, Nothing)
+                }
+            ,   Cmd.none
+            )
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
@@ -209,6 +220,7 @@ update event core = let model = core.swappable in
                     )
                 Result.Err err -> submitNotification_ core err
         NoOp -> (core, Cmd.none)
+        RedirectTo url -> (core, Nav.load url)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case core.dialog of
                 Just _ -> ({core | dialog = Nothing}, Cmd.none)
@@ -240,7 +252,7 @@ update event core = let model = core.swappable in
         CloseDialog -> ({core | dialog = Nothing}, Cmd.none)
         ProcessTopic url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
-            Ok topic -> case Rules.addTopic topic model.rules of
+            Ok topic -> case Rules.addTopic (Just url) topic model.rules of
                 Err errStr -> submitNotification_ core errStr
                 Ok rModel -> (updateCore {model | rules = rModel}, Cmd.none)
         ProcessSource url result -> case result of
@@ -251,7 +263,7 @@ update event core = let model = core.swappable in
         FileLoaded fileType str -> case fileType of
             TopicFile -> Decode.decodeString Rules.topicDecoder str
                 |> Result.mapError Decode.errorToString
-                |> Result.andThen (\topic -> Rules.addTopic topic model.rules)
+                |> Result.andThen (\topic -> Rules.addTopic Nothing topic model.rules)
                 |> (\result -> case result of
                     Err errStr -> submitNotification_ core errStr
                     Ok rModel -> (updateCore {model | rules = rModel}, Cmd.none)
@@ -484,6 +496,18 @@ numSubDialog_ eqNum root target =
             Just (Dialog.TextValue val) -> ConvertSubString eqNum root target val
             _ -> NoOp
         )
+    ,   cancel = CloseDialog
+    ,   focus = Just "expr"
+    }
+
+leaveDialog_: String -> Dialog.Model Event
+leaveDialog_ url =
+    {   title = "Are you sure you want to leave?"
+    ,   sections =
+        [{  subtitle = "You are being redirected to:"
+        ,   lines = [[Dialog.Link {url = url}]]
+        }]
+    ,   success = (\_ -> RedirectTo url)
     ,   cancel = CloseDialog
     ,   focus = Just "expr"
     }

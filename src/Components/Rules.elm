@@ -6,7 +6,7 @@ module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Sou
 
 import Dict
 import Html exposing (a, h3, p, text)
-import Html.Attributes exposing (class, title)
+import Html.Attributes exposing (class, href, title)
 import Json.Decode as Dec
 import Json.Encode as Enc
 import Set
@@ -226,8 +226,8 @@ getN_ num list = if num < 0 then Nothing
 ## Topics
 -}
 
-addTopic: Topic -> Model -> Result String Model
-addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
+addTopic: Maybe String -> Topic -> Model -> Result String Model
+addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
     topic.functions
     |> Helper.resultDict (\name props dict -> case Dict.get name dict of
         Nothing -> Ok (Dict.insert name (props, 1) dict)
@@ -249,10 +249,18 @@ addTopic topic m = let model = deleteTopic topic.name m in -- Clear Existing top
                 {   model
                 |   functions = functions
                 ,   constants = constants
-                ,   topics = case Dict.get topic.name model.topics of
-                    Nothing -> Dict.insert topic.name (Installed_ Nothing topic) model.topics
-                    Just (NotInstalled_ url) -> Dict.insert topic.name (Installed_ (Just url) topic) model.topics
-                    Just (Installed_ url _) -> Dict.insert topic.name (Installed_ url topic) model.topics
+                ,   topics = (  case (Dict.get topic.name model.topics, url) of
+                        (Nothing, Nothing) -> Installed_ Nothing topic
+                        (Nothing, Just u) -> Installed_ (Just {url = u, description = "No description provided"}) topic
+                        (Just (NotInstalled_ s), Nothing) -> Installed_ Nothing topic
+                        (Just (NotInstalled_ s), Just u) -> if s.url == u then Installed_ (Just s) topic
+                            else Installed_ (Just {url = u, description = "No description provided"}) topic
+                        (Just (Installed_ _ _), Nothing) -> Installed_ Nothing topic
+                        (Just (Installed_ Nothing _), Just u) -> Installed_ (Just {url = u, description = "No description provided"}) topic
+                        (Just (Installed_ (Just s) _), Just u) -> if s.url == u then Installed_ (Just s) topic
+                            else Installed_ (Just {url = u, description = "No description provided"}) topic
+                    )
+                    |> \t -> Dict.insert topic.name t model.topics
                 }
             )
     )
@@ -339,12 +347,17 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         (case t of
             NotInstalled_ source -> Menu.Section
                 {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download source.url)), Icon.class "clickable", Icon.class c])}
-                [   Menu.Content [p [] [text source.description]]
+                [   Menu.Content [a [href source.url, class "clickable"] [text "View source"]]
+                ,   Menu.Content [p [] [text source.description]]
                 ]
             Installed_ s topic -> Menu.Section
                 {name = topic.name, icon = Just (\c -> a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable", class c] [text "x"])}
-                (   Menu.Content [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
-                :: List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
+                (   [   case s of
+                            Just source -> Menu.Content [a [href source.url, class "clickable"] [text "View source"] ]
+                            Nothing -> Menu.Content [p [] [text "This is an uploaded topic"]]
+                    ,   Menu.Content [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
+                    ]
+                ++ List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
                     [  Menu.Content ( List.concat
                         [ [h3 [] [text "Rules"]]
                         , List.map (\match -> p [] [text (match.from.name ++"→"++ (List.map .name match.to |> String.join ", "))]) rule.matches

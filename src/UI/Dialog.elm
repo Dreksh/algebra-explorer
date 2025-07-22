@@ -1,7 +1,7 @@
 module UI.Dialog exposing (Extracted(..), Input(..), Model, Section, fieldID, view)
 
 import Dict
-import Html exposing (form, text, h1, h2, input, label, node, button, p, span)
+import Html exposing (a, button, form, h1, h2, input, label, node, p, span, text)
 import Html.Attributes as Attr
 import Json.Decode as Decode
 -- Ours
@@ -27,6 +27,7 @@ type Input msg =
     | Info {text: String}
     | Radio {name: String, options: Dict.Dict Int String}
     | Function {name: String, arguments: Int}
+    | Link {url: String} -- Should open a new tab / window
 
 -- Autogenerate from Model
 type Extracted =
@@ -77,6 +78,7 @@ listView_ = List.map (\input -> case input of
                 )
                 ++ [ text ") = ", Html.label [Attr.for f.name] [Html.input [Attr.type_ "text", Attr.name f.name, Attr.id (fieldID f.name)] []]]
             )
+        Link l -> a [Attr.class "clickable", Attr.target "_blank", Attr.href l.url] [text l.url]
     )
     >> span []
 
