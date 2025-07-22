@@ -58,27 +58,26 @@ advanceTime millis model =
     in
         { model | rects = newRects, viewBox = newViewBox }
 
-view: Set.Set Int -> (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
-view highlight events model =
+view: (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
+view attrs model =
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
-        visBricks = model.rects |> Dict.foldl (foldRectToBrick highlight events True) []
-        bricks = model.rects |> Dict.foldl (foldRectToBrick highlight events False) visBricks
+        visBricks = model.rects |> Dict.foldl (foldRectToBrick attrs True) []
+        bricks = model.rects |> Dict.foldl (foldRectToBrick attrs False) visBricks
         (maxX, maxY) = Animation.current model.viewBox
     in
         BrickSvg.bricks maxX maxY bricks
 
-foldRectToBrick: Set.Set Int -> (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Bool -> Int -> Rect -> List (Html e) -> List (Html e)
-foldRectToBrick highlight event includeVisible id rect foldBricks =
+foldRectToBrick: (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Bool -> Int -> Rect -> List (Html e) -> List (Html e)
+foldRectToBrick createAttrs includeVisible id rect foldBricks =
     if rect.visible /= includeVisible
     then foldBricks
     else
         let
-            onClick = event id rect.draggable
-            selected = highlight |> Set.member id
+            attrs = createAttrs id rect.draggable
             (blX, blY) = Animation.current rect.bottomLeft
             (trX, trY) = Animation.current rect.topRight
-            brick = BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible selected onClick rect.text
+            brick = BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible attrs rect.text
         in
             brick :: foldBricks
 
@@ -105,8 +104,8 @@ calculateTree_ animation root rects =
 
         (visibleRects, newAnimaiton) = grid.items |> Dict.foldl (\id item (foldRects, a0) ->
             let
-                blTarget = (getLine item.colStart grid.lines, toFloat item.rowStart)
-                trTarget = (getLine item.colEnd grid.lines, toFloat item.rowEnd)
+                blTarget = (getColX item.colStart grid.lines, toFloat item.rowStart)
+                trTarget = (getColX item.colEnd grid.lines, toFloat item.rowEnd)
 
                 -- TODO: use prevID more correctly
                 --   e.g. the new rect may jerkily appear outside the current frame if there is nothing to tween from
@@ -130,7 +129,7 @@ calculateTree_ animation root rects =
                     ,   opacity = op
                     ,   draggable = item.draggable
                             |> Maybe.map (\(index, list) ->
-                                (index, List.map (\(sCol,eCol) -> (getLine sCol grid.lines + getLine eCol grid.lines)/2 ) list)
+                                (index, List.map (\(sCol,eCol) -> (getColX sCol grid.lines + getColX eCol grid.lines)/2 ) list)
                             )
                     })
             in
@@ -174,8 +173,10 @@ type alias Grid =
     ,   lines: Array.Array Float  -- only need column lines because children only nest in the x-axis
     }
 
-getLine: Int -> Array.Array Float -> Float
-getLine col = Array.get col >> Maybe.withDefault 0
+-- getColX returns the x-component of the column's right-most point
+-- the -1 input represents the left-most point (the left of the 0th column)
+getColX: Int -> Array.Array Float -> Float
+getColX col = Array.get col >> Maybe.withDefault 0
 
 -- We are using 0.5pt font so the width should match 0.5 units
 textWidth_: Float
@@ -195,7 +196,7 @@ stackRecursive_ depth node (grid, colStart) =
         case Math.getChildren node of
             [] ->
                 let
-                    prevWidth = getLine colStart grid.lines
+                    prevWidth = getColX colStart grid.lines
                     colEnd = colStart + 1
                 in
                 (   { grid
@@ -207,7 +208,7 @@ stackRecursive_ depth node (grid, colStart) =
             children -> List.foldl (\elem ((input, prevIndex), list) -> let (cGrid, cEnd) = stackRecursive_ (depth+1) elem (input, prevIndex) in
                         ((cGrid, cEnd), (prevIndex, cEnd) :: list)
                     ) ((grid, colStart), []) children
-                |> \((childrenGrid, colEnd), revRange) -> let childrenWidth = getLine colEnd childrenGrid.lines in
+                |> \((childrenGrid, colEnd), revRange) -> let childrenWidth = getColX colEnd childrenGrid.lines in
                     (   {   childrenGrid
                         |   items =
                                 let

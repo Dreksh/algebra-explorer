@@ -9,7 +9,6 @@ module UI.Display exposing (
 import Dict
 import Html exposing (Html, a, div, p, span, text)
 import Html.Attributes exposing (class)
-import Html.Events
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
@@ -64,7 +63,7 @@ type alias Entry =
     }
 
 type Event =
-    Select Int Int Bool
+    Select Int Int
     | ToggleHide Int
     | ToggleUI Int
     | ToggleHistory Int
@@ -322,7 +321,7 @@ substitute tracker convert funcs origNum selected eqNum model = case Dict.get eq
             )
 
 updateSelected_: Int -> Int -> Bool -> Model -> Model
-updateSelected_ eq node shift model = case (shift, model.selected) of
+updateSelected_ eq node combine model = case (combine, model.selected) of
     (True, Just (e, current)) -> if e /= eq
         then {model | selected = Just (eq, Set.singleton node)}
         else if Set.member node current
@@ -334,7 +333,7 @@ updateSelected_ eq node shift model = case (shift, model.selected) of
 
 update: Draggable.Size -> Animation.Tracker -> LatexConverter -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker latexConvert event model = case event of
-    Select eq node shift -> updateSelected_ eq node shift model
+    Select eq node -> updateSelected_ eq node False model
         |> \newModel -> (newModel, tracker, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
@@ -498,16 +497,16 @@ views converter model = Dict.toList model.equations
                         Blocks b ->
                             [   Rules.process (\s -> let id = Matcher.getID s in
                                     Html.span
-                                    ( HtmlEvent.onClick (Select eqNum id False)
+                                    ( HtmlEvent.onClick (Select eqNum id)
                                     :: (class "node" :: if Set.member id highlight then [class "selected"] else [])
                                     )
                                 )
                                 Html.text eq.root
-                            ,   Bricks.view highlight (dragEvents_ eqNum) b
+                            ,   Bricks.view (brickAttr_ highlight eqNum) b
                             ]
                         Written w ->
                             [   MathIcon.view (\id -> List.filterMap identity
-                                    [   HtmlEvent.onClick (Select eqNum id False) |> Just
+                                    [   HtmlEvent.onClick (Select eqNum id) |> Just
                                     ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
                                     ]
                                 )
@@ -541,16 +540,18 @@ historyEntry_ current event inner = Html.a
     (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
     [inner]
 
-dragEvents_: Int -> Int -> Maybe (Int, List Float) -> List (Html.Attribute Event)
-dragEvents_ eqNum id draggable =
-    case draggable of
-        Nothing ->
-            [   HtmlEvent.onMouseDown (ShiftStart eqNum id -1 [])
-            ]
-        Just (originalIndex, midpoints) ->
-            [   Svg.Attributes.class "draggable"
-            ,   HtmlEvent.onMouseDown (ShiftStart eqNum id originalIndex midpoints)
-            ]
+brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.Attribute Event)
+brickAttr_ highlight eqNum id draggable =
+    (   case draggable of
+            Nothing ->
+                [   HtmlEvent.onMouseDown (ShiftStart eqNum id -1 [])
+                ]
+            Just (originalIndex, midpoints) ->
+                [   Svg.Attributes.class "draggable"
+                ,   HtmlEvent.onMouseDown (ShiftStart eqNum id originalIndex midpoints)
+                ]
+    )
+    |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
 
 encode: Model -> Encode.Value
 encode model = Encode.object
