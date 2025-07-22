@@ -41,10 +41,10 @@ isOpen (Current _ open) = open
 
 -- UI-related
 
-type State =
-    DisplayOnly
-    | Disallowed
-    | Allowed (Rules.Event Animation.State)
+type Action =
+    DisplayOnly String
+    | Disallowed String
+    | Allowed (Rules.Event Animation.State) String
 
 view: (Rules.Event Animation.State -> msg) -> (Event -> msg) -> Rules.Model -> Maybe Display.SelectedNode -> Model -> Html.Html msg
 view ruleConvert eventConvert rModel selectedNode vModel =
@@ -71,41 +71,39 @@ view ruleConvert eventConvert rModel selectedNode vModel =
     ,   Icon.right ( if current >= List.length loadedTopics then [] else [HtmlEvent.onClick (Next (current + 1) |> eventConvert), Icon.class "clickable"])
     ]
 
-displayTopic_: (Rules.Event Animation.State -> msg) -> (Event -> msg) -> Int -> Bool -> String -> Int -> List (String, State) -> Html.Html msg
+displayTopic_: (Rules.Event Animation.State -> msg) -> (Event -> msg) -> Int -> Bool -> String -> Int -> List Action -> Html.Html msg
 displayTopic_ ruleConvert eventConvert selected show title current actions = Html.li []
     [   Html.h2
         ((if current == selected then [class "selected"] else []) ++ [class "clickable", HtmlEvent.onClick (Toggle current |> eventConvert)])
         [Html.text title]
     ,   Html.div (if current == selected && show then [] else [class "closed"])
-        (   List.map (\(name, state) -> Html.a
-                (case state of
-                    DisplayOnly -> []
-                    Disallowed -> [class "disallowed"]
-                    Allowed event -> [HtmlEvent.onClick (ruleConvert event), class "clickable"]
-                )
-                [Html.text name]
-            )
-            actions
+        (   actions |> List.map (actionToHtml_ ruleConvert)
         )
     ]
 
-type alias CoreTopicState =
-    {   substitute: State
-    ,   group: State
-    ,   ungroup: State
-    ,   numSubstitute: State
-    ,   evaluate: State
+actionToHtml_: (Rules.Event Animation.State -> msg) -> Action -> Html.Html msg
+actionToHtml_ ruleConvert action = case action of
+    DisplayOnly name -> Html.a [] [Html.text name]
+    Disallowed name -> Html.a [class "disallowed"] [Html.text name]
+    Allowed event name -> Html.a [HtmlEvent.onClick (ruleConvert event), class "clickable"] [Html.text name]
+
+type alias CoreTopicAction =
+    {   substitute: (String -> Action)
+    ,   group: (String -> Action)
+    ,   ungroup: (String -> Action)
+    ,   numSubstitute: (String -> Action)
+    ,   evaluate: (String -> Action)
     }
 
-coreTopic_: Rules.Model -> Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> CoreTopicState
+coreTopic_: Rules.Model -> Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> CoreTopicAction
 coreTopic_ rModel selection = case selection of
-    Nothing -> CoreTopicState DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
+    Nothing -> CoreTopicAction DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
     Just (selected, root) ->
         let
-            evaluateState = case Rules.evaluateStr rModel root of
+            evaluateAction = case Rules.evaluateStr rModel root of
                 Err _ -> Disallowed
                 Ok str -> Rules.Evaluate selected.eq selected.root str |> Allowed
-            result = CoreTopicState (Rules.Substitute selected.eq selected.selected |> Allowed) Disallowed Disallowed Disallowed evaluateState
+            result = CoreTopicAction (Rules.Substitute selected.eq selected.selected |> Allowed) Disallowed Disallowed Disallowed evaluateAction
         in
         case root of
             Math.BinaryNode n -> if not n.associative then result
@@ -124,17 +122,17 @@ coreTopic_ rModel selection = case selection of
             Math.RealNode n -> {result | numSubstitute = Rules.NumericalSubstitution selected.eq selected.root n.value |> Allowed, substitute = Disallowed}
             _ -> result
 
-coreToList_: CoreTopicState -> List (String, State)
-coreToList_ state =
-    [   ("Evaluate", state.evaluate)
-    ,   ("Expand", state.numSubstitute)
-    ,   ("Substitution", state.substitute)
-    ,   ("Group", state.group)
-    ,   ("Ungroup", state.ungroup)
+coreToList_: CoreTopicAction -> List Action
+coreToList_ actions =
+    [   actions.evaluate "Evaluate"
+    ,   actions.numSubstitute "Expand"
+    ,   actions.substitute "Substitution"
+    ,   actions.group "Group"
+    ,   actions.ungroup "Ungroup"
     ]
 
-matchRule_: Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> Rules.Rule -> (String, State)
-matchRule_ selected rule = (rule.title,
+matchRule_: Maybe (Display.SelectedNode, Math.Tree (Matcher.State Animation.State)) -> Rules.Rule -> Action
+matchRule_ selected rule = rule.title |>
     case selected of
         Nothing -> DisplayOnly
         Just (n, root) ->
@@ -151,7 +149,6 @@ matchRule_ selected rule = (rule.title,
                     , matches = matches
                     }
                     |> Allowed
-    )
 
 {- Encoding and Decoding -}
 

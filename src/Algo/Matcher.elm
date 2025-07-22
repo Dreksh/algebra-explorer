@@ -155,7 +155,7 @@ matchNode matcher root = case (matcher, root) of
     _ -> False
 
 {--
-Replacement are bluerpints to reconstruct equations
+Replacement are blueprints to reconstruct equations
 --}
 
 type alias Replacement = Math.Tree (Maybe Int)
@@ -412,7 +412,6 @@ replaceRealNode id target subtree eq = processSubtree_ (searchPath_ eq.tracker.p
     )
     eq
 
--- ## matchSubtree: make sure the root is already been through "reduceNodes_"
 matchSubtree: Set.Set Int -> Matcher -> Math.Tree (State state) -> Maybe (MatchResult state)
 matchSubtree priority matcher root =
     extractPattern_ priority matcher root (Backtrack.init newResult)

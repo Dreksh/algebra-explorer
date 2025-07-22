@@ -196,3 +196,31 @@ xxx|xxxx
       * the arguments are `combine convert`, they are used to convert to types other than strings if you so wish
         * the other type used here is in Display.elm when rendering the symbolicated equation above the blocks
         * WAIT this means that the word symbolicate doesn't exist anymore! lol
+
+### Matcher
+* selecting a node is from Display.Event.Select (or hold for selecting multiple)
+* this updates Display.Model.selected with eqNum and nodeIDs
+* this gets fed into ActionView.elm via conversion with `Display.getSelected`
+  * uses `Matcher.selectedSubtree` to find the LCA as the root
+  * needs to be in Display because it needs to extract the right equation from History
+* it eventually makes it into `Matcher.matchRule` to `Matcher.matchSubtree` which does the crazy matching
+
+* the matcher takes many `Rules.Rule`s, each of which contains a list of matches: `Matcher.Matcher` to `Matcher.Replacement`s (plural because find zeros can produce two results)
+  * the Rules themselves get downloaded via `ProcessSource` to add them to the menu, and then `Rules.Download`
+  * which then issues a command to eventually triggers a `ProcessTopic` which triggers a `Rules.addTopic`
+  * there are `Math.FunctionProperty`s (like + or *) stored in a `Math.FunctionProperties` (just a plain Math.Tree)
+    * these are used in `expressionDecoder_` (`Parser.parseMatcher`) and `replacementDecoder_` (`Parser.toReplacement`)
+    * the former converts to the `Matcher.Matcher` which is also another tree type
+      * RealMatcher matches numbers, so 1-to-1 map
+      * AnyMatcher is different though, since it matches entire subtrees
+      * ExactMatcher matches functions like +-*/, so has to match the exact node
+      * DeclarativeMatcher is for statements like =<>
+    * the latter converts to `Matcher.Replacement` which is simply a `Math.Tree (Maybe Int)`
+      * it passes around a `argDict` which is used to assign the same Ints to the same variables
+      * e.g. `m(a+b)` to `ma+mb` will get the same Int for both `m`s in the replacement
+
+* Backtrack.elm is required because we have commutative nodes where any two children can be used
+* the final output of matching is `MatchResult state` which retains the `state` of the actual tree
+* this is stored in `ActionView.Action` which contains a `Rules.Apply` (type `Rules.Event`) which is assigned to the onClick of the menu bar
+  * this event is fed into `Display.transform` -> `Matcher.replaceSubtree`
+  * sometimes you need extra info, so extra events like ApplyParameters or ApplySubstitution are required to feed back from the Modal
