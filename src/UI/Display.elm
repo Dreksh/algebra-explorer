@@ -1,6 +1,6 @@
 module UI.Display exposing (
     Model, Event(..), SelectedNode, init, update, views, menu,
-    undo, redo, updateQueryCmd, svgDragEvent,
+    anyVisible, undo, redo, updateQueryCmd, svgDragEvent,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder
@@ -92,6 +92,9 @@ newEntry_ tracker size index (eq, latex) = let (b, newT) = Bricks.init tracker e
         }
     ,   newT
     )
+
+anyVisible: Model -> Bool
+anyVisible model = Dict.foldl (\_ value -> (||) value.show) False model.equations
 
 init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> (Int -> Cmd Event) ->
     Animation.Tracker -> List (Matcher.Equation Animation.State, Latex.Model State) -> (Model, Animation.Tracker)

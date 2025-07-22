@@ -99,18 +99,25 @@ close tracker model = case model.current of
             , finalT
             )
 
-update: Animation.Tracker -> Event -> Model -> (Model, String, Animation.Tracker)
+update: Animation.Tracker -> Event -> Model -> (Model, Maybe String, Animation.Tracker)
 update tracker event model = case event of
     Click input -> case model.selected of
-        Nothing -> ({model | selected = Just (input, False)}, "", tracker)
-        Just (_, token) -> ({model | selected = Just (input, not token)}, "", tracker)
+        Nothing -> ({model | selected = Just (input, False)}, Nothing, tracker)
+        Just (_, token) -> ({model | selected = Just (input, not token)}, Nothing, tracker)
     Submit input -> let (newModel, newT) = close tracker model in
-        ({newModel | options = Previous input :: newModel.options}, input, newT)
+        (   {   newModel
+            |   options = if String.isEmpty input
+                    then newModel.options
+                    else Previous input :: newModel.options
+            }
+        ,   Just input
+        ,   newT
+        )
     ShowOptions -> case model.current of
-        Nothing -> (model, "", tracker)
+        Nothing -> (model, Nothing, tracker)
         Just (id, width, height) ->
             let (newH, newT) = Animation.setEase tracker maxHeight_ height in
-                ({model | current = Just (id, width, newH)}, "", newT)
+                ({model | current = Just (id, width, newH)}, Nothing, newT)
 
 view: (Event -> msg) -> Model -> List (String, Html.Html msg)
 view converter model =

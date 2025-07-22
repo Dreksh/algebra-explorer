@@ -208,26 +208,36 @@ update event core = let model = core.swappable in
         ActionEvent e -> let (newIn, newT) = Input.close core.animation model.input in
             ({core | animation = newT, swappable = {model | actionView = ActionView.update e model.actionView, input = newIn}}, Cmd.none)
         InputEvent e -> let (newIn, submitted, newT) = Input.update core.animation e model.input in
-            if submitted == "" then ({core | animation = newT, swappable = {model | input = newIn}}, focusTextBar_ "textInput")
-            else case parseEquation_ model.rules submitted of
-                Result.Ok root -> Display.add newT root model.display
-                    |> (\(dModel, animation) ->
-                        (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
-                        ,   updateQuery_ dModel
+            case submitted of
+                Nothing -> ({core | animation = newT, swappable = {model | input = newIn}}, focusTextBar_ "textInput")
+                Just "" -> if Display.anyVisible model.display
+                    then ({core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
+                    else ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
+                Just str -> case parseEquation_ model.rules str of
+                    Result.Ok root -> Display.add newT root model.display
+                        |> (\(dModel, animation) ->
+                            (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
+                            ,   updateQuery_ dModel
+                            )
                         )
-                    )
-                Result.Err err -> submitNotification_ core err
+                    Result.Err err -> submitNotification_ core err
         NoOp -> (core, Cmd.none)
         RedirectTo url -> (core, Nav.load url)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case core.dialog of
                 Just _ -> ({core | dialog = Nothing}, Cmd.none)
-                Nothing -> case model.input.current of
-                    Just _ -> let (newIn, newT) = Input.close core.animation model.input in
-                        ({ core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
-                    Nothing -> if ActionView.isOpen model.actionView
-                        then (updateCore {model | actionView = ActionView.hide model.actionView}, Cmd.none)
-                        else (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
+                Nothing -> if ActionView.isOpen model.actionView
+                    then (updateCore {model | actionView = ActionView.hide model.actionView}, Cmd.none)
+                    else case (Display.anyVisible model.display, model.showMenu, model.input.current) of
+                        (True, True, _) -> ({core | swappable = {model | showMenu = False}}, Cmd.none)
+                        (True, False, Just _) -> let (newIn, newT) = Input.close core.animation model.input in
+                            ({core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
+                        (True, False, Nothing) -> ({core | swappable = {model | showMenu = True}}, Cmd.none)
+                        (False, True, Just _) -> ({core | swappable = {model | showMenu = False}}, Cmd.none)
+                        (False, _, Nothing) -> let (newIn, newT) = Input.open core.animation model.input in
+                            ({core | animation = newT, swappable = {model | input = newIn, showMenu = False}}, Cmd.none)
+                        (False, False, Just _) -> let (newIn, newT) = Input.close core.animation model.input in
+                            ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
             (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
@@ -246,7 +256,12 @@ update event core = let model = core.swappable in
                 }
             ,   focusTextBar_ "textInput"
             )
-        ToggleMenu -> (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
+        ToggleMenu -> if not model.showMenu
+            then (updateCore {model | showMenu = True}, Cmd.none)
+            else if Display.anyVisible model.display
+            then (updateCore {model | showMenu = False}, Cmd.none)
+            else let (newIn, newT) = Input.open core.animation model.input in
+                ({core | animation = newT, swappable = {model | showMenu = False, input = newIn}}, Cmd.none)
         Save -> (core, saveFile model)
         OpenDialog d ->
             (   {core | dialog = Just (d, Nothing)}
@@ -360,7 +375,6 @@ update event core = let model = core.swappable in
                     Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
 
 
--- TODO
 applyChange_: {from: Matcher.MatchResult Animation.State, replacements: List {name: String, root: Matcher.Replacement}} -> Model -> (Model, Cmd Event)
 applyChange_ params model = let swappable = model.swappable in
     case Display.transform model.animation (Rules.toLatex swappable.rules) params.replacements params.from swappable.display of
