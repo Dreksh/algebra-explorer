@@ -195,16 +195,12 @@ update event core = let model = core.swappable in
     let updateCore newModel = {core | swappable = newModel} in
     case event of
         EventUrlRequest req ->
-            (   {   core
-                |   dialog = (
-                        case req of
-                            Browser.Internal inReq -> Url.toString inReq
-                            Browser.External exReq -> exReq
-                    )
-                    |> \str -> Just (leaveDialog_ str, Nothing)
-                }
-            ,   Cmd.none
+            ( case req of
+                Browser.Internal inReq -> Url.toString inReq
+                Browser.External exReq -> exReq
             )
+            |> \str -> if str == "" then (core, Cmd.none)
+                else ({core | dialog = Just (leaveDialog_ str, Nothing)}, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation (Rules.toLatex model.rules) e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
