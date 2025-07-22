@@ -38,6 +38,38 @@
                 e.preventDefault(); // Block browser's default undo/redo
             }
         });
+        app.ports.svgMouseBegin.subscribe(function (val) {
+            let target = document.getElementById("Equation-"+val["id"]).getElementsByClassName("bricks");
+            if (target.length != 1) return;
+            let svgTarget = target[0];
+            let convertPoint = function(e) {
+                // https://stackoverflow.com/a/20958980
+                let p = svgTarget.createSVGPoint();
+                p.x = e.clientX;
+                p.y = e.clientY;
+                return p.matrixTransform(svgTarget.getScreenCTM().inverse());
+            }
+            var cancelFunc;
+            let onMove = function(id) {
+                return function(e) {
+                    let p = convertPoint(e);
+                    app.ports.svgMouseEvent.send({"final": false, "id": id, "x": p.x, "y": p.y, "time": 0});
+                }
+            }(val["id"]);
+            let onFinish = function(start, id) {
+                return function(e) {
+                    let p = convertPoint(e);
+                    app.ports.svgMouseEvent.send({"final": true, "id": id, "x": p.x, "y": p.y, "time": Date.now() - start});
+                    cancelFunc();
+                }
+            }(Date.now(), val["id"]);
+            cancelFunc = function() {
+                svgTarget.removeEventListener("mousemove", onMove);
+                svgTarget.removeEventListener("mouseup", onFinish);
+            }
+            svgTarget.addEventListener("mousemove", onMove);
+            svgTarget.addEventListener("mouseup", onFinish);
+        });
     </script>
 </body>
 </html>

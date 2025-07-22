@@ -32,8 +32,8 @@ bricks xMax yMax children =
     ]
     children
 
-brick: Float -> Float -> Float -> Float -> Float -> Bool -> Bool -> Attribute event -> String -> Html event
-brick xMin xMax yMin yMax opacity_ canHover selected onClick label =
+brick: Float -> Float -> Float -> Float -> Float -> Bool -> List (Attribute event) -> String -> Html event
+brick xMin xMax yMin yMax opacity_ canHover attrs label =
     let
         -- TODO: it would be nice for rects to overlap slightly
         --   but need to bring the hovered rect to the front for the :hover stroke to look nice
@@ -44,12 +44,7 @@ brick xMin xMax yMin yMax opacity_ canHover selected onClick label =
         pointerEvents_ = if canHover then "auto" else "none"
     in
         g
-        (   List.filterMap identity
-            [   onClick |> Just
-            ,   class "brick" |> Just
-            ,   class "selected" |> Helper.maybeGuard selected
-            ]
-        )
+        ( class "brick" :: attrs )
         [   rect
             [   x (String.fromFloat x_)
             ,   y (String.fromFloat y_)
