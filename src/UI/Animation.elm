@@ -39,8 +39,8 @@ type EaseState t = EaseState
     ,   current: t
     -- For calculating
     ,   target: t
-    ,   firstSpline: t -- coefficient of t^4
-    ,   secondSpline: t -- coefficient of 4t^3(t-1)
+    ,   firstSpline: t -- coefficient of t^5
+    ,   secondSpline: t -- coefficient of 5t^4(1-t)
     ,   addition: t -> t -> t
     ,   scale: Float -> t -> t
     ,   remainingTime: Float -- We're going from t=1 to t=0, where t is remainingTime / changeDuration
@@ -86,8 +86,8 @@ setEase tracker value (EaseState n) = if n.target == value
                 |   remainingTime = n.changeDuration
                 ,   firstSpline = diff
                 ,   secondSpline = diff
-                        |> n.addition (n.scale (-time*time*time) n.firstSpline)
-                        |> n.addition (n.scale (time*time*(4*time-3)) n.secondSpline)
+                        |> n.addition (n.scale (-time*time*time*time) n.firstSpline)
+                        |> n.addition (n.scale (time*time*time*(5*time-4)) n.secondSpline)
                 ,   target = value
                 }
             , max tracker n.changeDuration
@@ -124,8 +124,8 @@ advance deltaTime (EaseState state) = let remainingTime = state.remainingTime - 
         EaseState
         {   state
         |   current = state.addition
-                (state.scale (time*time*time*time) state.firstSpline)
-                (state.scale (4*time*time*time*(1-time)) state.secondSpline)
+                (state.scale (time*time*time*time*time) state.firstSpline)
+                (state.scale (5*time*time*time*time*(1-time)) state.secondSpline)
                 |> state.addition state.target
         ,   remainingTime = remainingTime
         }
