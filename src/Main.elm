@@ -277,7 +277,12 @@ update event core = let model = core.swappable in
                 Ok rModel -> (updateCore {model | rules = rModel}, Cmd.none)
         ProcessSource url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
-            Ok source -> (updateCore {model | rules = Rules.addSources source.topics model.rules}, Cmd.none)
+            Ok source ->
+                (   updateCore {model | rules = Rules.addSources source.topics model.rules}
+                ,   Dict.toList source.topics
+                    |> List.map (\(_, s) -> downloadTopicCmd_ s.url)
+                    |> Cmd.batch
+                )
         FileSelect fileType -> (core, FSelect.file ["application/json"] (FileSelected fileType))
         FileSelected fileType file -> ({core | dialog = Nothing}, Task.perform (FileLoaded fileType) (File.toString file))
         FileLoaded fileType str -> case fileType of
@@ -322,7 +327,7 @@ update event core = let model = core.swappable in
             Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
                 else ({core | dialog = Just (substitutionDialog_ eqNum selected model, Nothing)} , Cmd.none)
             Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
-            Rules.Download url -> (core, Http.get { url = url, expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder})
+            Rules.Download url -> (core, downloadTopicCmd_ url)
             Rules.Evaluate eq id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ eq id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
             Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
@@ -400,6 +405,12 @@ updateQuery_ = Display.updateQueryCmd 0
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
+
+downloadTopicCmd_: String -> Cmd Event
+downloadTopicCmd_ url = Http.get
+    {   url = url
+    ,   expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder
+    }
 
 {-
 ## UI
@@ -545,7 +556,7 @@ leaveDialog_ url =
 loadSources: List String -> Cmd Event
 loadSources sources = List.map
     (\url -> Http.get { url = url, expect = Http.expectJson (ProcessSource url) sourceDecoder})
-    ("source.json"::sources)
+    (if List.isEmpty sources then ["source.json"] else sources)
     |> Cmd.batch
 
 sourceDecoder: Decode.Decoder Source
