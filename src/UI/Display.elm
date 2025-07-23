@@ -49,9 +49,7 @@ svgDragEvent: {final: Bool, id: Int, x: Float, y: Float, time: Float} -> Event
 svgDragEvent n = if n.final then ShiftEnd n.id n.time (n.x,n.y)
     else ShiftContinue n.id (n.x,n.y)
 
-type UIModel =
-    Blocks Bricks.Model
-    | Written MathIcon.Model
+type alias UIModel = (Bricks.Model, MathIcon.Model)
 
 type alias Entry =
     {   history: History.Model (Matcher.Equation Animation.State, Latex.Model State)
@@ -65,7 +63,6 @@ type alias Entry =
 type Event =
     Select Int Int
     | ToggleHide Int
-    | ToggleUI Int
     | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
@@ -82,12 +79,16 @@ type alias SelectedNode =
     }
 
 newEntry_: Animation.Tracker -> Int -> Int -> (Matcher.Equation Animation.State, Latex.Model State) -> (Entry, Animation.Tracker)
-newEntry_ tracker size index (eq, latex) = let (b, newT) = Bricks.init tracker eq.root in
+newEntry_ tracker size index (eq, latex) =
+    let
+        (b, t0) = Bricks.init tracker eq.root
+        (m, newT) = MathIcon.init t0 latex
+    in
     (   {   history = History.init (eq, latex)
         ,   view = (False, createDraggable_ size index index)
         ,   showHistory = False
         ,   show = True
-        ,   ui = Blocks b
+        ,   ui = (b, m)
         ,   shifting = Nothing
         }
     ,   newT
@@ -156,20 +157,21 @@ getSelected model = model.selected
     )
 
 updateBricks: Animation.Tracker -> Entry -> (Entry, Animation.Tracker)
-updateBricks tracker entry = let (eq, latex) = History.current entry.history in
-    case entry.ui of
-        Blocks b -> let (newB, newT) = Bricks.updateTree tracker eq.root b in
-            ({entry | ui = Blocks newB}, newT)
-        Written w -> let (newW, newT) = MathIcon.set tracker latex w in
-            ({entry | ui = Written newW}, newT)
+updateBricks tracker entry =
+    let
+        (eq, latex) = History.current entry.history
+        (b, m) = entry.ui
+        (newB, t0) = Bricks.updateTree tracker eq.root b
+        (newW, newT) = MathIcon.set t0 latex m
+    in
+        ({entry | ui = (newB, newW)}, newT)
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     {   model
-    |   equations = Dict.map (\_ entry -> case entry.ui of
-                Blocks b -> {entry | ui = Bricks.advanceTime millis b |> Blocks }
-                Written w -> {entry | ui = MathIcon.advanceTime millis w |> Written }
-            ) model.equations
+    |   equations = Dict.map (\_ entry -> let (b, m) = entry.ui in
+            {entry | ui = (Bricks.advanceTime millis b, MathIcon.advanceTime millis m)}
+        ) model.equations
     }
 
 undo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
@@ -344,14 +346,6 @@ update size tracker latexConvert event model = case event of
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, tracker, Cmd.none)
-    ToggleUI eq -> case Dict.get eq model.equations of
-        Nothing -> (model, tracker, Cmd.none)
-        Just entry -> let (equation, latex) = History.current entry.history in
-            case entry.ui of
-                Blocks _ -> MathIcon.init tracker latex
-                    |> \(e, t) -> ({model | equations = Dict.insert eq {entry | ui = Written e, shifting = Nothing} model.equations}, t, Cmd.none)
-                Written _ -> Bricks.init tracker equation.root
-                    |> \(b, t) -> ({model | equations = Dict.insert eq {entry | ui = Blocks b} model.equations}, t, Cmd.none)
     HistoryEvent eq he -> case Dict.get eq model.equations of
         Nothing ->(model, tracker, Cmd.none)
         Just entry ->
@@ -397,22 +391,25 @@ update size tracker latexConvert event model = case event of
                 if n.originalIndex == -1 then Just ({entry | shifting = Nothing}, t)-- It is not draggable, and we've detected a drag
                 else let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
                     if newIndex == n.currentIndex then Nothing
-                    else case entry.ui of
-                        Blocks b -> History.current entry.history |> Tuple.first
-                            |> (\currentEq -> case Matcher.setChildIndex n.id newIndex currentEq of
-                                Err _ -> currentEq
-                                Ok newEq -> newEq
-                            )
-                            |> \newEq -> Bricks.updateTree t newEq.root b
-                            |> \(newB, newT) ->
-                                Just (   {   entry
-                                    |   ui = Blocks newB
+                    else let (b, m) = entry.ui in
+                        History.current entry.history
+                        |> (\(currentEq, currentLatex) -> case Matcher.setChildIndex n.id newIndex currentEq of
+                            Err _ -> (currentEq, currentLatex)
+                            Ok newEq -> case latexConvert newEq of
+                                Err _ -> (currentEq, currentLatex)
+                                Ok newL -> (newEq, newL)
+                        )
+                        |> \(newEq, newL) ->
+                            let
+                                (newB, t0) = Bricks.updateTree t newEq.root b
+                                (newM, newT) = MathIcon.set t0 newL m
+                            in
+                            Just (   {   entry
+                                    |   ui = (newB, newM)
                                     ,   shifting = Just {n | moved = True, currentIndex = newIndex}
                                     }
                                 ,   newT
                                 )
-                        _ -> -- shouldn't happen, but clean up
-                            Just ({entry | shifting = Nothing}, t)
             )
         )
     ShiftEnd eqNum time (x, _) -> case Dict.get eqNum model.equations of
@@ -466,12 +463,7 @@ modifyEntry_ model tracker eqNum process = case Dict.get eqNum model.equations o
 menu: (Event -> msg) -> Model -> List (Menu.Part msg)
 menu convert model = Dict.toList model.equations
     |> List.map (\(num, entry) -> Menu.Content
-        [   a [class "clickable", HtmlEvent.onClick (convert (ToggleUI num))]
-            [   case entry.ui of
-                    Blocks _ -> Icon.written []
-                    Written _ -> Icon.block []
-            ]
-        ,   a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
+        [   a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
             [   if entry.show then Icon.shown [] else Icon.hidden []
             ,   span [class "space"] []
             ,   p [] [text (History.current entry.history |> Tuple.first |> .root |> treeToString_)]
@@ -496,25 +488,15 @@ views converter model = Dict.toList model.equations
             (   dModel.id
             ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
                 [   div []
-                    (   case entry.ui of
-                        Blocks b ->
-                            [   Rules.process (\s -> let id = Matcher.getID s in
-                                    Html.span
-                                    ( HtmlEvent.onClick (Select eqNum id)
-                                    :: (class "node" :: if Set.member id highlight then [class "selected"] else [])
-                                    )
-                                )
-                                Html.text eq.root
-                            ,   Bricks.view (brickAttr_ highlight eqNum) b
-                            ]
-                        Written w ->
-                            [   MathIcon.view (\id -> List.filterMap identity
-                                    [   HtmlEvent.onClick (Select eqNum id) |> Just
-                                    ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
-                                    ]
-                                )
-                                [] w
-                            ]
+                    (   let (b,m) = entry.ui in
+                        [   MathIcon.view (\id -> List.filterMap identity
+                                [   HtmlEvent.onClick (Select eqNum id) |> Just
+                                ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
+                                ]
+                            )
+                            [] m
+                        ,   Bricks.view (brickAttr_ highlight eqNum) b
+                        ]
                     )
                     |>  Html.map converter
                 ,   Icon.verticalLine []
@@ -613,12 +595,17 @@ addDefaultPositions_ orig =
     let
         (shown, hidden) = Dict.toList orig |> List.partition (\(_, entry) -> entry.show)
         size = List.length shown
-        create t tEntry newView = let (b, newT) = (History.current tEntry.history |> Tuple.first |> .root) |> Bricks.init t in
+        create t tEntry newView =
+            let
+                (eq, l) = History.current tEntry.history
+                (b, t0) = Bricks.init t eq.root
+                (m, newT) = MathIcon.init t0 l
+            in
             (   {   history = tEntry.history
                 ,   view = case tEntry.view of
                         Just view -> (True, view)
                         Nothing -> (False, newView)
-                ,   ui = Blocks b
+                ,   ui = (b, m)
                 ,   showHistory = tEntry.showHistory
                 ,   show = tEntry.show
                 ,   shifting = Nothing

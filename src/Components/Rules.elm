@@ -215,8 +215,8 @@ toLatex_ model tree =
         Math.UnaryNode n -> case n.name of
             "-" -> toLatex_ model n.child
                 |> Result.map (\inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Bracket (Math.getState n.child) inner]
-                    else inner
+                    then [Latex.Text state "-", Latex.Bracket (Math.getState n.child) inner]
+                    else Latex.Text state "-" :: inner
                 )
             "/" -> bracket tree n.child
                 |> Result.map (\inner -> [Latex.Text state "1", Latex.SymbolPart state Latex.Division] ++ inner)
