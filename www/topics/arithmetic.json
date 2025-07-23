@@ -3,8 +3,8 @@
     "functions":{
         "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}, "latex": "+"},
         "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\cross"},
-        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-\\arg{1}"},
-        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div\\arg{1}"}
+        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-"},
+        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div"}
     },
     "constants": {},
     "actions": [

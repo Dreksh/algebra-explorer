@@ -288,8 +288,8 @@ symbolsToFrames_ ref elem = case elem of
                         ,   origin = (0.125 + (maxWidth - (Tuple.first topFrame.botRight))*0.375, topOrigin)
                         ,   scale = 0.75
                         }
-                    ,   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (width, 0)], elem = s }, topLeft = (0,0), botRight = (0,width)}
-                        , origin = (0,0), scale = 1 }
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (1, 0)], elem = s }, topLeft = (0,0), botRight = (0,1)}
+                        , origin = (0,0), scale = width }
                     ,   {   frame = botFrame
                         ,   origin = (0.125 + (maxWidth - (Tuple.first botFrame.botRight))*0.375, botOrigin)
                         ,   scale = 0.75
@@ -336,17 +336,19 @@ symbolsToFrames_ ref elem = case elem of
         |> \new ->
             let
                 (top, bot) = (Tuple.second new.topLeft, Tuple.second new.botRight)
-                (midTop, midBot) = ((2*top + bot)/3, (top + 2*bot)/3 )
+                mid = (top + bot)/2
+                height = bot - top
+                shift = 0.3*height
             in
             (   {   data = Position
-                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, top), Curve (0, midTop) (0, midBot) (0.2, bot)], elem = s}, topLeft = (0,top), botRight = (0.3,bot)}, origin = (0,0), scale = 1}
-                    ,   {frame = new, origin = (0.3, 0), scale = 1}
-                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, top), Curve (0.3, midTop) (0.3, midBot) (0.1, bot)], elem = s}, topLeft = (0,top), botRight = (0.3,bot)}, origin = (Tuple.first new.botRight + 0.3, 0), scale = 1}
+                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, -0.4), Curve (0, -0.2) (0, 0.2) (0.2, 0.4)], elem = s}, topLeft = (0,-0.5), botRight = (0.3,0.5)}, origin = (0,mid), scale = height}
+                    ,   {frame = new, origin = (shift, 0), scale = 1}
+                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, -0.4), Curve (0.3, -0.2) (0.3, 0.2) (0.1, 0.4)], elem = s}, topLeft = (0,-0.5), botRight = (0.3,0.5)}, origin = (Tuple.first new.botRight + shift, mid), scale = height}
                     ]
                 ,   topLeft = new.topLeft
-                ,   botRight = Animation.addVector2 (0.6, 0) new.botRight
+                ,   botRight = Animation.addVector2 (2*shift, 0) new.botRight
                 }
-            ,   {   ref | body = ref.body + Tuple.first new.botRight + 0.6}
+            ,   {   ref | body = ref.body + Tuple.first new.botRight + 2*shift}
             )
     Latex.Sqrt _ inner -> latexToFrames inner
         |> \new ->
@@ -356,7 +358,21 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   {   ref| body = ref.body + 1, top = ref.top + 1 }
             )
-    Latex.Argument s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
+    Latex.Argument s _ ->
+        (   {   data = BaseFrame
+                {   strokes =
+                    [   Move (0.4, -0.3), Line (0.2,-0.3), Line (0.2,-0.1)
+                    ,   Move (0.4, 0.3), Line (0.2,0.3), Line (0.2,0.1)
+                    ,   Move (0.6, 0.3), Line (0.8,0.3), Line (0.8,0.1)
+                    ,   Move (0.6, -0.3), Line (0.8,-0.3), Line (0.8,-0.1)
+                    ]
+                , elem = s
+                }
+            ,   topLeft  = (0, -0.5)
+            ,   botRight = (1,0.5)
+            }
+        ,   {body = ref.body + 1, top = -1, bot = 0.5}
+        )
     Latex.Param s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
 
 processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
@@ -379,7 +395,7 @@ origin should be on the left + half-way through the height of the short characte
 
 failedFrame_: state -> Frame state
 failedFrame_ s =
-    {   data = BaseFrame {strokes = [Move (0, -0.5), Line (0,0.5), Line (1,0.5), Line (1,-0.5), Line (0, -0.5), Line (1,0.5)], elem = s}
+    {   data = BaseFrame {strokes = [Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], elem = s}
     ,   topLeft  = (0, -0.5)
     ,   botRight = (1,0.5)
     }
@@ -470,7 +486,7 @@ charStrokes_ c = case c of
     '7' -> Ok ([Move (0.1,-0.8), Line (0.8,-0.8), Line (0.5,0.4), Move (0.2,-0.3), Line (0.9,-0.3)], (0, -1), (1, 0.5))
     '8' -> Ok ([Move (0.5,-0.8), Curve (0.1,-0.8) (0.1,-0.3) (0.5,-0.3), Curve (1,-0.3) (1,0.4) (0.5,0.4), Curve (0,0.4) (0,-0.3) (0.5,-0.3), Curve (0.9,-0.3) (0.9,-0.8) (0.5,-0.8)], (0, -1), (1, 0.5))
     '9' -> Ok ([Move (0.8,-0.7), Curve (0.6,-1) (0.1,-0.7) (0.1,-0.4), Curve (0.1,-0.1) (0.7,0) (0.8,-0.8), Line (0.8,0.4)], (0, -1), (1, 0.5))
-    '-' -> Ok ([Move (0.1,0), Line (0.5,0)], (0, -0.1), (0.6, 0.1))
+    '-' -> Ok ([Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '+' -> Ok ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '=' -> Ok ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
     _ -> Err ("invalid character found: " ++ (Char.toCode c |> String.fromInt))

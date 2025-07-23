@@ -3,6 +3,10 @@
         "Arithmetic": {
             "url": "topics/arithmetic.json",
             "description": "Covers addition, subtraction, multiplication and division."
+        },
+        "Fractions": {
+            "url": "topics/fractions.json",
+            "description": "Covers fractions and mixed numbers."
         }
     }
 }

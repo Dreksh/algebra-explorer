@@ -31,12 +31,12 @@ type alias FunctionProp =
 negateProp: FunctionProp
 negateProp =
     {   javascript = Just (PrefixOp "-")
-    ,   latex = Just [Latex.Text () "-", Latex.Argument () 1]
+    ,   latex = Just [Latex.Text () "-"]
     }
 divisionProp_: FunctionProp
 divisionProp_ =
     {   javascript = Just (PrefixOp "1/")
-    ,   latex = Just [Latex.SymbolPart () Latex.Division, Latex.Argument () 1]
+    ,   latex = Just [Latex.SymbolPart () Latex.Division]
     }
 
 type Javascript_ =
@@ -98,15 +98,18 @@ type Event treeState =
     | Evaluate Int Int String -- eq nodeID evalString
     | Delete String
 
+coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
+coreFunctions_ = Dict.fromList
+    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = True, commutative = True, identity = 0, children = []}})
+    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = True, commutative = True, identity = 1, children = []}})
+    ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}})
+    ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}})
+    ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text () "="]}, name = "", children = []}})
+    ]
+
 init: Model
 init =
-    {   functions = Dict.fromList
-            [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = True, commutative = True, identity = 0, children = []}, count = 1})
-            ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = True, commutative = True, identity = 1, children = []}, count = 1})
-            ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}, count = 1})
-            ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}, count = 1})
-            ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text () "="]}, name = "", children = []}, count = 1})
-            ]
+    {   functions = Dict.map (\_ p -> {property = p.property, count = 1}) coreFunctions_
     ,   constants = Dict.empty
     ,   topics = Dict.empty
     }
@@ -204,7 +207,7 @@ toLatex_ converter complete tree =
         funcLatex = Math.getState tree |> Matcher.getState |> converter |> Maybe.andThen .latex
         genericFunction root = case funcLatex of
             Nothing -> List.foldl (\n list -> toLatex_ converter complete n |> \new -> new :: list) [] (Math.getChildren root)
-                |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.concat) ]
+                |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.reverse |> List.concat) ]
             Just l -> substituteArgs_ converter complete treeState (Math.getChildren root) l
         bracket parent child = toLatex_ converter complete child
             |> \inner -> if priority_ child >= priority_ parent
@@ -494,8 +497,20 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
                         |> \entry -> Dict.insert k {property = entry} inner
                     ) functions vars
             in
-                Dec.field "actions" (Dec.list (ruleDecoder_ knownProps))
+                Dict.merge
+                (\_ _ -> Result.map identity)
+                (\key left right -> Result.andThen (\initial ->
+                    if left.property == right.property then Ok initial
+                    else Err ("The function '" ++ key ++ "' has a conflicting definition")
+                ))
+                (\key value -> Result.map (Dict.insert key value))
+                knownProps
+                coreFunctions_
+                (Ok knownProps)
+            |> Helper.resultToDecoder
+            |> Dec.andThen (\allFuncs -> Dec.field "actions" (Dec.list (ruleDecoder_ allFuncs))
                 |> Dec.map (\eqs -> Topic name vars functions eqs)
+            )
     )
 
 functionDecoder_: Dec.Decoder (Math.FunctionProperty FunctionProp)
@@ -525,7 +540,7 @@ parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
                     Nothing -> case Dict.get m.name knownFuncs of
                         Just _ -> Err "Known constants cannot be used as a parameter"
                         Nothing -> Ok
-                            (   Dict.insert m.name {name = key, arguments = 0, description = description} others
+                            (   Dict.insert m.name {name = m.name, arguments = 0, description = description} others
                             ,   Dict.insert m.name (0, False) dict
                             )
                 Math.GenericNode m -> case Dict.get m.name dict of
@@ -533,7 +548,7 @@ parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
                     Nothing -> case Dict.get m.name knownFuncs of
                         Just _ -> Err "Known function cannot be used as a parameter"
                         Nothing -> Ok
-                            (   Dict.insert m.name {name = key, arguments = List.length m.children, description = description} others
+                            (   Dict.insert m.name {name = m.name, arguments = List.length m.children, description = description} others
                             ,   Dict.insert m.name (List.length m.children, False) dict
                             )
                 _ -> Err "Parameters can only be variables or functions"
