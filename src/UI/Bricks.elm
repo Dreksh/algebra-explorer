@@ -60,6 +60,8 @@ advanceTime millis model =
 
 view: (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
 view attrs model =
+    -- TODO: allow blocks to share a border to make it look like mitosis
+    -- TODO: can pass in some extra params here to allow dragging to move the node with cursor
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
         visBricks = model.rects |> Dict.foldl (foldRectToBrick attrs True) []
@@ -100,21 +102,27 @@ calculateTree_ animation root rects =
         oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
 
         -- if we are doing an undo then we can try to reverse-engineer where it came from
+        -- note that this can be a one-to-many mapping and this current logic just chooses a random last one
         nextIDs = oldRects |> Dict.foldl (\id rect foldMap -> foldMap |> Dict.insert rect.prevID id) Dict.empty
 
-        (visibleRects, newAnimaiton) = grid.items |> Dict.foldl (\id item (foldRects, a0) ->
+        (visibleRects, newAnimation, easedIds) = grid.items |> Dict.foldl (\id item (foldRects, a0, foldEased) ->
             let
                 blTarget = (getColX item.colStart grid.lines, toFloat item.rowStart)
                 trTarget = (getColX item.colEnd grid.lines, toFloat item.rowEnd)
 
-                -- TODO: use prevID more correctly
-                --   e.g. the new rect may jerkily appear outside the current frame if there is nothing to tween from
-                --   I also wonder if we can allow blocks to share a border to make it look like it's splitting better
+                nextID = nextIDs |> Dict.get id |> Maybe.withDefault -1
                 thisOld = oldRects |> Dict.get id
                 prevOld = oldRects |> Dict.get item.prevID
-                nextOld = oldRects |> Dict.get (nextIDs |> Dict.get id |> Maybe.withDefault -1)
+                nextOld = oldRects |> Dict.get nextID
                 noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0) Nothing
-                old = thisOld |> Maybe.withDefault (prevOld |> Maybe.withDefault (nextOld |> Maybe.withDefault noOld))
+
+                (old, easedId) = case thisOld of
+                    Just o -> (o, id)
+                    Nothing -> case prevOld of
+                        Just o -> (o, item.prevID)
+                        Nothing -> case nextOld of
+                            Just o -> (o, nextID)
+                            Nothing -> (noOld, -1)
 
                 (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft
                 (tr, a2) = Animation.setEase a1 trTarget old.topRight
@@ -133,12 +141,12 @@ calculateTree_ animation root rects =
                             )
                     })
             in
-                (Dict.insert id new foldRects, a3)
-            ) (Dict.empty, animation)
+                (Dict.insert id new foldRects, a3, Set.insert easedId foldEased)
+            ) (Dict.empty, animation, Set.empty)
 
         -- need to keep deleted nodes in order to animate them away
         (leavingRects, finalA) = oldRects |> Dict.foldl (\id rect (foldRects, a) ->
-            if Dict.member id foldRects
+            if Dict.member id foldRects || Set.member id easedIds
             then (foldRects, a)
             else
                 let
@@ -146,7 +154,7 @@ calculateTree_ animation root rects =
                     leavingRect = { rect | visible = False, opacity = op }
                 in
                     (Dict.insert id leavingRect foldRects, a1)
-            ) (visibleRects, newAnimaiton)
+            ) (visibleRects, newAnimation)
 
         viewBox = visibleRects |> Dict.foldl (\_ rect (foldX, foldY) ->
             let
