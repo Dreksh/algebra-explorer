@@ -46,8 +46,8 @@ longClickThreshold: Float
 longClickThreshold = 300 -- in ms
 
 svgDragEvent: {final: Bool, id: Int, x: Float, y: Float, time: Float} -> Event
-svgDragEvent n = if n.final then ShiftEnd n.id n.time (n.x,n.y)
-    else ShiftContinue n.id (n.x,n.y)
+svgDragEvent n = if n.final then CommuteEnd n.id n.time (n.x,n.y)
+    else CommuteContinue n.id (n.x,n.y)
 
 type alias UIModel = (Bricks.Model, MathIcon.Model)
 
@@ -57,7 +57,7 @@ type alias Entry =
     ,   showHistory: Bool
     ,   show: Bool
     ,   ui: UIModel
-    ,   shifting: Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
+    ,   commuting: Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
     }
 
 type Event =
@@ -66,9 +66,9 @@ type Event =
     | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
-    | ShiftStart Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
-    | ShiftContinue Int (Float, Float)
-    | ShiftEnd Int Float (Float, Float)
+    | CommuteStart Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
+    | CommuteContinue Int (Float, Float)
+    | CommuteEnd Int Float (Float, Float)
 
 type alias SelectedNode =
     {   eq: Int
@@ -90,7 +90,7 @@ newEntry_ tracker size index eq =
         ,   showHistory = False
         ,   show = True
         ,   ui = (b, m)
-        ,   shifting = Nothing
+        ,   commuting = Nothing
         }
     ,   newT
     )
@@ -359,7 +359,7 @@ update size tracker event model = case event of
         |> \newModel -> (newModel, tracker, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
-        Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show, shifting = Nothing} model.equations} |> updateQueryCmd tracker
+        Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show, commuting = Nothing} model.equations} |> updateQueryCmd tracker
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, tracker, Cmd.none)
@@ -388,24 +388,24 @@ update size tracker event model = case event of
                     ) action
                     |> Maybe.withDefault Cmd.none
                 )
-    ShiftStart eq root index midpoints _ -> case Dict.get eq model.equations of
+    CommuteStart eq root index midpoints _ -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry ->
             (   {   model
                 |   equations = Dict.insert eq
                     {   entry
-                    |   shifting = Just {id = root, currentIndex = index, originalIndex = index, midpoints = midpoints, moved = False}
+                    |   commuting = Just {id = root, currentIndex = index, originalIndex = index, midpoints = midpoints, moved = False}
                     }
                     model.equations
                 }
             ,   tracker
             ,   model.svgMouseCmd eq
             )
-    ShiftContinue eq (x, _) -> modifyEntry_ model tracker eq
-        (\entry t -> entry.shifting
+    CommuteContinue eq (x, _) -> modifyEntry_ model tracker eq
+        (\entry t -> entry.commuting
             -- Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
             |> Maybe.andThen (\n ->
-                if n.originalIndex == -1 then Just ({entry | shifting = Nothing}, t)-- It is not draggable, and we've detected a drag
+                if n.originalIndex == -1 then Just (entry, t)-- It is not draggable, and we've detected a drag
                 else let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
                     if newIndex == n.currentIndex then Nothing
                     else let (b, m) = entry.ui in
@@ -421,25 +421,25 @@ update size tracker event model = case event of
                             in
                             Just (   {   entry
                                     |   ui = (newB, newM)
-                                    ,   shifting = Just {n | moved = True, currentIndex = newIndex}
+                                    ,   commuting = Just {n | moved = True, currentIndex = newIndex}
                                     }
                                 ,   newT
                                 )
             )
         )
-    ShiftEnd eqNum time (x, _) -> case Dict.get eqNum model.equations of
+    CommuteEnd eqNum time (x, _) -> case Dict.get eqNum model.equations of
         Nothing -> (model, tracker, Cmd.none)
-        Just entry -> case entry.shifting of
+        Just entry -> case entry.commuting of
             Nothing -> (model, tracker, Cmd.none)
             Just n -> if n.moved
                 then let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
                     (   if newIndex == n.originalIndex
-                        then {entry | shifting = Nothing}
+                        then {entry | commuting = Nothing}
                         else History.current entry.history |> Tuple.first
                             |> Matcher.setChildIndex n.id newIndex
                             |> \res -> case res of
-                                Err _ -> {entry | shifting = Nothing}
-                                Ok newEq -> {entry | shifting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                                Err _ -> {entry | commuting = Nothing}
+                                Ok newEq -> {entry | commuting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
                     )
                     |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
                         updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
@@ -498,38 +498,40 @@ views converter model = Dict.toList model.equations
             highlight = model.selected
                 |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
                 |> Maybe.withDefault Set.empty
+            (b,m) = entry.ui
         in
             (   dModel.id
             ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
-                [   div []
-                    (   let (b,m) = entry.ui in
-                        [   MathIcon.view (\id -> List.filterMap identity
-                                [   HtmlEvent.onClick (Select eqNum id) |> Just
-                                ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
-                                ]
-                            )
-                            [] m
-                        ,   Bricks.view (brickAttr_ highlight eqNum) b
-                        ]
-                    )
-                    |>  Html.map converter
-                ,   Icon.verticalLine []
-                ,   if entry.showHistory
-                    then div []
-                        [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
-                        ,   div [class "history"]
-                            (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
-                                case List.drop middle children |> List.head of
-                                    Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)]
-                                    Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)
-                                        ::  (
-                                            List.map (Html.div []) (List.take middle children)
-                                            ++ after
-                                        )
-                                ) entry.history
-                            )
-                        ]
-                    else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
+                [   div [class "equation"]
+                    [   MathIcon.view (\id -> List.filterMap identity
+                            [   HtmlEvent.onClick (Select eqNum id) |> Just
+                            ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
+                            ]
+                        ) [Svg.Attributes.class "mathIcons"] m
+                        |> Html.map converter
+                    ,   Bricks.view (brickAttr_ highlight eqNum) b
+                        |> Html.map converter
+                    ]
+                ,   div [class "historyHolder"]
+                    [   Icon.verticalLine []
+                    ,   if entry.showHistory
+                        then div []
+                            [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
+                            ,   div [class "history"]
+                                (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
+                                    case List.drop middle children |> List.head of
+                                        Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)]
+                                        Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)
+                                            ::  (
+                                                List.map (Html.div []) (List.take middle children)
+                                                ++ after
+                                            )
+                                    ) entry.history
+                                )
+                            ]
+                        else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
+                    ]
+                -- ,   div [class "contextualToolbar"] [text "undo+redo"]  -- TODO: connect ActionView up here
                 ]
             )
     )
@@ -543,11 +545,11 @@ brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.A
 brickAttr_ highlight eqNum id draggable =
     (   case draggable of
             Nothing ->
-                [   HtmlEvent.onMouseDown (ShiftStart eqNum id -1 [])
+                [   HtmlEvent.onMouseDown (CommuteStart eqNum id -1 [])
                 ]
             Just (originalIndex, midpoints) ->
                 [   Svg.Attributes.class "draggable"
-                ,   HtmlEvent.onMouseDown (ShiftStart eqNum id originalIndex midpoints)
+                ,   HtmlEvent.onMouseDown (CommuteStart eqNum id originalIndex midpoints)
                 ]
     )
     |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
@@ -622,7 +624,7 @@ addDefaultPositions_ orig =
                 ,   ui = (b, m)
                 ,   showHistory = tEntry.showHistory
                 ,   show = tEntry.show
-                ,   shifting = Nothing
+                ,   commuting = Nothing
                 }
             ,   newT
             )

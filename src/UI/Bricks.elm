@@ -23,7 +23,7 @@ type alias Rect =
     ,   bottomLeft: Animation.EaseState Animation.Vector2
     ,   topRight: Animation.EaseState Animation.Vector2
     ,   opacity: Animation.EaseState Float
-    ,   draggable: Maybe (Int, List Float)
+    ,   commutable: Maybe (Int, List Float)  -- sibling order, siblings midpoints
     }
 
 type alias Model =
@@ -74,7 +74,7 @@ foldRectToBrick createAttrs includeVisible id rect foldBricks =
     then foldBricks
     else
         let
-            attrs = createAttrs id rect.draggable
+            attrs = createAttrs id rect.commutable
             (blX, blY) = Animation.current rect.bottomLeft
             (trX, trY) = Animation.current rect.topRight
             brick = BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible attrs rect.text
@@ -141,7 +141,7 @@ calculateTree_ animation root rects =
                     ,   bottomLeft = bl
                     ,   topRight = tr
                     ,   opacity = op
-                    ,   draggable = item.draggable
+                    ,   commutable = item.commutable
                             |> Maybe.map (\(index, list) ->
                                 (index, List.map (\(sCol,eCol) -> (getColX sCol grid.lines + getColX eCol grid.lines)/2 ) list)
                             )
@@ -179,7 +179,7 @@ type alias GridItem =
     ,   colEnd: Int
     ,   rowStart: Int
     ,   rowEnd: Int
-    ,   draggable: Maybe (Int, List (Int, Int))
+    ,   commutable: Maybe (Int, List (Int, Int))  -- sibling order, siblings (colStart, colEnd)
     }
 
 type alias Grid =
@@ -231,7 +231,7 @@ stackRecursive_ depth node (grid, colStart) =
                                     added = insertItem colEnd childrenGrid.items
                                     updateChildren allChildren = let childRanges = List.reverse revRange in
                                         List.foldl (\child (dict, index) -> let num = Math.getState child |> Matcher.getID in
-                                            (   Dict.update num (Maybe.map (\entry -> {entry | draggable = Just (index, childRanges)})) dict
+                                            (   Dict.update num (Maybe.map (\entry -> {entry | commutable = Just (index, childRanges)})) dict
                                             ,   index + 1
                                             )
                                         ) (added, 0) allChildren
