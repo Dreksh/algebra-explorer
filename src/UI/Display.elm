@@ -431,7 +431,7 @@ update size tracker latexConvert event model = case event of
                                 Ok his -> {entry | shifting = Nothing, history = History.add his entry.history}
                     )
                     |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
-                        ({model | equations = Dict.insert eqNum finalEntry model.equations}, finalT, Cmd.none)
+                        updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
                 else updateSelected_ eqNum n.id (time > longClickThreshold) model
                     |> \newModel -> (newModel, tracker, Cmd.none)
 
