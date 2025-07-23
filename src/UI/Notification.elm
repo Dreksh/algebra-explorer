@@ -10,11 +10,16 @@ import Html.Attributes exposing (class, style)
 import Html.Keyed exposing (node)
 import Json.Encode as Encode
 import Json.Decode as Decode
+import Process
+import Task
 -- Our modules
 import Helper
 import UI.Animation as Animation
 import UI.HtmlEvent
 import UI.Icon as Icon
+
+notificationDuration_: Float
+notificationDuration_ = 15000
 
 animationDuration_: Float
 animationDuration_ = 750
@@ -40,14 +45,15 @@ advance time model =
         |> Dict.filter (\_ (deleting, _, height) -> not deleting || Animation.current height /= 0)
     }
 
-displayError: String -> (Model, Animation.Tracker) -> (Model, Animation.Tracker)
-displayError str (model, tracker) =
+displayError: String -> (Model, Animation.Tracker, Cmd Event) -> (Model, Animation.Tracker, Cmd Event)
+displayError str (model, tracker, others) =
     let (height, newT) = Animation.newEaseFloat animationDuration_ 0 |> Animation.setEase tracker maxHeight_ in
     (   {   model
         |   nextID = model.nextID + 1
         ,   notifications = Dict.insert model.nextID (False, str, height) model.notifications
         }
     ,   newT
+    ,   Cmd.batch [others, Task.perform (\_ -> ClearEvent model.nextID) (Process.sleep notificationDuration_)]
     )
 
 update: Animation.Tracker -> Event -> Model -> (Model, Animation.Tracker)

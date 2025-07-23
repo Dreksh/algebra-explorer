@@ -139,7 +139,7 @@ init flags url key =
         (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
         newScreen = List.isEmpty eqs
         (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) svgMouseCmd -1 eqs
-        (nModel, finalT) = List.foldl Notification.displayError (Notification.init, tracker) errs
+        (nModel, finalT, nCmd) = List.foldl Notification.displayError (Notification.init, tracker, Cmd.none) errs
     in
     (   {   swappable =
             { display = newDisplay
@@ -161,7 +161,10 @@ init flags url key =
             |> Maybe.withDefault (0, 0)
         , animation = finalT
         }
-    ,   loadSources query.sources
+    ,   Cmd.batch
+        [   loadSources query.sources
+        ,   Cmd.map NotificationEvent nCmd
+        ]
     )
 
 parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String) -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String)
@@ -386,10 +389,10 @@ applyChange_ params model = let swappable = model.swappable in
         Err errStr -> submitNotification_ model errStr
         Ok (newDisplay, animation) -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}, animation = animation}, updateQuery_ newDisplay)
 
-submitNotification_: Model -> String -> (Model, Cmd msg)
+submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let swappable = model.swappable in
-    let (nModel, newT) = Notification.displayError str (swappable.notification, model.animation) in
-    ({model | swappable = {swappable | notification = nModel}, animation = newT}, Cmd.none)
+    let (nModel, newT, cmd) = Notification.displayError str (swappable.notification, model.animation, Cmd.none) in
+    ({model | swappable = {swappable | notification = nModel}, animation = newT}, Cmd.map NotificationEvent cmd)
 
 httpErrorToString_: String -> Http.Error -> String
 httpErrorToString_ url err = case err of
