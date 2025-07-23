@@ -23,6 +23,7 @@ type Symbol =
     AlphaLower
     | BetaLower
     | CrossMultiplcation
+    | Division
     | Integration
 
 map: (a -> b) -> Model a -> Model b
@@ -76,6 +77,7 @@ strToSymbol_ str = case str of
     "alpha" -> Ok AlphaLower
     "beta" -> Ok BetaLower
     "cross" -> Ok CrossMultiplcation
+    "div" -> Ok Division
     "int" -> Ok Integration
     _ -> Err ("symbol not found: '" ++ str ++ "'")
 
@@ -84,6 +86,7 @@ symbolToStr s = case s of
     AlphaLower -> "alpha"
     BetaLower -> "beta"
     CrossMultiplcation -> "cross"
+    Division -> "div"
     Integration -> "int"
 
 encodeSymbol_: Symbol -> Encode.Value

@@ -94,7 +94,7 @@ init =
             [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+", latex = [Latex.Text () "+"]},1))
             ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]},1))
             ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-", latex = [Latex.Text () "-", Latex.Argument () 1]},1))
-            ,   ("/",({properties= Math.GenericNode {state = (), name = "", arguments = Just 2, children = []}, javascript = InfixOp "/", latex = [Latex.Fraction () [Latex.Argument () 1] [Latex.Argument () 2]]},1))
+            ,   ("/",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "1/", latex = [Latex.SymbolPart () Latex.Division, Latex.Argument () 1]},1))
             ,   ("=",({properties= Math.DeclarativeNode {state = (), name = "", children = []}, javascript = InfixOp "=", latex = [Latex.Text () "="]},1))
             ]
     ,   constants = Dict.empty
@@ -107,24 +107,29 @@ functionProperties model = Dict.map (\_ (f, _) -> f.properties) model.functions
 
 {- Functions -}
 
+-- Currently x10 of the ones defined in https://en.wikipedia.org/wiki/Order_of_operations#Programming_languages
+-- Except for "/", where we need it to have less precedence than "*" for proper allocation of brackets
 priority_: Math.Tree s -> Int
 priority_ root = case Math.getName root of
     "-" -> 20 -- Following the unary operator
-    "/" -> 30
-    "*" -> 40
-    "+" -> 50
+    "/" -> 25
+    "*" -> 30
+    "+" -> 40
     "=" -> 70 -- Equivalent to == in programming languages
     _ -> 10 -- Assume other functions will be called as "func()"
+
+getDivisionProps_: Math.Tree s -> Maybe {name: String, state: s, child: Math.Tree s}
+getDivisionProps_ root = case root of
+    Math.UnaryNode n -> if n.name == "/" then Just n else Nothing
+    _ -> Nothing
 
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
-        addUnaryBrackets parent child =
+        addSubBrackets parent child =
             if priority_ child > priority_ parent
             then [convert "(", process combine convert child, convert ")"]
             else [process combine convert child]
-
-        unaryStr root child = convert (Math.getName root) :: addUnaryBrackets root child
 
         addBrackets parent child =
             if priority_ child >= priority_ parent
@@ -147,17 +152,29 @@ process combine convert tree =
                     else if Math.getName elem == "-" then children ++ inner  -- this abbreviates +- to just -
                     else children ++ (convert (Math.getName root) :: inner)
             ) [] (Math.getChildren root)
+        multStr root =
+            List.foldl (\elem children -> if List.isEmpty children
+                then addBrackets root elem
+                else case getDivisionProps_ elem of
+                    Just divProp -> addBrackets (Math.UnaryNode divProp) divProp.child
+                        |> \inner -> children ++ (convert "/" :: inner)
+                    _ -> addBrackets root elem
+                        |> \inner -> children ++ (convert (Math.getName root) :: inner)
+
+            ) [] (Math.getChildren root)
     in
         (
             case tree of
             Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
             Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
-            Math.UnaryNode n -> unaryStr tree n.child
+            Math.UnaryNode n -> case n.name of
+                "-" -> convert "-" :: addSubBrackets tree n.child
+                "/" -> convert "1/" :: addBrackets tree n.child
+                _ -> [convert ("\\" ++ n.name ++ "("), process combine convert n.child, convert ")"]
             _ -> case Math.getName tree of
                 "+" -> plusStr tree
-                "/" -> infixStr tree
+                "*" -> multStr tree
                 "=" -> infixStr tree
-                "*" -> infixStr tree -- Maybe do something smart to remove unnecessary multiplication symbols?
                 _ ->
                     (convert ("\\" ++ Math.getName tree ++ "("))
                     ::
@@ -172,32 +189,58 @@ toLatex_: Model -> Math.Tree state -> Result String (Latex.Model state)
 toLatex_ model tree =
     let
         state = Math.getState tree
-        genericFunction root = Helper.resultList (\n list -> toLatex_ model n |> Result.map (\new -> new :: list)) [] (Math.getChildren root)
+        genericFunction root = case Dict.get (Math.getName root) model.functions of
+            Nothing -> Helper.resultList (\n list -> toLatex_ model n |> Result.map (\new -> new :: list)) [] (Math.getChildren root)
                 |> Result.map (\list -> [Latex.Text state (Math.getName root), Latex.Bracket state (List.intersperse [Latex.Text state ","] list |> List.reverse |> List.concat) ])
-        infixFunction root = let p = priority_ root in
-            case Dict.get (Math.getName root) model.functions of
-                Nothing -> genericFunction root
-                Just (l, _) ->
-                    Helper.resultList (\elem list -> toLatex_ model elem
-                        |> Result.map (\inner -> if priority_ elem >= p
-                            then [Latex.Bracket (Math.getState elem) inner]
-                            else inner
-                        )
-                        |> Result.map (\inner -> if List.isEmpty list
-                            then inner
-                            else list ++ (Latex.map (\_ -> state) l.latex) ++ inner
-                        )
+            Just (l, _) -> substituteArgs_ model state (Math.getChildren root) l.latex
+        bracket parent child = toLatex_ model child
+            |> Result.map (\inner -> if priority_ child >= priority_ parent
+                then [Latex.Bracket (Math.getState child) inner]
+                else inner
+            )
+        infixFunction root = case Dict.get (Math.getName root) model.functions of
+            Nothing -> genericFunction root
+            Just (l, _) -> Helper.resultList
+                (\elem list -> bracket root elem
+                    |> Result.map (\inner -> if List.isEmpty list
+                        then inner
+                        else list ++ (Latex.map (\_ -> state) l.latex) ++ inner
                     )
-                    [] (Math.getChildren root)
+                )
+                [] (Math.getChildren root)
     in
     case tree of
         Math.RealNode n -> Ok [ String.fromFloat n.value |> Latex.Text state ]
         Math.VariableNode n -> Ok [Latex.Text state n.name]
-        Math.BinaryNode _ -> infixFunction tree
+        Math.UnaryNode n -> case n.name of
+            "-" -> toLatex_ model n.child
+                |> Result.map (\inner -> if priority_ n.child > priority_ tree
+                    then [Latex.Bracket (Math.getState n.child) inner]
+                    else inner
+                )
+            "/" -> bracket tree n.child
+                |> Result.map (\inner -> [Latex.Text state "1", Latex.SymbolPart state Latex.Division] ++ inner)
+            _ -> genericFunction tree
+        Math.BinaryNode n -> case n.name of
+            "*" -> n.children
+                |> Helper.resultList (\elem res -> if List.isEmpty res
+                    then bracket tree elem
+                    else case getDivisionProps_ elem of
+                    Just p -> bracket (Math.UnaryNode p) p.child
+                        |> Result.map (\inner -> res ++ (Latex.SymbolPart p.state Latex.Division :: inner))
+                    Nothing -> bracket tree elem
+                        |> Result.map (\newList -> res ++ (Latex.SymbolPart n.state Latex.CrossMultiplcation :: newList))
+                ) []
+            "+" -> n.children
+                |> Helper.resultList (\elem res -> if List.isEmpty res
+                    then bracket tree elem
+                    else if Math.getName elem == "-"
+                    then bracket tree elem |> Result.map (\inner -> res ++ inner)
+                    else bracket tree elem |> Result.map (\inner -> res ++ (Latex.Text state "+" :: inner))
+                ) []
+            _ -> infixFunction tree
         Math.DeclarativeNode _ -> infixFunction tree
-        _ -> case Dict.get (Math.getName tree) model.functions of
-            Nothing -> genericFunction tree
-            Just (l, _) -> substituteArgs_ model state (Math.getChildren tree) l.latex
+        _ -> genericFunction tree
 
 substituteArgs_: Model -> state -> List (Math.Tree state) -> Latex.Model () -> Result String (Latex.Model state)
 substituteArgs_ model state args = Helper.resultList (\elem list -> case elem of

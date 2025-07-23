@@ -370,6 +370,7 @@ symbolStrokes_ s str = case str of
     Latex.AlphaLower -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1), botRight = (1.5, 0.5)}
     Latex.BetaLower -> failedFrame_ s
     Latex.CrossMultiplcation -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Line(0.5,0.2), Move (0.1,0.2), Line (0.5,-0.2)], elem = s}, topLeft = (0,-0.3), botRight = (0.6, 0.3)}
+    Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
     Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
 
 wordStrokes_: state -> String -> Frame state
