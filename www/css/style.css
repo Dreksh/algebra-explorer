@@ -98,27 +98,16 @@ span.space {
     align-items: center;
     justify-items: center;
 }
-@keyframes textbarAppear {
-    from { width: 0; padding-right: 0; }
-    to { width: 100%; padding-right: 3rem; }
-}
-@keyframes textbarDisappear {
-    from { width: 100%; padding-right: 3rem; }
-    to { width: 0; padding-right: 0; }
-}
 .textbar {
     box-sizing: border-box;
     height: 3rem;
+    width: 100%;
     background-color: var(--color-textbox);
     border-radius: 1.5rem;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: start;
-    animation: textbarAppear 0.5s ease-out forwards;
-}
-.textbar.deleting {
-    animation: textbarDisappear 0.5s ease-out forwards;
 }
 .textbar svg {
     height: 2rem;
@@ -260,14 +249,6 @@ span.space {
     flex-direction: column;
     align-items: center;
 }
-@keyframes notificationAppear {
-    from { max-height: 0; }
-    to { max-height: 8rem; }
-}
-@keyframes notificationDisappear {
-    from { max-height: 8rem; }
-    to { max-height: 0; }
-}
 .notificationMessage {
     display: block;
     width: 80vw;
@@ -277,11 +258,7 @@ span.space {
     padding: 0 0.2rem;
     border-radius: 0.5rem;
     background-color: var(--color-notification);
-    animation: notificationAppear 0.5s ease forwards;
     pointer-events: auto;
-}
-.notificationMessage.deleting {
-    animation: notificationDisappear 0.5s ease forwards;
 }
 .notificationMessage > svg {
     float: right;

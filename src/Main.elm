@@ -50,7 +50,6 @@ main = Browser.application
     ,    onUrlChange = EventUrlChange
     }
 
-port updateMathJax: () -> Cmd msg
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
@@ -138,9 +137,9 @@ init flags url key =
     let
         query = Query.parseInit url key
         (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
-        (nModel, nCmd) = List.foldl Notification.displayError (Notification.init, Cmd.none) errs
         newScreen = List.isEmpty eqs
         (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) svgMouseCmd -1 eqs
+        (nModel, finalT) = List.foldl Notification.displayError (Notification.init, tracker) errs
     in
     (   {   swappable =
             { display = newDisplay
@@ -160,12 +159,9 @@ init flags url key =
             flags
             |> Result.toMaybe
             |> Maybe.withDefault (0, 0)
-        , animation = tracker
+        , animation = finalT
         }
-    ,   Cmd.batch
-        [   Cmd.map NotificationEvent nCmd
-        ,   loadSources query.sources
-        ]
+    ,   loadSources query.sources
     )
 
 parseEquations_: Rules.Model -> String -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String) -> (List (Matcher.Equation Animation.State, Latex.Model (Matcher.State Animation.State)), List String)
@@ -203,21 +199,21 @@ update event core = let model = core.swappable in
                 else ({core | dialog = Just (leaveDialog_ str, Nothing)}, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation (Rules.toLatex model.rules) e model.display in
-            ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.batch [ Cmd.map DisplayEvent dCmd, updateMathJax ()])
+            ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.map DisplayEvent dCmd)
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
-        NotificationEvent e -> let (nModel, nCmd) = Notification.update e model.notification in
-            (updateCore {model | notification = nModel}, Cmd.map NotificationEvent nCmd)
+        NotificationEvent e -> let (nModel, newT) = Notification.update core.animation e model.notification in
+            ({core | animation = newT, swappable = {model | notification = nModel}}, Cmd.none)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        ActionEvent e -> let (newIn, inCmd) = Input.close model.input in
-            (updateCore {model | actionView = ActionView.update e model.actionView, input = newIn}, Cmd.map InputEvent inCmd)
-        InputEvent e -> let (newIn, submitted, inCmd) = Input.update e model.input in
-            if submitted == "" then (updateCore {model | input = newIn}, Cmd.batch [Cmd.map InputEvent inCmd, focusTextBar_ "textInput"])
+        ActionEvent e -> let (newIn, newT) = Input.close core.animation model.input in
+            ({core | animation = newT, swappable = {model | actionView = ActionView.update e model.actionView, input = newIn}}, Cmd.none)
+        InputEvent e -> let (newIn, submitted, newT) = Input.update core.animation e model.input in
+            if submitted == "" then ({core | animation = newT, swappable = {model | input = newIn}}, focusTextBar_ "textInput")
             else case parseEquation_ model.rules submitted of
-                Result.Ok root -> Display.add core.animation root model.display
+                Result.Ok root -> Display.add newT root model.display
                     |> (\(dModel, animation) ->
                         (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
-                        ,   Cmd.batch [updateQuery_ dModel, Cmd.map InputEvent inCmd, updateMathJax ()]
+                        ,   updateQuery_ dModel
                         )
                     )
                 Result.Err err -> submitNotification_ core err
@@ -226,9 +222,9 @@ update event core = let model = core.swappable in
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
             (_, _, "Escape") -> case core.dialog of
                 Just _ -> ({core | dialog = Nothing}, Cmd.none)
-                Nothing -> case model.input.existing of
-                    Just _ -> let (newIn, inCmd) = Input.close model.input in
-                        (updateCore {model | input = newIn}, Cmd.map InputEvent inCmd)
+                Nothing -> case model.input.current of
+                    Just _ -> let (newIn, newT) = Input.close core.animation model.input in
+                        ({ core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
                     Nothing -> if ActionView.isOpen model.actionView
                         then (updateCore {model | actionView = ActionView.hide model.actionView}, Cmd.none)
                         else (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
@@ -239,8 +235,15 @@ update event core = let model = core.swappable in
                 Err errStr -> submitNotification_ core errStr
                 Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
             _ -> (core, Cmd.none)
-        EnterCreateMode ->
-            (   updateCore {model | input = Input.open model.input, actionView = ActionView.hide model.actionView, showMenu = False}
+        EnterCreateMode -> let (inputModel, newT) = Input.open core.animation model.input in
+            (   {   core
+                |   swappable = {   model
+                    |   input = inputModel
+                    ,   actionView = ActionView.hide model.actionView
+                    ,   showMenu = False
+                    }
+                ,   animation = newT
+                }
             ,   focusTextBar_ "textInput"
             )
         ToggleMenu -> (updateCore {model | showMenu = not model.showMenu}, Cmd.none)
@@ -278,7 +281,17 @@ update event core = let model = core.swappable in
                 )
         WindowResize width height -> ({core | size = (toFloat width, toFloat height)}, Cmd.none)
         AnimationDelta millis ->
-            ({core | swappable = {model | display = Display.advanceTime millis model.display}, animation = Animation.updateTracker millis core.animation}, Cmd.none)
+            (   {   core
+                |   swappable =
+                    {   model
+                    |   display = Display.advanceTime millis model.display
+                    ,   input = Input.advance millis model.input
+                    ,   notification = Notification.advance millis model.notification
+                    }
+                ,   animation = Animation.updateTracker millis core.animation
+                }
+            , Cmd.none
+            )
         RuleEvent e -> case e of
             Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
@@ -354,10 +367,10 @@ applyChange_ params model = let swappable = model.swappable in
         Err errStr -> submitNotification_ model errStr
         Ok (newDisplay, animation) -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}, animation = animation}, updateQuery_ newDisplay)
 
-submitNotification_: Model -> String -> (Model, Cmd Event)
+submitNotification_: Model -> String -> (Model, Cmd msg)
 submitNotification_ model str = let swappable = model.swappable in
-    let (nModel, nCmd) = Notification.displayError str (swappable.notification, Cmd.none) in
-    ({model | swappable = {swappable | notification = nModel}}, Cmd.map NotificationEvent nCmd)
+    let (nModel, newT) = Notification.displayError str (swappable.notification, model.animation) in
+    ({model | swappable = {swappable | notification = nModel}, animation = newT}, Cmd.none)
 
 httpErrorToString_: String -> Http.Error -> String
 httpErrorToString_ url err = case err of
@@ -388,10 +401,7 @@ view core = let model = core.swappable in
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
-                    (  List.filterMap identity
-                        [   Input.view InputEvent model.input
-                        ]
-                    )
+                    (Input.view InputEvent model.input)
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Menu.view MenuEvent model.menu
                         [   Menu.Section {name = "Settings", icon = Nothing}

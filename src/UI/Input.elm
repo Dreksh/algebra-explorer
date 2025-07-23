@@ -1,5 +1,6 @@
-module UI.Input exposing (Model, Event, init, update, view, open, close, decoder, encode)
+module UI.Input exposing (Model, Event, init, update, view, advance, open, close, decoder, encode)
 
+import Dict
 import Html
 import Html.Attributes exposing (class, id, name, placeholder, type_, value)
 import Json.Decode as Decode
@@ -9,15 +10,23 @@ import Helper
 import UI.Animation as Animation
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
-import UI.Animation as Animation
-import UI.Animation as Animation
+
+-- Will be placed as a percentage
+maxWidth_: Float
+maxWidth_ = 70
+
+maxHeight_: Float
+maxHeight_ = 50
+
+animationDuration_: Float
+animationDuration_ = 750
 
 type alias Model =
     {   options: List Selection
     ,   openCount: Int
-    ,   displayOptions: Bool
-    ,   selected: Maybe (String, Bool) -- The bool is to toggle to signal when state is changing
-    ,   existing: Maybe (Animation.DeletableElement Int Event)
+    ,   selected: Maybe (String, Bool) -- The bool is to toggle to signal when state is changing to control overwriting the value
+    ,   current: Maybe (Int, Animation.EaseState Float, Animation.EaseState Float)
+    ,   closing: Dict.Dict Int (Animation.EaseState Float, Animation.EaseState Float)
     }
 
 type Selection =
@@ -26,7 +35,6 @@ type Selection =
 
 type Event =
     Click String
-    | Clear Int
     | Submit String
     | ShowOptions
 
@@ -43,82 +51,115 @@ init: Bool -> Model
 init show =
     {   options = defaultOptions_
     ,   openCount = if show then 1 else 0
-    ,   displayOptions = False
     ,   selected = Nothing
-    ,   existing = if show then Animation.newDeletable (closeCmd_ 0) 0 |> Just else Nothing
+    ,   current = if show
+            then Just
+                (   0
+                ,   Animation.newEaseFloat animationDuration_ maxWidth_
+                ,   Animation.newEaseFloat animationDuration_ 0
+                )
+            else Nothing
+    ,   closing = Dict.empty
     }
 
-open: Model -> Model
-open model = case model.existing of
-    Nothing -> {model | openCount = model.openCount + 1, existing = Animation.newDeletable (closeCmd_ model.openCount) model.openCount  |> Just }
-    Just e -> if e.deleting
-        then {model | openCount = model.openCount + 1, existing = Animation.newDeletable (closeCmd_ model.openCount) model.openCount  |> Just  }
-        else model
+advance: Float -> Model -> Model
+advance time model =
+    {   model
+    |   current = model.current
+        |> Maybe.map (\(num, w, h) -> (num, Animation.advance time w, Animation.advance time h))
+    ,   closing = model.closing
+        |> Dict.map (\_ (w,h) -> (Animation.advance time w, Animation.advance time h))
+        |> Dict.filter (\_ (w,h) -> Animation.current h /= 0 || Animation.current w /= 0)
+    }
 
-close: Model -> (Model, Cmd Event)
-close model = case model.existing of
-    Nothing -> (model, Cmd.none)
-    Just e -> let (newE, cmd) = Animation.delete e in
-        ({model | existing = Just newE}, cmd)
-
-closeCmd_: Int -> () -> Cmd Event
-closeCmd_ num _ = Animation.delayEvent 500 (Clear num)
-
-update: Event -> Model -> (Model, String, Cmd Event)
-update event model = case event of
-    Click input -> case model.selected of
-        Nothing -> ({model | selected = Just (input, False)}, "", Cmd.none)
-        Just (_, token) -> ({model | selected = Just (input, not token)}, "", Cmd.none)
-    Submit input -> case model.existing of
-        Nothing -> (model, "", Cmd.none)
-        Just e -> Animation.delete e
-            |> \(newE, cmd) -> ({model | existing = Just newE, selected = Nothing, options = Previous input :: model.options}, input, cmd)
-    Clear id -> case model.existing of
-        Just e -> if e.element == id then ({model | existing = Nothing}, "", Cmd.none) else (model, "", Cmd.none)
-        _ -> (model, "", Cmd.none)
-    ShowOptions -> ({model | displayOptions = True}, "" ,Cmd.none)
-
-view: (Event -> msg) -> Model -> Maybe (String, Html.Html msg)
-view converter model = model.existing
-    |> Maybe.map (\e ->
-        (   "textbar"++String.fromInt e.element
-        ,    Html.div
-            [class "input"]
-            (List.filterMap identity
-                [   Html.form
-                    (   [class "textbar", HtmlEvent.onSubmitField "equation" Submit]
-                    |>  Helper.maybeAppend (Animation.class e)
-                    )
-                    [   Icon.equation []
-                    ,   Html.input
-                        (   [ type_ "text"
-                            , name "equation"
-                            , id "textInput"
-                            , placeholder "Type an equation to solve"
-                            , HtmlEvent.onFocus ShowOptions
-                            ]
-                            |> Helper.maybeAppend (Maybe.map (\(text, _) -> value text) model.selected)
-                        )
-                        []
-                    ]
-                    |> Html.map converter
-                    |> Just
-                ,   Html.ul []
-                    (   List.map (\entry -> case entry of
-                            Default val -> Html.li [HtmlEvent.onClick (Click val |> converter)]
-                                [   Icon.default []
-                                , Html.a [class "clickable"] [Html.text val]
-                                ]
-                            Previous val -> Html.li [HtmlEvent.onClick (Click val |> converter)]
-                                [   Icon.history []
-                                , Html.a [class "clickable"] [Html.text val]
-                                ]
-                        ) model.options
-                    )
-                    |> Helper.maybeGuard model.displayOptions
-                ]
-            )
+open: Animation.Tracker -> Model -> (Model, Animation.Tracker)
+open tracker model = case model.current of
+    Just _ -> (model, tracker)
+    Nothing -> let (newEase, newT) = Animation.newEaseFloat animationDuration_ 0 |> Animation.setEase tracker maxWidth_ in
+        (   {  model
+            |   openCount = model.openCount + 1
+            ,   current = Just (model.openCount, newEase, Animation.newEaseFloat animationDuration_ 0)
+            }
+        ,   newT
         )
+
+close: Animation.Tracker -> Model -> (Model, Animation.Tracker)
+close tracker model = case model.current of
+    Nothing -> (model, tracker)
+    Just (id, width, height) ->
+        let
+            (newW, newT) = Animation.setEase tracker 0 width
+            (newH, finalT) = Animation.setEase newT 0 height
+        in
+            (   {   model
+                |   current = Nothing
+                ,   closing = Dict.insert id (newW, newH) model.closing
+                ,   selected = Nothing
+                }
+            , finalT
+            )
+
+update: Animation.Tracker -> Event -> Model -> (Model, String, Animation.Tracker)
+update tracker event model = case event of
+    Click input -> case model.selected of
+        Nothing -> ({model | selected = Just (input, False)}, "", tracker)
+        Just (_, token) -> ({model | selected = Just (input, not token)}, "", tracker)
+    Submit input -> let (newModel, newT) = close tracker model in
+        ({newModel | options = Previous input :: newModel.options}, input, newT)
+    ShowOptions -> case model.current of
+        Nothing -> (model, "", tracker)
+        Just (id, width, height) ->
+            let (newH, newT) = Animation.setEase tracker maxHeight_ height in
+                ({model | current = Just (id, width, newH)}, "", newT)
+
+view: (Event -> msg) -> Model -> List (String, Html.Html msg)
+view converter model =
+    Dict.toList model.closing
+    |> List.map (\(id, (width, height)) -> createView_ converter model id width height)
+    |> \list -> case model.current of
+        Nothing -> list
+        Just (id, width, height) -> list ++ [createView_ converter model id width height]
+
+createView_: (Event -> msg) -> Model -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
+createView_ converter model inputNum width height =
+    (   "textbar"++String.fromInt inputNum
+    ,    Html.div
+        [   class "input"
+        ,   Html.Attributes.style "max-width" ((Animation.current width |> String.fromFloat) ++"dvw")
+        ]
+        [   Html.form
+            [   class "textbar"
+            ,   HtmlEvent.onSubmitField "equation" Submit
+            ]
+            [   Icon.equation []
+            ,   Html.input
+                (   [ type_ "text"
+                    , name "equation"
+                    , id "textInput"
+                    , placeholder "Type an equation to solve"
+                    , HtmlEvent.onFocus ShowOptions
+                    ]
+                    |> Helper.maybeAppend (Maybe.map (\(text, _) -> value text) model.selected)
+                )
+                []
+            ]
+        ,   Html.ul
+            [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
+            (   List.map
+                (\entry -> case entry of
+                    Default val -> Html.li [HtmlEvent.onClick (Click val)]
+                        [   Icon.default []
+                        , Html.a [class "clickable"] [Html.text val]
+                        ]
+                    Previous val -> Html.li [HtmlEvent.onClick (Click val)]
+                        [   Icon.history []
+                        , Html.a [class "clickable"] [Html.text val]
+                        ]
+                )
+                model.options
+            )
+        ]
+        |> Html.map converter
     )
 
 encode: Model -> Encode.Value
@@ -129,23 +170,29 @@ encode model = Encode.object
             ) model.options
         )
     ,   ("open", Encode.int model.openCount)
-    ,   ("showOptions", Encode.bool model.displayOptions)
     ,   ("selected", case model.selected of
             Nothing -> Encode.null
             Just (val, token) -> Encode.object [("value", Encode.string val), ("token", Encode.bool token)]
         )
-    ,   ("existing", case model.existing of
+    ,   ("current", case model.current of
             Nothing -> Encode.null
-            Just e -> Animation.encode Encode.int e
+            Just (id, width, height) -> Encode.object
+                [   ("id", Encode.int id)
+                ,   ("width", Animation.target width |> Encode.float)
+                ,   ("height", Animation.target height |> Encode.float)
+                ]
         )
     ]
 
 decoder: Decode.Decoder Model
-decoder = Decode.map5 Model
+decoder = Decode.map4 (\a b c d -> Model a b c d Dict.empty)
     (Decode.field "options" <| Decode.map (\prev -> List.map Previous prev ++ defaultOptions_) <| Decode.list <| Decode.string)
     (Decode.field "open" Decode.int)
-    (Decode.field "showOptions" <| Decode.bool)
     (Decode.maybe <| Decode.field "selected" <|
         Decode.map2 Tuple.pair (Decode.field "value" Decode.string) (Decode.field "token" Decode.bool)
     )
-    (Decode.maybe <| Decode.field "existing" <| Animation.decoder Decode.int closeCmd_)
+    (Decode.maybe <| Decode.field "current" <| Decode.map3 (\a b c -> (a,b,c))
+        (Decode.field "id" <| Decode.int)
+        (Decode.field "width" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
+        (Decode.field "height" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
+    )
