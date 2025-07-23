@@ -4,7 +4,7 @@
         "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}, "latex": "+"},
         "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\cross"},
         "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-{1}"},
-        "/": {"arguments": 2, "associative": false, "commutative": false, "identity": 1, "javascript":{"type":"infix", "symbol":"/"}, "latex": "{1}/{2}"}
+        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div {1}"}
     },
     "constants": {},
     "actions": [

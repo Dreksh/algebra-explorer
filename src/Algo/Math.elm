@@ -238,11 +238,15 @@ expression_ funcProps = Parser.loop []
 multiple_: FunctionProperties -> Parser_ (Tree ())
 multiple_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list
-        then Parser.succeed (List.singleton >> Parser.Loop) |= divisible_ funcProps |. Parser.spaces
+        then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "*"
-                |= (divisible_ funcProps |> Parser.inContext (PrevStr_ "*"))
+                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "*"))
+                |. Parser.spaces
+            ,   Parser.succeed (\elem -> Parser.Loop (UnaryNode {state = (), name = "/", child = elem} :: list))
+                |. expectSymbol_ "/"
+                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "/"))
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -255,20 +259,6 @@ generateMultipleNode_ = Parser.map (\children -> case children of
     [x] -> x
     _ -> BinaryNode {state = (), name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
-
-divisible_: FunctionProperties -> Parser_ (Tree ())
-divisible_ funcProps = Parser.succeed generateDivisibleNode_
-    |= negatable_ funcProps
-    |= Parser.loop [] (\list -> Parser.oneOf
-        [   Parser.succeed (\a -> Parser.Loop (a :: list)) |. expectSymbol_ "/" |. Parser.spaces |= negatable_ funcProps
-        ,   Parser.succeed (Parser.Done list)
-        ]
-    )
-
-generateDivisibleNode_: Tree () -> List (Tree ()) -> Tree ()
-generateDivisibleNode_ front divisors = case divisors of
-    [] -> front
-    (next :: others) -> GenericNode {state = (), name = "/", arguments = Just 2, children = [generateDivisibleNode_ front others, next] }
 
 negatable_: FunctionProperties -> Parser_ (Tree ())
 negatable_ funcProps = Parser.oneOf
