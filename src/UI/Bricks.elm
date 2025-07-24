@@ -116,13 +116,12 @@ calculateTree_ animation root rects =
                 nextOld = oldRects |> Dict.get nextID
                 noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0) Nothing
 
-                (old, easedId) = case thisOld of
-                    Just o -> (o, id)
-                    Nothing -> case prevOld of
-                        Just o -> (o, item.prevID)
-                        Nothing -> case nextOld of
-                            Just o -> (o, nextID)
-                            Nothing -> (noOld, -1)
+                -- TODO: handle ctrl+z better because currently prevID always has priority over nextID
+                (old, easedId) = case (thisOld, prevOld, nextOld) of
+                    (Just o, _, _) -> (o, id)
+                    (Nothing, Just o, _) -> (o, item.prevID)
+                    (Nothing, Nothing, Just o) -> (o, nextID)
+                    (Nothing, Nothing, Nothing) -> (noOld, -1)
 
                 (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft
                 (tr, a2) = Animation.setEase a1 trTarget old.topRight
