@@ -16,13 +16,17 @@ import Algo.Matcher as Matcher
 
 type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
+    ,   corrID: Int -- to track the original ID of where it came from
     }
 
 createState: Int -> State
-createState num = { prevID = num }
+createState num = { prevID = num, corrID = num}
 
 updateState: Matcher.State State -> Int -> State
-updateState s _ = {prevID = Matcher.getID s}
+updateState s _ =
+    {   prevID = Matcher.getID s
+    ,   corrID = Matcher.getState s |> .corrID
+    }
 
 type alias Vector2 = (Float, Float)
 type EaseState t = EaseState
@@ -128,7 +132,9 @@ Encoding and Decoding to catch the state of the element
 --}
 
 encodeState: State -> Encode.Value
-encodeState s = Encode.object [("prevID", Encode.int s.prevID)]
+encodeState s = Encode.object [("prevID", Encode.int s.prevID), ("corrID", Encode.int s.corrID)]
 
 stateDecoder: Decode.Decoder State
-stateDecoder = Decode.map State (Decode.field "prevID" Decode.int)
+stateDecoder = Decode.map2 State
+    (Decode.field "prevID" Decode.int)
+    (Decode.field "corrID" Decode.int)

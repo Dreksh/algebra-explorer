@@ -44,13 +44,18 @@ minDiff_ equal next seen current =
             (Nothing, Just val) -> Just [{current | oldIt = oldIt, old = current.old + 1, changes = Delete val :: current.changes}]
             (Just left, Just right) ->
                 let
-                    -- prefer add over delete
-                    list =  [    {current | newIt = newIt, new = current.new + 1, changes = Add left :: current.changes}
+                    list = case List.head current.changes of
+                        Just (Add _) -> -- prefer to alternate, so if we just added, we'll look at deletion first
+                            [   {current | oldIt = oldIt, old = current.old + 1, changes = Delete right :: current.changes}
+                            ,   {current | newIt = newIt, new = current.new + 1, changes = Add left :: current.changes}
+                            ]
+                        _ -> -- generally prefer to begin with adding
+                            [   {current | newIt = newIt, new = current.new + 1, changes = Add left :: current.changes}
                             ,   {current | oldIt = oldIt, old = current.old + 1, changes = Delete right :: current.changes}
                             ]
                 in
                     if equal left right
-                    -- Diagonal is prefixed, as we want to explore these first
+                    -- Equal (diagonals on the myer's diagram) is a match, we always want to explore these first
                     then Just ({current | newIt = newIt, new = current.new + 1, oldIt = oldIt, old = current.old + 1, changes = None left right :: current.changes } :: list)
                     else Just list
     )

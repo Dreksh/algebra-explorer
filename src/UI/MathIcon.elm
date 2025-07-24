@@ -115,7 +115,7 @@ set tracker new model =
 type alias Part =
     {   str: String
     ,   id: Int
-    ,   prevID: Int
+    ,   corrID: Int
     ,   occurrence: Int
     }
 
@@ -140,7 +140,7 @@ iteratorToPart_ it =
             )
             |> \occurrence ->
                 (   {remaining = remaining, lastIndex = Dict.insert id occurrence it.lastIndex}
-                ,   Just {str = str, id = id, prevID = Matcher.getState s |> .prevID, occurrence = occurrence}
+                ,   Just {str = str, id = id, corrID = Matcher.getState s |> .corrID, occurrence = occurrence}
                 )
     in
     case it.remaining of
@@ -176,27 +176,37 @@ iteratorToPart_ it =
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
 toMatches_ input =
     let
-        matchID part = (part.prevID, part.str) -- Secondary matching is with prevID
-        insert part dict = case Dict.get (matchID part) dict of
-            Nothing -> Dict.insert (matchID part) [part] dict
-            Just l -> Dict.insert (matchID part) (l ++ [part]) dict
+        strictID part = (part.id, part.str)
+        matchID part = (part.corrID, part.str) -- Secondary matching is with prevID
+        insert key part dict = case Dict.get (key part) dict of
+            Nothing -> Dict.insert (key part) [part] dict
+            Just l -> Dict.insert (key part) (l ++ [part]) dict
     in
+    -- Split into separate variables
     List.foldl (\change (pending, done, (found, del)) -> case change of
         BFS.Add new -> (new :: pending, done, (found, del))
-        BFS.Delete old -> (pending, done, (found, insert old del))
-        BFS.None new old -> (pending, Dict.insert (new.id, new.occurrence) old done, (insert old found, del))
+        BFS.Delete old -> (pending, done, (found, insert strictID old del))
+        BFS.None new old -> (pending, Dict.insert (new.id, new.occurrence) old done, (insert matchID old found, del))
     ) ([], Dict.empty, (Dict.empty, Dict.empty)) input
-    |> \(pending, done, (found, del)) -> List.reverse pending
-        |> List.foldl (\part (doneDict, (foundDict, delDict)) ->
-        -- Try to match with deleted values first
-        case Dict.get (matchID part) delDict of
-            Just (entry::next) -> (Dict.insert (part.id, part.occurrence) entry doneDict, (insert entry foundDict, Dict.insert (matchID part) next delDict))
-            -- Try to match with found values
+    -- Exact match with deleted values first
+    |> (    \(pending, done, (found, del)) -> List.reverse pending
+            |> List.foldl (\part (more, doneDict, (foundDict, delDict)) ->
+            case Dict.get (strictID part) delDict of
+                Just (entry::next) -> (more, Dict.insert (part.id, part.occurrence) entry doneDict, (insert matchID entry foundDict, Dict.insert (strictID part) next delDict))
+                _ -> (part::more, doneDict, (foundDict, delDict))
+            )
+            ([], done, (found,del))
+    )
+    -- Broad match with deleted nodes + existing nodes
+    |>  \(pending, done, (found, del)) -> let newDel = Dict.foldl (\_ list dict -> List.foldl (insert matchID) dict list) Dict.empty del in
+        List.reverse pending
+        |> List.foldl (\part (doneDict, (foundDict, delDict)) -> case Dict.get (matchID part) delDict of
+            Just (entry::next) -> (Dict.insert (part.id, part.occurrence) entry doneDict, (insert matchID entry foundDict, Dict.insert (matchID part) next delDict))
             _ -> case Dict.get (matchID part) foundDict of
                 Just (entry::_) -> (Dict.insert (part.id, part.occurrence) entry doneDict, (foundDict, delDict))
                 _ -> (doneDict, (foundDict, delDict))
         )
-        (done, (found,del))
+        (done, (found,newDel))
     |> Tuple.first
 
 toAnimationDict_: Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
