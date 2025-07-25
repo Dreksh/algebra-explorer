@@ -1,5 +1,5 @@
 module UI.Animation exposing (
-    State, createState, updateState,
+    State, stateOps,
     Vector2, minVector2, maxVector2, addVector2, scaleVector2,
     EaseState, newEase, newEaseFloat, newEaseVector2,
     setEase, current, target, advance,
@@ -11,21 +11,23 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
 import Algo.Matcher as Matcher
+import Components.Latex as Latex
+import Components.Rules as Rules
+import Helper
 
 {- Animation State -}
 
 type alias State =
     {   prevID: Int -- To track where it originated from. If it's the same ID as itself, it's new
     ,   corrID: Int -- to track the original ID of where it came from
+    ,   function: Maybe Rules.FunctionProp
     }
 
-createState: Int -> State
-createState num = { prevID = num, corrID = num}
-
-updateState: Matcher.State State -> Int -> State
-updateState s _ =
-    {   prevID = Matcher.getID s
-    ,   corrID = Matcher.getState s |> .corrID
+stateOps: Matcher.StateOp Rules.FunctionProp State
+stateOps =
+    {   new = \prop num -> { prevID = num, corrID = num, function = prop}
+    ,   copy = \s _ -> {prevID = Matcher.getID s, corrID = Matcher.getState s |> .corrID, function = Matcher.getState s |> .function}
+    ,   extract = .function
     }
 
 type alias Vector2 = (Float, Float)
@@ -135,6 +137,7 @@ encodeState: State -> Encode.Value
 encodeState s = Encode.object [("prevID", Encode.int s.prevID), ("corrID", Encode.int s.corrID)]
 
 stateDecoder: Decode.Decoder State
-stateDecoder = Decode.map2 State
+stateDecoder = Decode.map3 State
     (Decode.field "prevID" Decode.int)
     (Decode.field "corrID" Decode.int)
+    (Decode.maybe <| Decode.field "function" Rules.functionPropDecoder)

@@ -1,4 +1,4 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, symbolToStr, decoder, encode)
+module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, unparse, symbolToStr, decoder, encode)
 
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -91,6 +91,19 @@ symbolToStr s = case s of
 
 encodeSymbol_: Symbol -> Encode.Value
 encodeSymbol_ = symbolToStr >> Encode.string
+
+unparse: Model s -> String
+unparse = List.map (\token -> case token of
+    Fraction _ up down -> "\\frac{" ++ unparse up ++ "}{" ++ unparse down ++ "}"
+    Text _ t -> t ++ " "
+    SymbolPart _ s -> "\\" ++ symbolToStr s ++ " "
+    Superscript _ inner -> "_{" ++ unparse inner ++ "}"
+    Subscript _ inner -> "^{" ++ unparse inner ++ "}"
+    Bracket _ inner -> "(" ++ unparse inner ++ ")"
+    Sqrt _ inner -> "{" ++ unparse inner ++ "}"
+    Argument _ num -> String.fromInt num
+    )
+    >> String.join ""
 
 -- https://www.overleaf.com/learn/latex/List_of_Greek_letters_and_math_symbols
 -- The set is only for symbols, not functional stuff like \frac (that is done separately)

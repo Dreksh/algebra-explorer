@@ -1,5 +1,5 @@
 module UI.Display exposing (
-    Model, Event(..), SelectedNode, init, update, views, menu,
+    Model, Event(..), FullEquation, SelectedNode, init, update, views, menu,
     anyVisible, undo, redo, updateQueryCmd, svgDragEvent,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
@@ -29,7 +29,7 @@ import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 
 type alias State = Matcher.State Animation.State
-type alias LatexConverter = Matcher.Equation Animation.State -> Result String (Latex.Model State)
+type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
 
 type alias Model =
     {   equations: Dict.Dict Int Entry
@@ -39,7 +39,7 @@ type alias Model =
     -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
     ,   svgMouseCmd: Int -> Cmd Event -- start/stop eqNum
-    ,   updateQuery: List (Matcher.Equation Animation.State) -> Cmd Event
+    ,   updateQuery: List FullEquation -> Cmd Event
     }
 
 longClickThreshold: Float
@@ -52,7 +52,7 @@ svgDragEvent n = if n.final then ShiftEnd n.id n.time (n.x,n.y)
 type alias UIModel = (Bricks.Model, MathIcon.Model)
 
 type alias Entry =
-    {   history: History.Model (Matcher.Equation Animation.State, Latex.Model State)
+    {   history: History.Model (FullEquation, Latex.Model State) -- latex model a cache for displaying history
     ,   view: (Bool, Draggable.Model)
     ,   showHistory: Bool
     ,   show: Bool
@@ -73,14 +73,15 @@ type Event =
 type alias SelectedNode =
     {   eq: Int
     ,   root: Int
-    ,   tree: Matcher.Equation Animation.State
+    ,   tree: FullEquation
     ,   selected: Set.Set Int
     ,   nodes: Set.Set Int
     }
 
-newEntry_: Animation.Tracker -> Int -> Int -> (Matcher.Equation Animation.State, Latex.Model State) -> (Entry, Animation.Tracker)
-newEntry_ tracker size index (eq, latex) =
+newEntry_: Animation.Tracker -> Int -> Int -> FullEquation -> (Entry, Animation.Tracker)
+newEntry_ tracker size index eq =
     let
+        latex = Rules.toLatex eq
         (b, t0) = Bricks.init tracker eq.root
         (m, newT) = MathIcon.init t0 latex
     in
@@ -97,8 +98,8 @@ newEntry_ tracker size index (eq, latex) =
 anyVisible: Model -> Bool
 anyVisible model = Dict.foldl (\_ value -> (||) value.show) False model.equations
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> (Int -> Cmd Event) ->
-    Animation.Tracker -> List (Matcher.Equation Animation.State, Latex.Model State) -> (Model, Animation.Tracker)
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Cmd Event) ->
+    Animation.Tracker -> List FullEquation -> (Model, Animation.Tracker)
 init setCapture updateQuery svgMouseCmd tracker l =
     let
         size = List.length l
@@ -125,7 +126,7 @@ createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
     Draggable.init ("Equation-" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
 
-add: Animation.Tracker -> (Matcher.Equation Animation.State, Latex.Model State) -> Model -> (Model, Animation.Tracker)
+add: Animation.Tracker -> FullEquation -> Model -> (Model, Animation.Tracker)
 add tracker eq model = let (newEntry, newTracker) = newEntry_ tracker (model.nextEquationNum + 1) model.nextEquationNum eq in
     (   {   model
         |   nextEquationNum = model.nextEquationNum + 1
@@ -214,31 +215,33 @@ updateQueryCmd t model =
         |> model.updateQuery
     )
 
-groupChildren: Animation.Tracker -> LatexConverter -> Int -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
-groupChildren tracker convert eqNum root children model = case Dict.get eqNum model.equations of
+groupChildren: Animation.Tracker -> Int -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
+groupChildren tracker eqNum root children model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
-    Just entry -> History.current entry.history
-        |> Tuple.first
+    Just entry -> History.current entry.history |> Tuple.first
         |> Matcher.groupSubtree root children
-        |> Result.andThen (\(newSelect, newEq) -> convert newEq
-            |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, l) entry.history} in
-                (   {   model
-                    |   equations = Dict.insert eqNum newEntry model.equations
-                    ,   selected = Just (eqNum, Set.singleton newSelect)
-                    }
-                ,   newTracker
-                )
+        |> Result.map (\(newSelect, newEq) ->
+            let
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+            in
+            (   {   model
+                |   equations = Dict.insert eqNum newEntry model.equations
+                ,   selected = Just (eqNum, Set.singleton newSelect)
+                }
+            ,   newTracker
             )
         )
 
-ungroupChildren: Animation.Tracker -> LatexConverter -> Int -> Int -> Model -> Result String (Model, Animation.Tracker)
-ungroupChildren tracker convert eqNum id model = case Dict.get eqNum model.equations of
+ungroupChildren: Animation.Tracker -> Int -> Int -> Model -> Result String (Model, Animation.Tracker)
+ungroupChildren tracker eqNum id model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
         |> Tuple.first
         |> Matcher.ungroupSubtree id
-        |> Result.andThen (\(newID,newEq) -> convert newEq
-            |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, l) entry.history} in
+        |> Result.map (\(newID,newEq) ->
+            let
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+            in
                 (   {   model
                     |   equations = Dict.insert eqNum newEntry model.equations
                     ,   selected = Just (eqNum, Set.singleton newID)
@@ -246,16 +249,17 @@ ungroupChildren tracker convert eqNum id model = case Dict.get eqNum model.equat
                 ,   newTracker
                 )
             )
-        )
 
-replaceNumber: Animation.Tracker -> LatexConverter -> Int -> Int -> Float -> Matcher.Replacement -> Model -> Result String (Model, Animation.Tracker)
-replaceNumber tracker convert eqNum root target replacement model = case Dict.get eqNum model.equations of
+replaceNumber: Animation.Tracker -> Int -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
+replaceNumber tracker eqNum root target replacement model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry -> History.current entry.history
         |> Tuple.first
         |> Matcher.replaceRealNode root target replacement
-        |> Result.andThen (\(newSelect, newEq) -> convert newEq
-            |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, l) entry.history} in
+        |> Result.map (\(newSelect, newEq) ->
+            let
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+            in
                 (   {   model
                     |   equations = Dict.insert eqNum newEntry model.equations
                     ,   selected = Just (eqNum, Set.singleton newSelect)
@@ -263,22 +267,23 @@ replaceNumber tracker convert eqNum root target replacement model = case Dict.ge
                 ,   newTracker
                 )
             )
-        )
 
-replaceNodeWithNumber: Animation.Tracker -> LatexConverter -> Int -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
-replaceNodeWithNumber tracker convert eqNum id number model = case Dict.get eqNum model.equations of
+replaceNodeWithNumber: Animation.Tracker -> Int -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
+replaceNodeWithNumber tracker eqNum id number model = case Dict.get eqNum model.equations of
     Nothing -> Err "Equation not found"
     Just entry ->
         let
             replacement = if number < 0
-                then Math.UnaryNode {state = Nothing, name = "-", child = Math.RealNode {state = Nothing, value = -number}}
-                else Math.RealNode {state = Nothing, value = number}
+                then Math.UnaryNode {state = (Just Rules.negateProp,Nothing), name = "-", child = Math.RealNode {state = (Nothing, Nothing), value = -number}}
+                else Math.RealNode {state = (Nothing, Nothing), value = number}
         in
             History.current entry.history
             |> Tuple.first
             |> Matcher.replaceSubtree (Set.singleton id) replacement Matcher.newResult
-            |> Result.andThen (\(newSelect, newEq) -> convert newEq
-                |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, l) entry.history} in
+            |> Result.map (\(newSelect, newEq) ->
+                let
+                    (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                in
                     (   {   model
                         |   equations = Dict.insert eqNum newEntry model.equations
                         ,   selected = Just (eqNum, Set.singleton newSelect)
@@ -286,17 +291,16 @@ replaceNodeWithNumber tracker convert eqNum id number model = case Dict.get eqNu
                     ,   newTracker
                     )
                 )
-            )
 
-transform: Animation.Tracker -> LatexConverter -> List {a | root: Matcher.Replacement} -> Matcher.MatchResult Animation.State -> Model -> Result String (Model, Animation.Tracker)
-transform tracker convert replacement result model = case model.selected of
+transform: Animation.Tracker -> List {a | root: Matcher.Replacement Rules.FunctionProp} -> Matcher.MatchResult Rules.FunctionProp Animation.State -> Model -> Result String (Model, Animation.Tracker)
+transform tracker replacement result model = case model.selected of
     Nothing -> Err "No nodes were selected"
     Just (eqNum, ids) -> case Dict.get eqNum model.equations of
         Nothing -> Err "Equation is not found"
         Just entry -> History.current entry.history
             |> Tuple.first
             |> \current -> Helper.resultList (\r (_, others) -> Matcher.replaceSubtree ids r.root result current
-                |> Result.andThen (\(num, newEq) -> convert newEq |> Result.map (\l -> (num, (newEq, l) :: others)))
+                |> Result.map (\(num, newEq) -> (num, (newEq, Rules.toLatex newEq) :: others))
                 ) (0, []) replacement
             |> Result.map (\(newSelect, newEq) -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.addAll (List.reverse newEq) entry.history} in
                 (   {   model
@@ -307,15 +311,17 @@ transform tracker convert replacement result model = case model.selected of
                 )
             )
 
-substitute: Animation.Tracker -> LatexConverter -> Math.FunctionProperties -> Int -> Set.Set Int -> Int -> Model -> Result String (Model, Animation.Tracker)
-substitute tracker convert funcs origNum selected eqNum model = case Dict.get eqNum model.equations of
+substitute: Animation.Tracker -> Int -> Set.Set Int -> Int -> Model -> Result String (Model, Animation.Tracker)
+substitute tracker origNum selected eqNum model = case Dict.get eqNum model.equations of
     Nothing -> Err "Substitution equation not found"
     Just subEntry -> case Dict.get origNum model.equations of
         Nothing -> Err "Target equation not found"
         Just origEntry -> let origEq = History.current origEntry.history |> Tuple.first in
-            Matcher.replaceAllOccurrences funcs selected (History.current subEntry.history |> Tuple.first) origEq
-            |> Result.andThen (\(newSelected, newEq) -> convert newEq
-                |> Result.map (\l -> let (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.add (newEq,l) origEntry.history} in
+            Matcher.replaceAllOccurrences selected (History.current subEntry.history |> Tuple.first) origEq
+            |> Result.map (\(newSelected, newEq) ->
+                let
+                    (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.add (newEq,Rules.toLatex newEq) origEntry.history}
+                in
                     (   {   model
                         |   selected = Just (origNum, newSelected)
                         ,   equations = Dict.insert origNum newEntry model.equations
@@ -323,7 +329,6 @@ substitute tracker convert funcs origNum selected eqNum model = case Dict.get eq
                     ,   newTracker
                     )
                 )
-            )
 
 updateSelected_: Int -> Int -> Bool -> Model -> Model
 updateSelected_ eq node combine model = case (combine, model.selected) of
@@ -336,8 +341,8 @@ updateSelected_ eq node combine model = case (combine, model.selected) of
         else {model | selected = Just (eq, Set.insert node current)}
     _ -> {model | selected = Just (eq, Set.singleton node)}
 
-update: Draggable.Size -> Animation.Tracker -> LatexConverter -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
-update size tracker latexConvert event model = case event of
+update: Draggable.Size -> Animation.Tracker -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
+update size tracker event model = case event of
     Select eq node -> updateSelected_ eq node False model
         |> \newModel -> (newModel, tracker, Cmd.none)
     ToggleHide eq -> case Dict.get eq model.equations of
@@ -395,9 +400,7 @@ update size tracker latexConvert event model = case event of
                         History.current entry.history
                         |> (\(currentEq, currentLatex) -> case Matcher.setChildIndex n.id newIndex currentEq of
                             Err _ -> (currentEq, currentLatex)
-                            Ok newEq -> case latexConvert newEq of
-                                Err _ -> (currentEq, currentLatex)
-                                Ok newL -> (newEq, newL)
+                            Ok newEq -> (newEq, Rules.toLatex newEq)
                         )
                         |> \(newEq, newL) ->
                             let
@@ -422,17 +425,16 @@ update size tracker latexConvert event model = case event of
                         then {entry | shifting = Nothing}
                         else History.current entry.history |> Tuple.first
                             |> Matcher.setChildIndex n.id newIndex
-                            |> Result.andThen (\newEq -> latexConvert newEq |> Result.map (\l -> (newEq, l)))
                             |> \res -> case res of
                                 Err _ -> {entry | shifting = Nothing}
-                                Ok his -> {entry | shifting = Nothing, history = History.add his entry.history}
+                                Ok newEq -> {entry | shifting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
                     )
                     |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
                         updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
                 else updateSelected_ eqNum n.id (time > longClickThreshold) model
                     |> \newModel -> (newModel, tracker, Cmd.none)
 
-newSelectedNodes_: Set.Set Int -> Matcher.Equation Animation.State -> Set.Set Int
+newSelectedNodes_: Set.Set Int -> FullEquation -> Set.Set Int
 newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
     if Set.isEmpty intersection then Set.singleton (Math.getState eq.root |> Matcher.getID) else intersection
 
@@ -567,13 +569,13 @@ encodeEntry_ entry = Encode.object
         )
     ]
 
-encodeHistoryState_: (Matcher.Equation Animation.State, Latex.Model State) -> Encode.Value
+encodeHistoryState_: (FullEquation, Latex.Model State) -> Encode.Value
 encodeHistoryState_ (eq, l) = Encode.object
     [   ("equation", Matcher.encodeEquation Animation.encodeState eq)
     ,   ("latex", Latex.encode (Matcher.encodeState Animation.encodeState) l)
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List (Matcher.Equation Animation.State) -> Cmd Event) -> (Int -> Cmd Event) ->
+decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
 decoder setCapture updateQuery svgMouseCmd = Decode.map4 (\(eq, t) next sel create -> (Model eq next sel create setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
@@ -584,7 +586,7 @@ decoder setCapture updateQuery svgMouseCmd = Decode.map4 (\(eq, t) next sel crea
     (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
 type alias TmpEntry_ =
-    {   history: History.Model (Matcher.Equation Animation.State, Latex.Model State)
+    {   history: History.Model (FullEquation, Latex.Model State)
     ,   view: Maybe Draggable.Model
     ,   showHistory: Bool
     ,   show: Bool
@@ -631,7 +633,7 @@ entryDecoder_ = Decode.map4 TmpEntry_
     (Decode.field "show" <| Decode.bool)
     (Decode.field "showHistory" Decode.bool)
 
-historyStateDecoder_: Decode.Decoder (Matcher.Equation Animation.State, Latex.Model State)
+historyStateDecoder_: Decode.Decoder (FullEquation, Latex.Model State)
 historyStateDecoder_ = Decode.map2 Tuple.pair
-    (Decode.field "equation" <| Matcher.equationDecoder Animation.createState Animation.updateState Animation.stateDecoder)
+    (Decode.field "equation" <| Matcher.equationDecoder Animation.stateOps Animation.stateDecoder)
     (Decode.field "latex" <| Latex.decoder (Matcher.stateDecoder Animation.stateDecoder))

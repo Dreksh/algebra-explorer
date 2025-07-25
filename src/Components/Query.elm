@@ -16,7 +16,7 @@ type alias Model =
     }
 
 -- This time it's flipped, because we want to generate (List (Matcher.Equation msg) -> Cmd msg)
-pushEquations: Model -> List (Matcher.Equation a) -> Cmd msg
+pushEquations: Model -> List (Matcher.Equation a b) -> Cmd msg
 pushEquations model list =
     List.map (\elem -> Rules.process (\_ -> String.join "") identity elem.root) list
     |> \result -> {model | equations = result}

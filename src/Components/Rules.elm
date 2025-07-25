@@ -1,7 +1,8 @@
 module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Source, init,
-    functionProperties, toLatex, process,
+    FunctionProp, negateProp, functionProperties, toLatex, process,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
-    evaluateStr, menuTopics, encode, decoder, sourceDecoder
+    evaluateStr, menuTopics, encode, decoder, sourceDecoder,
+    encodeFunctionProp, functionPropDecoder
     )
 
 import Dict
@@ -23,10 +24,19 @@ import UI.Menu as Menu
 ## Modeling rules
 -}
 
-type alias FunctionProperties_ =
-    {   properties: Math.FunctionProperty
-    ,   javascript: Javascript_
-    ,   latex: Latex.Model ()
+type alias FunctionProp =
+    {   javascript: Maybe Javascript_
+    ,   latex: Maybe (Latex.Model ())
+    }
+negateProp: FunctionProp
+negateProp =
+    {   javascript = Just (PrefixOp "-")
+    ,   latex = Just [Latex.Text () "-", Latex.Argument () 1]
+    }
+divisionProp_: FunctionProp
+divisionProp_ =
+    {   javascript = Just (PrefixOp "1/")
+    ,   latex = Just [Latex.SymbolPart () Latex.Division, Latex.Argument () 1]
     }
 
 type Javascript_ =
@@ -44,27 +54,27 @@ type alias Rule =
     {   title: String
     ,   description: String
     ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: {name: String, root: Matcher.Matcher}, to: List {name: String, root: Matcher.Replacement}}
+    ,   matches: List {from: {name: String, root: Matcher.Matcher}, to: List {name: String, root: Matcher.Replacement FunctionProp}}
     }
 
 type alias Topic =
     {   name: String
     ,   constants: Dict.Dict String String
-    ,   functions: Dict.Dict String FunctionProperties_
+    ,   functions: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
     ,   rules: List Rule
     }
 
 type alias Parameters state =
     {   title: String
     ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: Matcher.MatchResult state, replacements: List {name: String, root: Matcher.Replacement}}
+    ,   matches: List {from: Matcher.MatchResult FunctionProp state, replacements: List {name: String, root: Matcher.Replacement FunctionProp}}
     }
 
 {-
 ## Elm-y bits
 -}
 type alias Model =
-    {   functions: Dict.Dict String (FunctionProperties_, Int) -- Properties + Number of topics that contain this function
+    {   functions: Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
     ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
     ,   topics: Dict.Dict String (LoadState_ Topic)
     }
@@ -91,19 +101,21 @@ type Event treeState =
 init: Model
 init =
     {   functions = Dict.fromList
-            [   ("+",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 0, children = []}, javascript = InfixOp "+", latex = [Latex.Text () "+"]},1))
-            ,   ("*",({properties= Math.BinaryNode {state = (), name = "", associative = True, commutative = True, identity = 1, children = []}, javascript = InfixOp "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]},1))
-            ,   ("-",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "-", latex = [Latex.Text () "-", Latex.Argument () 1]},1))
-            ,   ("/",({properties= Math.UnaryNode {state = (), name = "", child = Math.RealNode {state = (), value = 0}}, javascript = PrefixOp "1/", latex = [Latex.SymbolPart () Latex.Division, Latex.Argument () 1]},1))
-            ,   ("=",({properties= Math.DeclarativeNode {state = (), name = "", children = []}, javascript = InfixOp "=", latex = [Latex.Text () "="]},1))
+            [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = True, commutative = True, identity = 0, children = []}, count = 1})
+            ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = True, commutative = True, identity = 1, children = []}, count = 1})
+            ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}, count = 1})
+            ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}, count = 1})
+            ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text () "="]}, name = "", children = []}, count = 1})
             ]
     ,   constants = Dict.empty
     ,   topics = Dict.empty
     }
 
-functionProperties: Model -> Math.FunctionProperties
-functionProperties model = Dict.map (\_ (f, _) -> f.properties) model.functions
-    |> \dict -> Dict.foldl (\k _ -> Math.addConstant k) dict model.constants
+functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
+functionProperties model = Dict.foldl
+    (\k (_, count) d -> Math.createConstant {javascript = FuncOp k |> Just , latex = Just [Latex.Text () k] } k
+        |> \entry -> Dict.insert k {property = entry, count = count} d
+    ) model.functions model.constants
 
 {- Functions -}
 
@@ -182,83 +194,78 @@ process combine convert tree =
         )
         |> combine (Math.getState tree)
 
-toLatex: Model -> Matcher.Equation s -> Result String (Latex.Model (Matcher.State s))
-toLatex model eq = toLatex_ model eq.root
+toLatex: Matcher.Equation FunctionProp s -> Latex.Model (Matcher.State s)
+toLatex eq = toLatex_ eq.tracker.ops.extract eq.root
 
-toLatex_: Model -> Math.Tree state -> Result String (Latex.Model state)
-toLatex_ model tree =
+toLatex_: (state -> Maybe FunctionProp) -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
+toLatex_ converter tree =
     let
-        state = Math.getState tree
-        genericFunction root = case Dict.get (Math.getName root) model.functions of
-            Nothing -> Helper.resultList (\n list -> toLatex_ model n |> Result.map (\new -> new :: list)) [] (Math.getChildren root)
-                |> Result.map (\list -> [Latex.Text state (Math.getName root), Latex.Bracket state (List.intersperse [Latex.Text state ","] list |> List.reverse |> List.concat) ])
-            Just (l, _) -> substituteArgs_ model state (Math.getChildren root) l.latex
-        bracket parent child = toLatex_ model child
-            |> Result.map (\inner -> if priority_ child >= priority_ parent
+        treeState = Math.getState tree
+        funcLatex = Math.getState tree |> Matcher.getState |> converter |> Maybe.andThen .latex
+        genericFunction root = case funcLatex of
+            Nothing -> List.foldl (\n list -> toLatex_ converter n |> \new -> new :: list) [] (Math.getChildren root)
+                |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.concat) ]
+            Just l -> substituteArgs_ converter treeState (Math.getChildren root) l
+        bracket parent child = toLatex_ converter child
+            |> \inner -> if priority_ child >= priority_ parent
                 then [Latex.Bracket (Math.getState child) inner]
                 else inner
-            )
-        infixFunction root = case Dict.get (Math.getName root) model.functions of
+        infixFunction root = case funcLatex of
             Nothing -> genericFunction root
-            Just (l, _) -> Helper.resultList
+            Just l -> List.foldl
                 (\elem list -> bracket root elem
-                    |> Result.map (\inner -> if List.isEmpty list
+                    |> \inner -> if List.isEmpty list
                         then inner
-                        else list ++ (Latex.map (\_ -> state) l.latex) ++ inner
-                    )
+                        else list ++ (Latex.map (\_ -> treeState) l) ++ inner
                 )
                 [] (Math.getChildren root)
     in
     case tree of
-        Math.RealNode n -> Ok [ String.fromFloat n.value |> Latex.Text state ]
-        Math.VariableNode n -> Ok [Latex.Text state n.name]
+        Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text treeState ]
+        Math.VariableNode n -> [Latex.Text treeState n.name]
         Math.UnaryNode n -> case n.name of
-            "-" -> toLatex_ model n.child
-                |> Result.map (\inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Text state "-", Latex.Bracket (Math.getState n.child) inner]
-                    else Latex.Text state "-" :: inner
-                )
+            "-" -> toLatex_ converter n.child
+                |> \inner -> if priority_ n.child > priority_ tree
+                    then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child) inner]
+                    else Latex.Text treeState "-" :: inner
             "/" -> bracket tree n.child
-                |> Result.map (\inner -> [Latex.Text state "1", Latex.SymbolPart state Latex.Division] ++ inner)
+                |> \inner -> [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division] ++ inner
             _ -> genericFunction tree
         Math.BinaryNode n -> case n.name of
             "*" -> n.children
-                |> Helper.resultList (\elem res -> if List.isEmpty res
+                |> List.foldl (\elem res -> if List.isEmpty res
                     then bracket tree elem
                     else case getDivisionProps_ elem of
                     Just p -> bracket (Math.UnaryNode p) p.child
-                        |> Result.map (\inner -> res ++ (Latex.SymbolPart p.state Latex.Division :: inner))
+                        |> \inner -> res ++ (Latex.SymbolPart p.state Latex.Division :: inner)
                     Nothing -> bracket tree elem
-                        |> Result.map (\newList -> res ++ (Latex.SymbolPart n.state Latex.CrossMultiplcation :: newList))
+                        |> \newList -> res ++ (Latex.SymbolPart n.state Latex.CrossMultiplcation :: newList)
                 ) []
             "+" -> n.children
-                |> Helper.resultList (\elem res -> if List.isEmpty res
+                |> List.foldl (\elem res -> if List.isEmpty res
                     then bracket tree elem
                     else if Math.getName elem == "-"
-                    then bracket tree elem |> Result.map (\inner -> res ++ inner)
-                    else bracket tree elem |> Result.map (\inner -> res ++ (Latex.Text state "+" :: inner))
+                    then bracket tree elem |> \inner -> res ++ inner
+                    else bracket tree elem |> \inner -> res ++ (Latex.Text treeState "+" :: inner)
                 ) []
             _ -> infixFunction tree
         Math.DeclarativeNode _ -> infixFunction tree
         _ -> genericFunction tree
 
-substituteArgs_: Model -> state -> List (Math.Tree state) -> Latex.Model () -> Result String (Latex.Model state)
-substituteArgs_ model state args = Helper.resultList (\elem list -> case elem of
-    Latex.Fraction _ top bottom -> substituteArgs_ model state args top
-        |> Result.andThen (\newTop -> substituteArgs_ model state args bottom
-            |> Result.map (\newBot -> Latex.Fraction state newTop newBot :: list)
-        )
-    Latex.Superscript _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Superscript state new :: list)
-    Latex.Subscript _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Subscript state new :: list)
-    Latex.Bracket _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Bracket state new :: list)
-    Latex.Sqrt _ inner -> substituteArgs_ model state args inner |> Result.map (\new -> Latex.Sqrt state new :: list)
+substituteArgs_: (state -> Maybe FunctionProp) -> Matcher.State state -> List (Math.Tree (Matcher.State state)) -> Latex.Model () -> Latex.Model (Matcher.State state)
+substituteArgs_ convert state args = List.concatMap (\elem -> case elem of
+    Latex.Fraction _ top bottom ->
+        [Latex.Fraction state (substituteArgs_ convert state args top) (substituteArgs_ convert state args bottom)]
+    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ convert state args inner)]
+    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert state args inner)]
+    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert state args inner)]
+    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert state args inner)]
     Latex.Argument _ n -> case getN_ (n-1) args of
-        Nothing -> Err ("Cannot find the " ++ String.fromInt n ++ " argument")
-        Just t -> toLatex_ model t |> Result.map (\new -> list ++ new)
-    Latex.Text _ str -> Ok (Latex.Text state str :: list)
-    Latex.SymbolPart _  str -> Ok (Latex.SymbolPart state str :: list)
+        Nothing ->  [Latex.Argument state n] -- Display an error, instead of surfacing an error
+        Just t -> toLatex_ convert t
+    Latex.Text _ str ->  [Latex.Text state str]
+    Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
     )
-    []
 
 getN_: Int -> List a -> Maybe a
 getN_ num list = if num < 0 then Nothing
@@ -273,10 +280,11 @@ addTopic: Maybe String -> Topic -> Model -> Result String Model
 addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing topic
     topic.functions
     |> Helper.resultDict (\name props dict -> case Dict.get name dict of
-        Nothing -> Ok (Dict.insert name (props, 1) dict)
-        Just (p, count) -> if Math.equal (\_ _ -> True) p.properties props.properties && p.javascript == props.javascript
-            then Ok (Dict.insert name (p, count + 1) dict)
-            else Err ("'" ++ name ++ "' differs from existing definition from other topics")
+        Nothing -> Ok (Dict.insert name {property = props.property, count = 1} dict)
+        Just original -> if Math.equal (==) original.property props.property
+            then Ok (Dict.insert name {original | count = original.count + 1} dict)
+            else let _ = Debug.log "fail" (original.property, props.property) in
+                Err ("'" ++ name ++ "' differs from existing definition from other topics")
     )
     model.functions
     |> (\res -> case res of
@@ -314,7 +322,9 @@ deleteTopic name model = case Dict.get name model.topics of
         let
             newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
                     Nothing -> newDict
-                    Just (props, i) -> if i < 2 then Dict.remove n newDict else Dict.insert n (props,i - 1) newDict
+                    Just props -> if props.count < 2
+                        then Dict.remove n newDict
+                        else Dict.insert n {props | count = props.count - 1} newDict
                 )
                 model.functions
             newConstants = topic.constants |> Dict.foldl (\n _ newSet -> case Dict.get n newSet of
@@ -360,11 +370,12 @@ addSources map model =
 toJavascriptString_: Model -> String -> List String -> Result String String
 toJavascriptString_ model name children = case Dict.get name model.functions of
     Nothing -> Err "Unable to evaluate the unknown function"
-    Just (f, _) -> case f.javascript of
-        InfixOp jsName -> Ok (String.join jsName children)
-        PrefixOp jsName -> if List.length children /= 1 then Err "Prefix can only be for unary operators"
+    Just prop -> case Math.getState prop.property |> .javascript of
+        Nothing -> Err (name ++ " cannot be evaluated")
+        Just (InfixOp jsName) -> Ok (String.join jsName children)
+        Just (PrefixOp jsName) -> if List.length children /= 1 then Err "Prefix can only be for unary operators"
             else Ok (jsName ++ String.join "" children)
-        FuncOp jsName -> Ok (jsName ++ "(" ++ String.join "," children ++ ")")
+        Just (FuncOp jsName) -> Ok (jsName ++ "(" ++ String.join "," children ++ ")")
 
 evaluateStr: Model -> Math.Tree s -> Result String String
 evaluateStr model root = (
@@ -456,7 +467,7 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
 topicDecoder: Dec.Decoder Topic
 topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
-    (Dec.field "functions" (Dec.dict functionDecoder_))
+    (Dec.field "functions" (Dec.dict (functionDecoder_ |> Dec.map (\func -> {property = func}))))
     (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str -> if String.left 5 str /= "Math."
         then Dec.fail "Only constants from Math are allowed"
         else if String.dropLeft 5 str |> String.all Char.isAlphaNum then Dec.succeed str
@@ -464,16 +475,18 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     ))))
     |> Dec.andThen ( \(name, functions, vars) ->
         if Dict.size (Dict.diff vars functions) /= Dict.size vars then Dec.fail "Can't have a variable named as a function as well"
-        else let knownProps = Dict.map (\_ -> .properties) functions |> \dict -> Dict.foldl (\k _ -> Math.addConstant k) dict vars in
-            Dec.field "actions" (Dec.list (ruleDecoder_ knownProps))
-            |> Dec.map (\eqs -> Topic name vars functions eqs)
+        else
+            let
+                knownProps = Dict.foldl (\k _ inner -> Math.createConstant {javascript = FuncOp k |> Just, latex = Just [Latex.Text () k] } k
+                        |> \entry -> Dict.insert k {property = entry} inner
+                    ) functions vars
+            in
+                Dec.field "actions" (Dec.list (ruleDecoder_ knownProps))
+                |> Dec.map (\eqs -> Topic name vars functions eqs)
     )
 
-functionDecoder_: Dec.Decoder FunctionProperties_
-functionDecoder_ = Dec.map3 FunctionProperties_
-    Math.functionPropertyDecoder
-    (Dec.field "javascript" javascriptDecoder_)
-    (Dec.field "latex" <| Dec.andThen (Helper.resultToDecoder << Latex.parse) <| Dec.string)
+functionDecoder_: Dec.Decoder (Math.FunctionProperty FunctionProp)
+functionDecoder_ = Math.functionPropertyDecoder functionPropDecoder
 
 javascriptDecoder_: Dec.Decoder Javascript_
 javascriptDecoder_ = Dec.map2 Tuple.pair
@@ -490,7 +503,7 @@ javascriptDecoder_ = Dec.map2 Tuple.pair
         _ -> Dec.fail "Unknown type of javascript function"
     )
 
-parameterDecoder_: Math.FunctionProperties -> Dec.Decoder (Dict.Dict String Parameter, Dict.Dict String (Int, Bool))
+parameterDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dec.Decoder (Dict.Dict String Parameter, Dict.Dict String (Int, Bool))
 parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
     |> Dec.andThen ( Helper.resultList (\(key, description) (others, dict) -> Math.parse Dict.empty key
             |> Result.andThen (\tree -> case tree of
@@ -517,7 +530,7 @@ parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
         >> Helper.resultToDecoder
     )
 
-ruleDecoder_: Math.FunctionProperties -> Dec.Decoder Rule
+ruleDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dec.Decoder Rule
 ruleDecoder_ knownFuncs = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
@@ -560,7 +573,7 @@ setOthers_ others m = case m of
                     }
             )
 
-expressionDecoder_: Math.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder ({name: String, root: Matcher.Matcher}, Dict.Dict String (Int, Bool))
+expressionDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool) -> Dec.Decoder ({name: String, root: Matcher.Matcher}, Dict.Dict String (Int, Bool))
 expressionDecoder_ funcProps args =
     let
         checkUnknowns name numArgs dict = case Dict.get name dict of
@@ -576,7 +589,7 @@ expressionDecoder_ funcProps args =
     )
     Dec.string
 
-replacementDecoder_: Math.FunctionProperties -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement}
+replacementDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement FunctionProp}
 replacementDecoder_ knownFunc args = Dec.string
     |> Dec.andThen (\str ->
         Dict.toList args
@@ -592,7 +605,7 @@ replacementDecoder_ knownFunc args = Dec.string
 
 encode: Model -> Enc.Value
 encode model = Enc.object
-    [   ("functions", Enc.dict identity (\(prop, count) -> Enc.object [("properties", encodeFProp_ prop), ("count", Enc.int count)] ) model.functions)
+    [   ("functions", Enc.dict identity (\prop -> Enc.object [("properties", encodeFProp_ prop.property), ("count", Enc.int prop.count)] ) model.functions)
     ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", Enc.string name), ("count", Enc.int count)]) model.constants)
     ,   ("topics", Enc.dict identity (\loadState -> case loadState of
             NotInstalled_ source -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string source.url),("description", Enc.string source.description)]
@@ -606,21 +619,33 @@ encode model = Enc.object
         )
     ]
 
-encodeFProp_: FunctionProperties_ -> Enc.Value
-encodeFProp_ prop = Enc.object
-    ( ("javascript", case prop.javascript of
-            InfixOp js -> Enc.object [("type", Enc.string "infix"),("symbol",Enc.string js)]
-            PrefixOp js ->Enc.object [("type", Enc.string "prefix"),("symbol",Enc.string js)]
-            FuncOp js ->Enc.object [("type", Enc.string "function"),("symbol",Enc.string js)]
+encodeFProp_: Math.FunctionProperty FunctionProp -> Enc.Value
+encodeFProp_ = Math.encodeFunctionProperty encodeFunctionProp
+
+encodeFunctionProp: FunctionProp -> List (String, Enc.Value)
+encodeFunctionProp prop =
+    [   ("javascript", case prop.javascript of
+            Nothing -> Enc.null
+            Just (InfixOp js) -> Enc.object [("type", Enc.string "infix"),("symbol",Enc.string js)]
+            Just (PrefixOp js) ->Enc.object [("type", Enc.string "prefix"),("symbol",Enc.string js)]
+            Just (FuncOp js) ->Enc.object [("type", Enc.string "function"),("symbol",Enc.string js)]
         )
-    ::  Math.encodeFunctionProperty prop.properties
-    )
+    ,   ("latex", case prop.latex of
+            Nothing -> Enc.null
+            Just l -> Latex.unparse l |> Enc.string
+        )
+    ]
+
+functionPropDecoder: Dec.Decoder FunctionProp
+functionPropDecoder = Dec.map2 FunctionProp
+    (Dec.maybe <| Dec.field "javascript" javascriptDecoder_)
+    (Dec.maybe <| Dec.field "latex" <| Dec.andThen (Helper.resultToDecoder << Latex.parse) <| Dec.string)
 
 encodeTopic_: Topic -> Enc.Value
 encodeTopic_ topic = Enc.object
     [   ("name", Enc.string topic.name)
     ,   ("constants", Enc.dict identity Enc.string topic.constants)
-    ,   ("functions", Enc.dict identity encodeFProp_ topic.functions)
+    ,   ("functions", Enc.dict identity (.property >> encodeFProp_) topic.functions)
     ,   ("actions", Enc.list encodeRule_ topic.rules)
     ]
 
@@ -635,7 +660,7 @@ encodeRule_ rule = Enc.object
 
 decoder: Dec.Decoder Model
 decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
-    (Dec.field "functions" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
+    (Dec.field "functions" <| Dec.dict <| Dec.map2 (\p c -> {property = p, count = c}) (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
     (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
     (Dec.field "topics" <| Dec.dict <| Dec.andThen (\s -> case s of
         "notInstalled" -> Dec.map NotInstalled_ sourceDecoder
