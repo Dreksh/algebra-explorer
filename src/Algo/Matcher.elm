@@ -4,7 +4,7 @@ module Algo.Matcher exposing (
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
-    groupSubtree, ungroupSubtree, setChildIndex,
+    groupSubtree, ungroupSubtree, setChildIndex, refreshFuncProp,
     selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
     )
 
@@ -31,6 +31,7 @@ type alias Tracker_ props state =
 type alias StateOp props state =
     {   new: Maybe props -> Int -> state
     ,   copy: State state -> Int -> state
+    ,   update: Maybe props -> state -> (state, Bool) -- bool refers to whether an update happened
     ,   extract: state -> Maybe props
     }
 
@@ -399,6 +400,35 @@ setChildIndex root newIndex eq = processSubtree_
     )
     eq
     |> Result.map Tuple.second
+
+-- ## refreshFuncProp: Updates the cached function properties, and only emits a new value if any of them has been updated
+refreshFuncProp: Dict.Dict String {a | property: Math.FunctionProperty prop} -> Equation prop state -> Maybe (Equation prop state)
+refreshFuncProp dict eq = let (newRoot, changed) = refreshFuncPropInTree_ dict eq.tracker.ops.update eq.root in
+    if changed then Just {eq | root = newRoot} else Nothing
+
+refreshFuncPropInTree_: Dict.Dict String {a | property: Math.FunctionProperty prop} -> (Maybe prop -> state -> (state, Bool)) -> Math.Tree (State state) -> (Math.Tree (State state), Bool)
+refreshFuncPropInTree_ dict updater original =
+    let
+        updateChildren name (State_ num s) children = List.foldl (\child (list, bool) ->
+                let (newChild, change) = refreshFuncPropInTree_ dict updater child in
+                    (newChild :: list, change || bool)
+            ) ([], False) children
+            |> \(newChildren, change) -> let (newState, thisChange) = updater (Dict.get name dict |> Maybe.map (.property >> Math.getState)) s in
+                (State_ num newState, List.reverse newChildren, change || thisChange)
+    in
+    case original of
+        Math.RealNode _ -> (original, False)
+        Math.VariableNode _ -> (original, False)
+        Math.UnaryNode n -> let (child, change) = refreshFuncPropInTree_ dict updater n.child in
+            case n.state of
+                State_ num inner -> let (newState, thisChange) = updater (Dict.get n.name dict |> Maybe.map (.property >> Math.getState)) inner in
+                    (Math.UnaryNode {n | state = State_ num newState, child = child}, change || thisChange)
+        Math.BinaryNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
+            (Math.BinaryNode {n | state = newState, children = children}, change)
+        Math.GenericNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
+            (Math.GenericNode {n | state = newState, children = children}, change)
+        Math.DeclarativeNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
+            (Math.DeclarativeNode {n | state = newState, children = children}, change)
 
 -- ## replaceRealNode: merge children back into the parent
 replaceRealNode: Int -> Float -> Math.Tree (Maybe prop) -> Equation prop state -> Result String (Int, Equation prop state)

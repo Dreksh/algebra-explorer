@@ -27,6 +27,9 @@ stateOps: Matcher.StateOp Rules.FunctionProp State
 stateOps =
     {   new = \prop num -> { prevID = num, corrID = num, function = prop}
     ,   copy = \s _ -> {prevID = Matcher.getID s, corrID = Matcher.getState s |> .corrID, function = Matcher.getState s |> .function}
+    ,   update = \newProp s -> if newProp == s.function
+            then (s, False)
+            else ({s | function = newProp}, True)
     ,   extract = .function
     }
 

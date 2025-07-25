@@ -276,7 +276,13 @@ update event core = let model = core.swappable in
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok topic -> case Rules.addTopic (Just url) topic model.rules of
                 Err errStr -> submitNotification_ core errStr
-                Ok rModel -> (updateCore {model | rules = rModel}, Cmd.none)
+                Ok rModel -> let (dModel, t) = Display.refresh (Rules.functionProperties rModel) core.animation model.display in
+                    (   {   core
+                        |   swappable = { model | rules = rModel, display = dModel }
+                        ,   animation = t
+                        }
+                    , Cmd.none
+                    )
         ProcessSource url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok source ->

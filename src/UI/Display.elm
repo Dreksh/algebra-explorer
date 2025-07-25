@@ -1,6 +1,6 @@
 module UI.Display exposing (
     Model, Event(..), FullEquation, SelectedNode, init, update, views, menu,
-    anyVisible, undo, redo, updateQueryCmd, svgDragEvent,
+    anyVisible, undo, redo, updateQueryCmd, svgDragEvent, refresh,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder
@@ -340,6 +340,18 @@ updateSelected_ eq node combine model = case (combine, model.selected) of
             else {model | selected = Just (eq, newSet)}
         else {model | selected = Just (eq, Set.insert node current)}
     _ -> {model | selected = Just (eq, Set.singleton node)}
+
+refresh: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Animation.Tracker -> Model -> (Model, Animation.Tracker)
+refresh dict tracker model = Dict.foldl (\key entry (nextDict, t) -> let eq = History.current entry.history |> Tuple.first in
+        (   case Matcher.refreshFuncProp dict eq of
+                Nothing -> (entry, t)
+                Just newEq -> updateBricks t {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+        )
+        |> \(newEntry, newT) -> (Dict.insert key newEntry nextDict, newT)
+    )
+    (model.equations, tracker)
+    model.equations
+    |> \(eqs, newT) -> ({model | equations = eqs}, newT)
 
 update: Draggable.Size -> Animation.Tracker -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker event model = case event of
