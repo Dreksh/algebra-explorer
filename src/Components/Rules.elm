@@ -283,8 +283,7 @@ addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing
         Nothing -> Ok (Dict.insert name {property = props.property, count = 1} dict)
         Just original -> if Math.equal (==) original.property props.property
             then Ok (Dict.insert name {original | count = original.count + 1} dict)
-            else let _ = Debug.log "fail" (original.property, props.property) in
-                Err ("'" ++ name ++ "' differs from existing definition from other topics")
+            else Err ("'" ++ name ++ "' differs from existing definition from other topics")
     )
     model.functions
     |> (\res -> case res of
