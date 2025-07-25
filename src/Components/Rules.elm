@@ -1,5 +1,5 @@
 module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Source, init,
-    FunctionProp, negateProp, functionProperties, toLatex, process,
+    FunctionProp, negateProp, functionProperties, toLatex, toSymbol, process,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
     evaluateStr, menuTopics, encode, decoder, sourceDecoder,
     encodeFunctionProp, functionPropDecoder
@@ -195,18 +195,18 @@ process combine convert tree =
         |> combine (Math.getState tree)
 
 toLatex: Matcher.Equation FunctionProp s -> Latex.Model (Matcher.State s)
-toLatex eq = toLatex_ eq.tracker.ops.extract eq.root
+toLatex eq = toLatex_ eq.tracker.ops.extract True eq.root
 
-toLatex_: (state -> Maybe FunctionProp) -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
-toLatex_ converter tree =
+toLatex_: (state -> Maybe FunctionProp) -> Bool -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
+toLatex_ converter complete tree =
     let
         treeState = Math.getState tree
         funcLatex = Math.getState tree |> Matcher.getState |> converter |> Maybe.andThen .latex
         genericFunction root = case funcLatex of
-            Nothing -> List.foldl (\n list -> toLatex_ converter n |> \new -> new :: list) [] (Math.getChildren root)
+            Nothing -> List.foldl (\n list -> toLatex_ converter complete n |> \new -> new :: list) [] (Math.getChildren root)
                 |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.concat) ]
-            Just l -> substituteArgs_ converter treeState (Math.getChildren root) l
-        bracket parent child = toLatex_ converter child
+            Just l -> substituteArgs_ converter complete treeState (Math.getChildren root) l
+        bracket parent child = toLatex_ converter complete child
             |> \inner -> if priority_ child >= priority_ parent
                 then [Latex.Bracket (Math.getState child) inner]
                 else inner
@@ -224,7 +224,7 @@ toLatex_ converter tree =
         Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text treeState ]
         Math.VariableNode n -> [Latex.Text treeState n.name]
         Math.UnaryNode n -> case n.name of
-            "-" -> toLatex_ converter n.child
+            "-" -> toLatex_ converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
                     then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child) inner]
                     else Latex.Text treeState "-" :: inner
@@ -252,17 +252,23 @@ toLatex_ converter tree =
         Math.DeclarativeNode _ -> infixFunction tree
         _ -> genericFunction tree
 
-substituteArgs_: (state -> Maybe FunctionProp) -> Matcher.State state -> List (Math.Tree (Matcher.State state)) -> Latex.Model () -> Latex.Model (Matcher.State state)
-substituteArgs_ convert state args = List.concatMap (\elem -> case elem of
+substituteArgs_: (state -> Maybe FunctionProp) -> Bool -> Matcher.State state -> List (Math.Tree (Matcher.State state)) -> Latex.Model () -> Latex.Model (Matcher.State state)
+substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem of
     Latex.Fraction _ top bottom ->
-        [Latex.Fraction state (substituteArgs_ convert state args top) (substituteArgs_ convert state args bottom)]
-    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ convert state args inner)]
-    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert state args inner)]
-    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert state args inner)]
-    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert state args inner)]
-    Latex.Argument _ n -> case getN_ (n-1) args of
-        Nothing ->  [Latex.Argument state n] -- Display an error, instead of surfacing an error
-        Just t -> toLatex_ convert t
+        [Latex.Fraction state (substituteArgs_ convert complete state args top) (substituteArgs_ convert complete state args bottom)]
+    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ convert complete state args inner)]
+    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert complete state args inner)]
+    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert complete state args inner)]
+    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert complete state args inner)]
+    Latex.Argument _ n -> if complete
+        then (case getN_ (n-1) args of
+                Nothing -> [Latex.Argument state n] -- Display missing info
+                Just t -> toLatex_ convert True t
+            )
+        else [Latex.Argument state n] -- Display missing info
+    Latex.Param _ n -> case getN_ (n-1) args of
+        Nothing -> [Latex.Argument state n] -- Display missing info
+        Just t -> toLatex_ convert True t
     Latex.Text _ str ->  [Latex.Text state str]
     Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
     )
@@ -271,6 +277,14 @@ getN_: Int -> List a -> Maybe a
 getN_ num list = if num < 0 then Nothing
     else if num == 0 then List.head list
     else getN_ (num-1) (List.drop 1 list)
+
+toSymbol: (state -> Maybe FunctionProp) -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
+toSymbol convert root = let treeState = Math.getState root in
+    case Math.getState root |> Matcher.getState |> convert |> Maybe.andThen .latex of
+        Nothing -> if Math.getChildren root |> List.isEmpty
+            then [Latex.Text treeState (Math.getName root)]
+            else [Latex.Text treeState (Math.getName root), Latex.Bracket treeState [] ]
+        Just l -> substituteArgs_ convert False treeState (Math.getChildren root) l
 
 {-
 ## Topics

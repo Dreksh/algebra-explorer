@@ -18,6 +18,7 @@ type Part elem =
     | Bracket elem (Model elem) -- Round brackets that wrap around some content
     | Sqrt elem (Model elem)
     | Argument elem Int -- Our custom insertion, for adding
+    | Param elem Int
 
 type Symbol =
     AlphaLower
@@ -36,6 +37,7 @@ map convert = List.map (\root -> case root of
         Bracket e inner -> Bracket (convert e) (map convert inner)
         Sqrt e inner -> Sqrt (convert e) (map convert inner)
         Argument e int -> Argument (convert e) int
+        Param e int -> Param (convert e) int
     )
 
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
@@ -66,6 +68,7 @@ encode convert = Encode.list (\n -> case n of
         Bracket e inner -> Encode.object [("type",Encode.string "bracket"),("state", convert e),("inner",encode convert inner)]
         Sqrt e inner -> Encode.object [("type",Encode.string "sqrt"),("state", convert e),("inner",encode convert inner)]
         Argument e int -> Encode.object [("type",Encode.string "arg"),("state", convert e),("num", Encode.int int)]
+        Param e int -> Encode.object [("type",Encode.string "param"),("state", convert e),("num", Encode.int int)]
     )
 
 symbolDecoder_: Decode.Decoder Symbol
@@ -101,7 +104,8 @@ unparse = List.map (\token -> case token of
     Subscript _ inner -> "^{" ++ unparse inner ++ "}"
     Bracket _ inner -> "(" ++ unparse inner ++ ")"
     Sqrt _ inner -> "{" ++ unparse inner ++ "}"
-    Argument _ num -> String.fromInt num
+    Argument _ num -> "\\arg{" ++ String.fromInt num ++ "}"
+    Param _ num -> "\\param{" ++ String.fromInt num ++ "}"
     )
     >> String.join ""
 
@@ -128,6 +132,7 @@ extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
         Argument _ arg -> if Set.member arg found
             then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
             else Ok (Set.insert arg found, max m arg)
+        Param _ arg -> Ok (Set.insert arg found, max m arg)
     )
 
 modelParser_: Parser.Parser (Model ())
@@ -161,11 +166,12 @@ valueParser_ = Parser.oneOf
         |= Parser.oneOf
             [   Parser.succeed (Fraction ()) |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
             ,   Parser.succeed (Sqrt ()) |. Parser.keyword "sqrt" |= bracketParser_
+            ,   Parser.succeed (Argument ()) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
+            ,   Parser.succeed (Param ()) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"
             ,   Parser.succeed (SymbolPart ()) |= wordParser_
             ]
     ,   Parser.succeed (Bracket ()) |. Parser.token "(" |. Parser.spaces |= modelParser_ |. Parser.token ")"
     ,   Parser.succeed (Text ()) |= letterParser_
-    ,   Parser.succeed (Argument ()) |= numParser_
     ]
     |. Parser.spaces
 

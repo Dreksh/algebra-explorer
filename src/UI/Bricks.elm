@@ -3,19 +3,21 @@ module UI.Bricks exposing (
     init, advanceTime, updateTree, view
     )
 
-import Html exposing (Html)
-import Dict
-import Set
 import Array
+import Dict
+import Html exposing (Html)
+import Set
 -- Ours
 import Algo.Math as Math
 import Algo.Matcher as Matcher
+import Components.Latex as Latex
+import Components.Rules as Rules
 import UI.Animation as Animation
 import UI.BrickSvg as BrickSvg
-
+import UI.MathIcon as MathIcon
 
 type alias Rect =
-    {   text: String
+    {   text: MathIcon.Model
     ,   prevID: Int
     ,   visible: Bool  -- False means it existed before but needs to fade away
     ,   bottomLeft: Animation.EaseState Animation.Vector2
@@ -43,15 +45,11 @@ advanceTime: Float -> Model -> Model
 advanceTime millis model =
     let
         newRects = model.rects |> Dict.map (\_ rect ->
-            let
-                newBottomLeft = rect.bottomLeft |> Animation.advance millis
-                newTopRight = rect.topRight |> Animation.advance millis
-                newOpacity = rect.opacity |> Animation.advance millis
-            in
                 {   rect
-                |   bottomLeft = newBottomLeft
-                ,   topRight = newTopRight
-                ,   opacity = newOpacity
+                |   bottomLeft = Animation.advance millis rect.bottomLeft
+                ,   topRight = Animation.advance millis rect.topRight
+                ,   opacity = Animation.advance millis rect.opacity
+                ,   text = MathIcon.advanceTime millis rect.text
                 }
             )
         newViewBox = model.viewBox |> Animation.advance millis
@@ -114,22 +112,31 @@ calculateTree_ animation root rects =
                 thisOld = oldRects |> Dict.get id
                 prevOld = oldRects |> Dict.get item.prevID
                 nextOld = oldRects |> Dict.get nextID
-                noOld = Rect item.text id True (Animation.newEaseVector2 smoothTime_ blTarget) (Animation.newEaseVector2 smoothTime_ trTarget) (Animation.newEaseFloat (smoothTime_/2) 0) Nothing
 
                 -- TODO: handle ctrl+z better because currently prevID always has priority over nextID
-                (old, easedId) = case (thisOld, prevOld, nextOld) of
-                    (Just o, _, _) -> (o, id)
-                    (Nothing, Just o, _) -> (o, item.prevID)
-                    (Nothing, Nothing, Just o) -> (o, nextID)
-                    (Nothing, Nothing, Nothing) -> (noOld, -1)
+                (old, easedId, a1) = case (thisOld, prevOld, nextOld) of
+                    (Just o, _, _) ->  let (text, newA) = MathIcon.set a0 (Just item.text.scale) item.text.frame o.text in
+                        ({o | text = text}, id, newA)
+                    (Nothing, Just o, _) -> let (text, newA) = MathIcon.set a0 (Just item.text.scale) item.text.frame o.text in
+                        ({o | text = text}, item.prevID, newA)
+                    (Nothing, Nothing, Just o) -> let (text, newA) = MathIcon.set a0 (Just item.text.scale) item.text.frame o.text in
+                        ({o | text = text}, nextID, newA)
+                    (Nothing, Nothing, Nothing) -> let (text, newA) = MathIcon.init a0 (Just item.text.scale) item.text.frame in
+                        (   Rect text id True
+                            (Animation.newEaseVector2 smoothTime_ blTarget)
+                            (Animation.newEaseVector2 smoothTime_ trTarget)
+                            (Animation.newEaseFloat (smoothTime_/2) 0)
+                            Nothing
+                        ,   -1
+                        ,   newA
+                        )
 
-                (bl, a1) = Animation.setEase a0 blTarget old.bottomLeft
-                (tr, a2) = Animation.setEase a1 trTarget old.topRight
-                (op, a3) = Animation.setEase a2 1 old.opacity
+                (bl, a2) = Animation.setEase a1 blTarget old.bottomLeft
+                (tr, a3) = Animation.setEase a2 trTarget old.topRight
+                (op, a4) = Animation.setEase a3 1 old.opacity
                 new = (
                     {   old
-                    |   text = item.text
-                    ,   prevID = item.prevID
+                    |   prevID = item.prevID
                     ,   visible = True
                     ,   bottomLeft = bl
                     ,   topRight = tr
@@ -140,7 +147,7 @@ calculateTree_ animation root rects =
                             )
                     })
             in
-                (Dict.insert id new foldRects, a3, Set.insert easedId foldEased)
+                (Dict.insert id new foldRects, a4, Set.insert easedId foldEased)
             ) (Dict.empty, animation, Set.empty)
 
         -- need to keep deleted nodes in order to animate them away
@@ -167,7 +174,7 @@ calculateTree_ animation root rects =
 
 type alias GridItem =
     {   prevID: Int
-    ,   text: String
+    ,   text: {frame: Latex.Model (Matcher.State Animation.State), scale: Float}
     ,   colStart: Int
     ,   colEnd: Int
     ,   rowStart: Int
@@ -185,19 +192,21 @@ type alias Grid =
 getColX: Int -> Array.Array Float -> Float
 getColX col = Array.get col >> Maybe.withDefault 0
 
--- We are using 0.5pt font so the width should match 0.5 units
 textWidth_: Float
 textWidth_ = 0.5
 
 stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int) -> (Grid, Int)
 stackRecursive_ depth node (grid, colStart) =
     let
-        text = Math.getName node
-        width = (toFloat (String.length text)) * textWidth_ + (1 - textWidth_)
+        latex = Rules.toSymbol .function node
+        textFrame = MathIcon.latexToFrames latex
+        textHeight = (Tuple.second textFrame.botRight) - (Tuple.second textFrame.topLeft)
+        textScale = textWidth_ / textHeight
+        width = (Tuple.first textFrame.botRight)*textScale + 2*textWidth_ -- Add a char's width on either side
         insertItem colEnd dict =
             GridItem
             (Math.getState node |> Matcher.getState |> .prevID)
-            text colStart colEnd depth (depth + 1) Nothing
+            {frame = latex, scale = textScale} colStart colEnd depth (depth + 1) Nothing
             |> \item -> Dict.insert (Math.getState node |> Matcher.getID) item dict
     in
         case Math.getChildren node of

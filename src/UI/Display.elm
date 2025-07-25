@@ -83,7 +83,7 @@ newEntry_ tracker size index eq =
     let
         latex = Rules.toLatex eq
         (b, t0) = Bricks.init tracker eq.root
-        (m, newT) = MathIcon.init t0 latex
+        (m, newT) = MathIcon.init t0 Nothing latex
     in
     (   {   history = History.init (eq, latex)
         ,   view = (False, createDraggable_ size index index)
@@ -163,7 +163,7 @@ updateBricks tracker entry =
         (eq, latex) = History.current entry.history
         (b, m) = entry.ui
         (newB, t0) = Bricks.updateTree tracker eq.root b
-        (newW, newT) = MathIcon.set t0 latex m
+        (newW, newT) = MathIcon.set t0 Nothing latex m
     in
         ({entry | ui = (newB, newW)}, newT)
 
@@ -405,7 +405,7 @@ update size tracker event model = case event of
                         |> \(newEq, newL) ->
                             let
                                 (newB, t0) = Bricks.updateTree t newEq.root b
-                                (newM, newT) = MathIcon.set t0 newL m
+                                (newM, newT) = MathIcon.set t0 Nothing newL m
                             in
                             Just (   {   entry
                                     |   ui = (newB, newM)
@@ -601,7 +601,7 @@ addDefaultPositions_ orig =
             let
                 (eq, l) = History.current tEntry.history
                 (b, t0) = Bricks.init t eq.root
-                (m, newT) = MathIcon.init t0 l
+                (m, newT) = MathIcon.init t0 Nothing l
             in
             (   {   history = tEntry.history
                 ,   view = case tEntry.view of

@@ -351,10 +351,11 @@ dialog svg {
     fill: #FFF;
 }
 .brickText {
-    font: 0.5pt monospace;
     text-anchor: middle;
     dominant-baseline: central;
-    fill: black;
+    fill: none;
+    stroke: black;
+    stroke-width: 0.05;
     user-select: none;
 }
 .brick:hover > .brickRect {

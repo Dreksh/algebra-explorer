@@ -1,4 +1,4 @@
-module UI.MathIcon exposing (Model, init, set, advanceTime, view, static)
+module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime, view, static, toSvgGroup)
 
 import Dict
 import Html
@@ -35,20 +35,26 @@ type alias Model =
 
 animationTime_: Float
 animationTime_ = 750
+actualScale_: Maybe Float -> Float
+actualScale_ = Maybe.withDefault 20
 
-init: Animation.Tracker -> Latex.Model State -> (Model, Animation.Tracker)
-init tracker current = let frames = latexToFrames_ current in
-    toAnimationDict_ frames
-    |> Dict.foldl newAnimation_ (Dict.empty, tracker)
-    |> \(newFrames,t) ->
-        (   {   frames = newFrames
-            ,   current = current
-            ,   deleting = []
-            ,   topLeft = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.topLeft)
-            ,   botRight = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 20 frames.botRight)
-            }
-        ,   t
-        )
+init: Animation.Tracker -> Maybe Float -> Latex.Model State -> (Model, Animation.Tracker)
+init tracker scale current =
+    let
+        frames = latexToFrames current
+        aScale = actualScale_ scale
+    in
+        toAnimationDict_ aScale frames
+        |> Dict.foldl newAnimation_ (Dict.empty, tracker)
+        |> \(newFrames,t) ->
+            (   {   frames = newFrames
+                ,   current = current
+                ,   deleting = []
+                ,   topLeft = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 aScale frames.topLeft)
+                ,   botRight = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 aScale frames.botRight)
+                }
+            ,   t
+            )
 
 advanceTime: Float -> Model -> Model
 advanceTime time model =
@@ -67,14 +73,15 @@ advanceTime time model =
     ,   botRight = Animation.advance time model.botRight
     }
 
-set: Animation.Tracker -> Latex.Model State -> Model -> (Model, Animation.Tracker)
-set tracker new model =
+set: Animation.Tracker -> Maybe Float -> Latex.Model State -> Model -> (Model, Animation.Tracker)
+set tracker scale new model =
     let
-        frames = latexToFrames_ new
+        frames = latexToFrames new
+        aScale = actualScale_ scale
         matches = BFS.minDiff equalPart_ iteratorToPart_ (latexIterator_ new) (latexIterator_ model.current)
             |> toMatches_
     in
-    toAnimationDict_ frames
+    toAnimationDict_ aScale frames
     -- Set frames based on existing frames
     |> Dict.foldl (\key value (result, delDict, t) -> case Dict.get key matches of
         Nothing -> newAnimation_ key value (result, t) |> \(d, newT) -> (d, delDict, newT)
@@ -99,8 +106,8 @@ set tracker new model =
             (finalFrames, List.filter (\f -> Animation.current f.opacity /= 0) finalDel, finalTracker)
     |> \(newFrames, del, t) ->
         let
-            (topLeft, t1) = Animation.setEase t (Animation.scaleVector2 20 frames.topLeft) model.topLeft
-            (botRight, t2) = Animation.setEase t1 (Animation.scaleVector2 20 frames.botRight) model.botRight
+            (topLeft, t1) = Animation.setEase t (Animation.scaleVector2 aScale frames.topLeft) model.topLeft
+            (botRight, t2) = Animation.setEase t1 (Animation.scaleVector2 aScale frames.botRight) model.botRight
         in
             (   {   frames = newFrames
                 ,   current = new
@@ -172,6 +179,7 @@ iteratorToPart_ it =
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
                 else result (Latex.Sqrt (s, True) inner :: next) s " sqrt"
             Latex.Argument (s, _) num -> result next s (" " ++ String.fromInt num)
+            Latex.Param (s, _) num -> result next s (" " ++ String.fromInt num)
 
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
 toMatches_ input =
@@ -209,14 +217,14 @@ toMatches_ input =
         (done, (found,newDel))
     |> Tuple.first
 
-toAnimationDict_: Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
-toAnimationDict_ = processFrame_ (\s strokes origin scale dict -> let id = Matcher.getID s in
+toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
+toAnimationDict_ scale = processFrame_ (\s strokes origin inScale dict -> let id = Matcher.getID s in
         Dict.insert
         (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
-        {strokes = strokes, origin = origin, scale = scale}
+        {strokes = strokes, origin = origin, scale = inScale}
         dict
     )
-    (0,0) 20 Dict.empty
+    (0,0) scale Dict.empty
 
 newAnimation_: (Int, Int) -> {strokes: List Stroke, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
 newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t 1 in
@@ -247,8 +255,8 @@ type alias Ref =
     ,   bot: Float -- subscript
     }
 
-latexToFrames_: Latex.Model state -> Frame state
-latexToFrames_ = List.foldl
+latexToFrames: Latex.Model state -> Frame state
+latexToFrames = List.foldl
     (\elem ((list, topLeft, botRight), ref) ->
         symbolsToFrames_ ref elem
         |> \(new, newRef) ->
@@ -266,8 +274,8 @@ symbolsToFrames_: Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ ref elem = case elem of
     Latex.Fraction s top bottom ->
         let
-            topFrame = latexToFrames_ top
-            botFrame = latexToFrames_ bottom
+            topFrame = latexToFrames top
+            botFrame = latexToFrames bottom
             maxWidth = max (Tuple.first topFrame.botRight) (Tuple.first botFrame.botRight)
             width = maxWidth*0.75 + 0.25
             topOrigin = -(Tuple.second topFrame.botRight)*0.75 - 0.1
@@ -292,7 +300,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   {body = ref.body + width, top = up, bot = bot}
             )
-    Latex.Superscript _ inner -> latexToFrames_ inner
+    Latex.Superscript _ inner -> latexToFrames inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0,ref.top), scale = 0.5}]
                 ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.top)
@@ -300,7 +308,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   ref
             )
-    Latex.Subscript _ inner -> latexToFrames_ inner
+    Latex.Subscript _ inner -> latexToFrames inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0,ref.top), scale = 0.5}]
                 ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.bot)
@@ -324,7 +332,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   {body = ref.body + Tuple.first new.botRight, top = new.topLeft |> Tuple.second, bot = new.botRight |> Tuple.second}
             )
-    Latex.Bracket s inner -> latexToFrames_ inner
+    Latex.Bracket s inner -> latexToFrames inner
         |> \new ->
             let
                 (top, bot) = (Tuple.second new.topLeft, Tuple.second new.botRight)
@@ -340,7 +348,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   {   ref | body = ref.body + Tuple.first new.botRight + 0.6}
             )
-    Latex.Sqrt _ inner -> latexToFrames_ inner
+    Latex.Sqrt _ inner -> latexToFrames inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0.75, 0), scale = 1}] -- TODO: Add the sqrt line
                 ,   topLeft = new.topLeft |> Animation.addVector2 (0, 1)
@@ -349,6 +357,7 @@ symbolsToFrames_ ref elem = case elem of
             ,   {   ref| body = ref.body + 1, top = ref.top + 1 }
             )
     Latex.Argument s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
+    Latex.Param s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
 
 processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of
@@ -476,7 +485,7 @@ rightShiftStrokes_ left = List.map (\elem -> case elem of
 {- UI -}
 
 static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
-static attrs l = let frames = latexToFrames_ l in
+static attrs l = let frames = latexToFrames l in
     processFrame_ (\_ strokes origin scale list ->
         Svg.path [d (strokeToPath_ origin scale strokes), stroke "currentColor", strokeWidth "1", fill "none"] []
         :: list
@@ -487,17 +496,9 @@ static attrs l = let frames = latexToFrames_ l in
         )
 
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
-view convert attrs model =
-    let
-        toAttrs f =
-            [   d (strokeToPath_ (Animation.current f.origin) (Animation.current f.scale) f.strokes)
-            ,   Icon.class "stroke"
-            ,   opacity (Animation.current f.opacity |> String.fromFloat)
-            ]
-    in
-    Dict.toList model.frames
-    |> List.map (\((id, _), frame) -> Svg.path (toAttrs frame ++ convert id) [])
-    |> (++) (List.map (toAttrs >> \a -> Svg.path a []) model.deleting)
+view convert attrs model = Dict.toList model.frames
+    |> List.map (\((id, _), frame) -> Svg.path (Icon.class "stroke" :: frameToAttr_ frame ++ convert id) [])
+    |> (++) (List.map (frameToAttr_ >> \a -> Svg.path (Icon.class "stroke" :: a) []) model.deleting)
     |> Svg.svg (toViewBox_ (Animation.current model.topLeft) (Animation.current model.botRight) :: attrs)
 
 toViewBox_: Vector2 -> Vector2 -> Html.Attribute msg
@@ -508,6 +509,18 @@ toViewBox_ (left, top) (right, bot) =
         String.fromFloat (bot - top)
     )
     |> viewBox
+
+toSvgGroup: List (Svg.Attribute msg) -> Model -> Svg.Svg msg
+toSvgGroup attr model = Dict.toList model.frames
+    |> List.map (\(_, frame) -> Svg.path (frameToAttr_ frame) [])
+    |> (++) (List.map (frameToAttr_ >> \a -> Svg.path a []) model.deleting)
+    |> Svg.g attr
+
+frameToAttr_: AnimationFrame -> List (Svg.Attribute msg)
+frameToAttr_ frame =
+    [   d (strokeToPath_ (Animation.current frame.origin) (Animation.current frame.scale) frame.strokes)
+    ,   opacity (Animation.current frame.opacity |> String.fromFloat)
+    ]
 
 -- For inputting (i.e. with virtual keyboard that lists out all the available functions)
 -- https://stackoverflow.com/a/37202118

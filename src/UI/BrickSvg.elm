@@ -2,9 +2,10 @@ module UI.BrickSvg exposing (bricks, brick)
 
 import Html exposing (Html, div)
 import Svg exposing (svg, g, rect, text_, text, Attribute)
-import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx)
+import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform)
 -- ours
-import Helper
+import UI.Animation as Animation
+import UI.MathIcon as MathIcon
 
 
 strokeWidth_: Float
@@ -32,7 +33,7 @@ bricks xMax yMax children =
     ]
     children
 
-brick: Float -> Float -> Float -> Float -> Float -> Bool -> List (Attribute event) -> String -> Html event
+brick: Float -> Float -> Float -> Float -> Float -> Bool -> List (Attribute event) -> MathIcon.Model -> Html event
 brick xMin xMax yMin yMax opacity_ canHover attrs label =
     let
         -- TODO: it would be nice for rects to overlap slightly
@@ -41,14 +42,20 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
         y_ = -(yMax - (strokeWidth_ / 2))  -- use yMax because the y-axis in SVG extends downwards
         width_ = (xMax - xMin) - strokeWidth_ - horizontalPad_
         height_ = (yMax - yMin) - strokeWidth_
+        labelOrigin =
+            (   (width_ - (Animation.current label.botRight |> Tuple.first))/2
+            ,   height_/2 + 0.25 - (Animation.current label.botRight |> Tuple.second)
+            )
         pointerEvents_ = if canHover then "auto" else "none"
     in
         g
-        ( class "brick" :: attrs )
+        (   [   class "brick"
+            ,   transformAttr_ x_ y_
+            ]
+        ++ attrs
+        )
         [   rect
-            [   x (String.fromFloat x_)
-            ,   y (String.fromFloat y_)
-            ,   width (String.fromFloat width_)
+            [   width (String.fromFloat width_)
             ,   height (String.fromFloat height_)
             ,   strokeWidth (String.fromFloat strokeWidth_)
             ,   class "brickRect"
@@ -57,12 +64,14 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
             ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari
             ]
             []
-        ,   text_
-            [   x (String.fromFloat (x_ + width_ / 2))
-            ,   y (String.fromFloat (y_ + height_ / 2))
+        ,   MathIcon.toSvgGroup
+            [   transformAttr_ (Tuple.first labelOrigin) (Tuple.second labelOrigin)
             ,   class "brickText"
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
             ]
-            [ text label ]
+            label
         ]
+
+transformAttr_: Float -> Float -> Svg.Attribute msg
+transformAttr_ x y = transform ("translate(" ++ String.fromFloat x ++ "," ++ String.fromFloat y ++ ")")
