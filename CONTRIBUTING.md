@@ -15,8 +15,8 @@ open it
 
 # Jonny's noob notes
 ## Elm
-* every function only takes one parameter, and then is curried into another function using [] (like in Q)
-* the parameter can be a list, in which case you still use `[]` but you can put commas between elements
+* every function only takes one parameter, and then is curried into another function
+* the parameter can be a list, in which case you can use `[]` with commas between elements
 * the dict type is called 'records' and uses `{}`
 
 ### Resources
@@ -224,3 +224,7 @@ xxx|xxxx
 * this is stored in `ActionView.Action` which contains a `Rules.Apply` (type `Rules.Event`) which is assigned to the onClick of the menu bar
   * this event is fed into `Display.transform` -> `Matcher.replaceSubtree`
   * sometimes you need extra info, so extra events like ApplyParameters or ApplySubstitution are required to feed back from the Modal
+
+### Actions
+* mouseDown on an svg element triggers an `svgMouseCmd` which issues a javascript command to start subscribing to mouse events
+  * these events then feed back via the port `svgMouseEvent` which fires the `Display.svgDragEvent`
