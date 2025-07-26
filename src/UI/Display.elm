@@ -443,6 +443,7 @@ update size tracker event model = case event of
                         )
                         |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
                             updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
+                    -- TODO: either check distance mouse moved before or if mouse is still over block before selecting
                     else updateSelected_ eqNum n.id (time > longClickThreshold) model
                         |> \newModel -> (newModel, tracker, Cmd.none)
 
@@ -551,7 +552,7 @@ brickAttr_ highlight eqNum id draggable =
                 [   HtmlEvent.onMouseDown (MouseDown eqNum id -1 [])
                 ]
             Just (originalIndex, midpoints) ->
-                [   Svg.Attributes.class "draggable"
+                [   Svg.Attributes.class "commutable"
                 ,   HtmlEvent.onMouseDown (MouseDown eqNum id originalIndex midpoints)
                 ]
     )
