@@ -250,24 +250,25 @@ type alias Frame state =
     }
 
 type alias Ref =
-    {   body: Float -- how left (most cases)
-    ,   top: Float -- superscript
-    ,   bot: Float -- subscript
+    {   topX: Float -- how left (most cases)
+    ,   botX: Float -- how left subscript
+    ,   topY: Float -- superscript
+    ,   botY: Float -- subscript
     }
 
 latexToFrames: Latex.Model state -> Frame state
 latexToFrames = List.foldl
     (\elem ((list, topLeft, botRight), ref) ->
         symbolsToFrames_ ref elem
-        |> \(new, newRef) ->
-            (   (   {frame = new, origin = (ref.body,0), scale = 1} :: list
-                ,   Animation.minVector2 topLeft (Animation.addVector2 (ref.body,0) new.topLeft)
-                ,   Animation.maxVector2 botRight (Animation.addVector2 (ref.body,0) new.botRight)
+        |> \(new, newRef) -> let offset = (max ref.topX ref.botX, 0) in
+            (   (   {frame = new, origin = offset, scale = 1} :: list
+                ,   Animation.minVector2 topLeft (Animation.addVector2 offset new.topLeft)
+                ,   Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
                 )
             ,   newRef
             )
     )
-    (([], (0,0), (0, 0)), {body = 0, top = 0, bot = 0})
+    (([], (0,0), (0, 0)), {topX = 0, botX=0, topY = 0, botY = 0})
     >> \((list, topLeft, botRight),_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
 
 symbolsToFrames_: Ref -> Latex.Part state -> (Frame state, Ref)
@@ -298,23 +299,24 @@ symbolsToFrames_ ref elem = case elem of
                 ,   topLeft = (0, up)
                 ,   botRight = (width, bot)
                 }
-            ,   {body = ref.body + width, top = up, bot = bot}
+            ,   let offsetX = (max ref.topX ref.botX) + width in
+                {topX = offsetX, botX = offsetX, topY = up, botY = bot}
             )
     Latex.Superscript _ inner -> latexToFrames inner
         |> \new ->
-            (   {   data = Position [{frame = new, origin = (0,ref.top), scale = 0.5}]
-                ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.top)
-                ,   botRight = Animation.scaleVector2 0.5 new.botRight |> Animation.addVector2 (0, ref.top)
+            (   {   data = Position [{frame = new, origin = (0,ref.topY), scale = 0.5}]
+                ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.topY)
+                ,   botRight = Animation.scaleVector2 0.5 new.botRight |> Animation.addVector2 (0, ref.topY)
                 }
-            ,   ref
+            ,   { ref | topX = ref.topX + 0.5*(Tuple.first new.botRight)}
             )
     Latex.Subscript _ inner -> latexToFrames inner
         |> \new ->
-            (   {   data = Position [{frame = new, origin = (0,ref.top), scale = 0.5}]
-                ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.bot)
-                ,   botRight = Animation.scaleVector2 0.5 new.botRight |> Animation.addVector2 (0, ref.bot)
+            (   {   data = Position [{frame = new, origin = (0,ref.botY), scale = 0.5}]
+                ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.botY)
+                ,   botRight = Animation.scaleVector2 0.5 new.botRight |> Animation.addVector2 (0, ref.botY)
                 }
-            ,   ref
+            ,   { ref | botX = ref.botX + 0.5*(Tuple.first new.botRight)}
             )
     Latex.Text s str -> wordStrokes_ s str
         |> \new ->
@@ -322,7 +324,8 @@ symbolsToFrames_ ref elem = case elem of
                 ,   topLeft = new.topLeft
                 ,   botRight = new.botRight
                 }
-            ,   {body = ref.body + Tuple.first new.botRight, top = new.topLeft |> Tuple.second, bot = new.botRight |> Tuple.second}
+            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
+                {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
     Latex.SymbolPart s str -> symbolStrokes_ s str
         |> \new ->
@@ -330,7 +333,8 @@ symbolsToFrames_ ref elem = case elem of
                 ,   topLeft = new.topLeft
                 ,   botRight = new.botRight
                 }
-            ,   {body = ref.body + Tuple.first new.botRight, top = new.topLeft |> Tuple.second, bot = new.botRight |> Tuple.second}
+            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
+                {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
     Latex.Bracket s inner -> latexToFrames inner
         |> \new ->
@@ -348,7 +352,8 @@ symbolsToFrames_ ref elem = case elem of
                 ,   topLeft = new.topLeft
                 ,   botRight = Animation.addVector2 (2*shift, 0) new.botRight
                 }
-            ,   {   ref | body = ref.body + Tuple.first new.botRight + 2*shift}
+            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 2*shift in
+                {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
     Latex.Sqrt _ inner -> latexToFrames inner
         |> \new ->
@@ -356,7 +361,8 @@ symbolsToFrames_ ref elem = case elem of
                 ,   topLeft = new.topLeft |> Animation.addVector2 (0, 1)
                 ,   botRight = new.botRight |> Animation.addVector2 (1, 0)
                 }
-            ,   {   ref| body = ref.body + 1, top = ref.top + 1 }
+            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 1 in
+                {topX = offsetX, botX = offsetX, topY = (new.topLeft |> Tuple.second) + 1, botY = new.botRight |> Tuple.second}
             )
     Latex.Argument s _ ->
         (   {   data = BaseFrame
@@ -371,9 +377,14 @@ symbolsToFrames_ ref elem = case elem of
             ,   topLeft  = (0, -0.5)
             ,   botRight = (1,0.5)
             }
-        ,   {body = ref.body + 1, top = -1, bot = 0.5}
+        ,   let offsetX = (max ref.topX ref.botX) + 1 in
+            {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
-    Latex.Param s _ -> (failedFrame_ s, {body = ref.body + 1, top = -0.5, bot = 0.5}) -- TODO: Create an argument stroke for inputs
+    Latex.Param s _ ->
+        (   failedFrame_ s
+        ,   let offsetX = (max ref.topX ref.botX) + 1 in
+            {topX = offsetX, botX = offsetX, topY = -0.5, botY = 0.5}
+        )
 
 processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of

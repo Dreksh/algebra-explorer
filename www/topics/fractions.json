@@ -31,6 +31,11 @@
             "matches": [{"from": "a", "to": ["\\frac(a,1)"]}]
         },
         {
+            "title": "Split",
+            "description": "Change the fraction back into division",
+            "matches": [{"from": "\\frac(a,b)", "to": ["a/b"]}]
+        },
+        {
             "title": "Merge",
             "description": "Multiplication and division can be put into the fraction",
             "matches": [

@@ -7,6 +7,14 @@
         "Fractions": {
             "url": "topics/fractions.json",
             "description": "Covers fractions and mixed numbers."
+        },
+        "Power": {
+            "url": "topics/power.json",
+            "description": "Covers powers, which are repeated multiplication"
+        },
+        "Logarithm": {
+            "url": "topics/logarithm.json",
+            "description": "Covers logarithms, which is an inverse for powers. This needs the 'Power' topic for completeness."
         }
     }
 }

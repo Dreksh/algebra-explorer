@@ -1,0 +1,48 @@
+{
+    "name": "Power",
+    "functions":{
+        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"}
+    },
+    "constants": {},
+    "actions": [
+        {
+            "title": "Expand",
+            "description": "Split the operations on the power",
+            "matches": [
+                {"from": "\\power(a,b+c)", "to": ["\\power(a,b)\\power(a,c)"]},
+                {"from": "\\power(a,b-c)", "to": ["\\power(a,b)/\\power(a,c)"]},
+                {"from": "\\power(a,b*c)", "to": ["\\power(\\power(a,b),c)"]}
+            ]
+        },
+        {
+            "title": "To power",
+            "description": "Change a collection of multiplications into power",
+            "matches": [
+                {"from": "\\power(a,b)*a*c", "to": ["\\power(a,b+1)*c"]},
+                {"from": "a*a*b", "to": ["\\power(a,2)*b"]},
+                {"from": "a/b", "to": ["a\\power(b,-1)"]}
+            ]
+        },
+        {
+            "title": "Split",
+            "description": "Extract a multiple from the power",
+            "matches": [{"from": "\\power(a,b)", "to": ["\\power(a,b-1)*a"]}]
+        },
+        {   "title": "Remove identity",
+            "description": "Remove the power, since it doesn't have an impact anymore",
+            "matches": [
+                {"from": "\\power(a,1)", "to": ["a"]},
+                {"from": "\\power(a,0)", "to": ["1"]}
+            ]
+        },
+        {
+            "title": "Factorise",
+            "description": "Combine the fractions that contain the same denominator",
+            "matches": [
+                {"from": "\\power(a,b)\\power(a,c)", "to": ["\\power(a,b+c)"]},
+                {"from": "\\power(a,b)/\\power(a,c)", "to": ["\\power(a,b-c)"]},
+                {"from": "\\power(\\power(a,b),c)", "to": ["\\power(a,b*c)"]}
+            ]
+        }
+    ]
+}

@@ -139,10 +139,10 @@ modelParser_: Parser.Parser (Model ())
 modelParser_ = Parser.loop []
     (\list -> if List.isEmpty list then bracketOrSingle_ |. Parser.spaces |> Parser.map Parser.Loop else
         Parser.oneOf
-        [   bracketOrSingle_ |> Parser.map (\new -> Parser.Loop (list ++ new))
-        ,   Parser.succeed (\n -> list ++ [Subscript () n] |> Parser.Loop) |. Parser.token "_" |= bracketOrSingle_
+        [   Parser.succeed (\n -> list ++ [Subscript () n] |> Parser.Loop) |. Parser.token "_" |= bracketOrSingle_
         ,   Parser.succeed (\n -> list ++ [Superscript () n] |> Parser.Loop) |. Parser.token "^" |= bracketOrSingle_
-        ,   Parser.succeed (\n -> n :: list |> Parser.Loop) |= argumentsParser_
+        ,   Parser.succeed (\n -> list ++ [n] |> Parser.Loop) |= argumentsParser_
+        ,   bracketOrSingle_ |> Parser.map (\new -> Parser.Loop (list ++ new))
         ,   Parser.succeed (Parser.Done list)
         ]
         |. Parser.spaces
@@ -203,7 +203,7 @@ letterParser_ = Parser.variable
     }
 
 notText_: Char.Char -> Bool
-notText_ c = String.contains (String.fromChar c) " \n\t{}\\0123456789()"
+notText_ c = String.contains (String.fromChar c) " \n\t{}\\0123456789()_^"
 
 wordParser_: Parser.Parser Symbol
 wordParser_ = Parser.variable

@@ -175,6 +175,7 @@ parserErrorToText input stack =
                     PrevStr_ "*" -> "Got a dangling '*', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
                     PrevStr_ "/" -> "Got a dangling '/', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
                     PrevStr_ "(" -> "Got a dangling '(', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
+                    PrevStr_ "," -> "Got a dangling ',', remove it or fill in the ▒ in: " ++ inputExtract_ end.col input
                     _ -> "No idea what happened!"
             ArgMismatch_ a -> "Function '\\" ++ a.name ++ "' is defined with " ++ String.fromInt a.expect ++ " arguments, got " ++ String.fromInt a.got
             UnknownArguments_ name -> "Function '\\" ++ name ++ "' did not specify the number of arguments"
@@ -342,6 +343,7 @@ argsList_ funcProps = Parser.loop []
         else Parser.oneOf
         [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
             |. expectSymbol_ ","
+            |. Parser.spaces
             |= (expression_ funcProps |> Parser.inContext (PrevStr_ ","))
             |. Parser.spaces
         ,   Parser.succeed ()
