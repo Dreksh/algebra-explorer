@@ -222,9 +222,20 @@ xxx|xxxx
 * Backtrack.elm is required because we have commutative nodes where any two children can be used
 * the final output of matching is `MatchResult state` which retains the `state` of the actual tree
 * this is stored in `ActionView.Action` which contains a `Rules.Apply` (type `Rules.Event`) which is assigned to the onClick of the menu bar
-  * this event is fed into `Display.transform` -> `Matcher.replaceSubtree`
   * sometimes you need extra info, so extra events like ApplyParameters or ApplySubstitution are required to feed back from the Modal
+  * this event is fed into `Display.transform` -> `Matcher.replaceSubtree`
+    * this takes a list of replacements, because e.g. for find zeros it adds both of the results to the history!
+  * processSubtree_ takes a List int in order to more quickly hop towards the subtree that needs to be replaced
+  * it then applies the second argument which is a function to actually change the subtree
+  * constructFromReplacement_ always gives new IDs to all replacement nodes
+  * this is where the types `ArgResult_` and `Replaced_` come into play
+  * `Value_` contains different types of replacements
+    * `ExternalValue_` is a new Math.Tree that doesn't exist in the "from", where the Maybe Int is the id in the "from"
+    * `InternalValue_` is a Math.Tree that exists in the "from", which additionally contains the `State` of that
+      * Tracker.newState and .copyState are passed in, and are what allows Animation.createState and Animation.updateState to actually be called, this is initialised in Matcher.parseEquation
 
 ### Actions
 * mouseDown on an svg element triggers an `svgMouseCmd` which issues a javascript command to start subscribing to mouse events
   * these events then feed back via the port `svgMouseEvent` which fires the `Display.svgDragEvent`
+* whether a block is draggable is determined in `Bricks.stackRecursive_`
+  * `GridItem` now contains a `Maybe (Int, List (Int, Int))` which contains the order of the sibling (e.g. first child, second child) plus sibling column start+ends
