@@ -68,7 +68,7 @@ button.noDefault {
 }
 span.space {
     display: inline-block;
-    width: 1rem;
+    width: 0.5rem;
 }
 .submitable {
     color: var(--color-submit);
@@ -193,8 +193,7 @@ span.space {
     overflow-x: scroll;
 }
 #menu svg {
-    height: 1.5rem;
-    width: 1.5rem;
+    height: 100%;
     vertical-align: -10%;
 }
 .menuTitle {
@@ -240,6 +239,17 @@ span.space {
     height: auto;
     height: calc-size(auto); /* Only a few limited browsers support this for now */
     transition: height 0.5s ease-out;
+}
+.equationMenu * {
+    height: 100%;
+    white-space: nowrap;
+}
+#menu li.equationMenu {
+    height: 1rem;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    overflow-x: scroll;
 }
 /* Notifications */
 #notification {

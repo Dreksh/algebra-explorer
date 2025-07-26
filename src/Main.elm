@@ -438,9 +438,9 @@ view core = let model = core.swappable in
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Menu.view MenuEvent model.menu
                         [   Menu.Section {name = "Settings", icon = Nothing}
-                            [   Menu.Content [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
-                            ,   Menu.Content [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
-                            ,   Menu.Content [a [class "clickable", href "https://github.com/jxz12/math", target "_blank"] [text "Github Source"]]
+                            [   Menu.Content [] [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
+                            ,   Menu.Content [] [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
+                            ,   Menu.Content [] [a [class "clickable", href "https://github.com/jxz12/math", target "_blank"] [text "Github Source"]]
                             ]
                         ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)

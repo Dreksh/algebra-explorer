@@ -62,6 +62,7 @@ type alias Entry =
 
 type Event =
     Select Int Int
+    | Delete Int
     | ToggleHide Int
     | ToggleHistory Int
     | HistoryEvent Int History.Event
@@ -357,6 +358,7 @@ update: Draggable.Size -> Animation.Tracker -> Event -> Model -> (Model, Animati
 update size tracker event model = case event of
     Select eq node -> updateSelected_ eq node False model
         |> \newModel -> (newModel, tracker, Cmd.none)
+    Delete eq -> updatePositions_ {model | equations = Dict.remove eq model.equations} |> updateQueryCmd tracker
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show, shifting = Nothing} model.equations} |> updateQueryCmd tracker
@@ -476,11 +478,14 @@ modifyEntry_ model tracker eqNum process = case Dict.get eqNum model.equations o
 
 menu: (Event -> msg) -> Model -> List (Menu.Part msg)
 menu convert model = Dict.toList model.equations
-    |> List.map (\(num, entry) -> Menu.Content
-        [   a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
+    |> List.map (\(num, entry) -> Menu.Content [class "equationMenu"]
+        [   a [class "clickable", HtmlEvent.onClick (convert (Delete num))]
+            [   Icon.bin []]
+        ,   a [class "clickable", HtmlEvent.onClick (convert (ToggleHide num))]
             [   if entry.show then Icon.shown [] else Icon.hidden []
             ,   span [class "space"] []
-            ,   p [] [text (History.current entry.history |> Tuple.first |> .root |> treeToString_)]
+            ,   History.current entry.history |> Tuple.second
+                |> MathIcon.static []
             ]
         ]
     )

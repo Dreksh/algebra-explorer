@@ -18,7 +18,7 @@ type alias Model =
 
 type Part msg =
     Section {name: String, icon: Maybe (String -> Html.Html msg)} (List (Part msg))
-    | Content (List (Html.Html msg))
+    | Content (List (Html.Attribute msg)) (List (Html.Html msg))
 
 type Event =
     Click String
@@ -37,7 +37,7 @@ view converter model children = nav [id "menu"] [ul [] (children |> List.map (pa
 
 partToHtml_: (Event -> msg) -> Model -> Part msg -> Html.Html msg
 partToHtml_ converter model part = case part of
-    Content children -> li [] children
+    Content childrenAttr children -> li childrenAttr children
     Section title children -> let shown = Set.member title.name model.shown in
         li [class "menuSection"]
         [   Html.div

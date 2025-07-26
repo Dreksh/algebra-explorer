@@ -418,18 +418,18 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         (case t of
             NotInstalled_ source -> Menu.Section
                 {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download source.url)), Icon.class "clickable", Icon.class c])}
-                [   Menu.Content [a [href source.url, class "clickable"] [text "View source"]]
-                ,   Menu.Content [p [] [text source.description]]
+                [   Menu.Content [] [a [href source.url, class "clickable"] [text "View source"]]
+                ,   Menu.Content [] [p [] [text source.description]]
                 ]
             Installed_ s topic -> Menu.Section
                 {name = topic.name, icon = Just (\c -> a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable", class c] [text "x"])}
                 (   [   case s of
-                            Just source -> Menu.Content [a [href source.url, class "clickable"] [text "View source"] ]
-                            Nothing -> Menu.Content [p [] [text "This is an uploaded topic"]]
-                    ,   Menu.Content [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
+                            Just source -> Menu.Content [] [a [href source.url, class "clickable"] [text "View source"] ]
+                            Nothing -> Menu.Content [] [p [] [text "This is an uploaded topic"]]
+                    ,   Menu.Content [] [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
                     ]
                 ++ List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
-                    [  Menu.Content ( List.concat
+                    [  Menu.Content [] ( List.concat
                         [ [h3 [] [text "Rules"]]
                         , List.map (\match -> p [] [text (match.from.name ++"→"++ (List.map .name match.to |> String.join ", "))]) rule.matches
                         , [   h3 [] [text "Description"], p [] [text rule.description]]
@@ -441,33 +441,33 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
         )
     )
     [   Menu.Section {name = "Core", icon = Nothing}
-        [   Menu.Content [p [] [text "Covers the basic interactions in this block representation"]]
+        [   Menu.Content [] [p [] [text "Covers the basic interactions in this block representation"]]
         ,   Menu.Section {name = "Evaluate", icon = Nothing}
-            [   Menu.Content
+            [   Menu.Content []
                 [   h3 [] [text "Convert expression into a single number"]
                 ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
                 ]
             ]
         ,   Menu.Section {name = "Expand", icon = Nothing}
-            [   Menu.Content
+            [   Menu.Content []
                 [   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
                 ]
             ]
         ,   Menu.Section {name = "Substitute", icon = Nothing}
-            [   Menu.Content
+            [   Menu.Content []
                 [   h3 [] [text "Given x=y, f(x)=f(y)"]
                 ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurrences with one by the other."]
                 ]
             ]
         ,   Menu.Section {name = "Group", icon = Nothing}
-            [   Menu.Content
+            [   Menu.Content []
                 [   h3 [] [text "Focus on a specific part"]
                 ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
                 ]
             ]
         ,   Menu.Section {name = "Ungroup", icon = Nothing}
-            [   Menu.Content
+            [   Menu.Content []
                 [   h3 [] [text "Return the group with the rest"]
                 ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
                 ]

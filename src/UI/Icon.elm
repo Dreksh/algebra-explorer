@@ -1,9 +1,9 @@
 module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, default, block, written)
+    verticalLine, history, default, bin)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg, text, text_)
-import Svg.Attributes exposing (cx, cy, d, fill, fontSize, height, id, mask, r, rx, stroke, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
+import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
 class: String -> Html.Attribute msg
@@ -50,17 +50,17 @@ cancel attr = svg (viewBox "0 0 24 24" :: attr)
     ]
 
 eye_: List (Svg.Svg msg)
-eye_ = [   path [d "M1 13A12 12 1 0 1 23 13", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   path [d "M2 12A12 9 0 0 0 22 12", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   circle [cx "12", cy "11", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
+eye_ = [   path [d "M1 9A12 12 1 0 1 23 9", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   path [d "M2 8A12 9 0 0 0 22 8", stroke "currentColor", strokeWidth "1", fill "none"] []
+    ,   circle [cx "12", cy "7", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
     ]
 
 shown: List (Html.Attribute msg) -> Html.Html msg
-shown attr = svg (viewBox "0 0 24 24" :: attr) eye_
+shown attr = svg (viewBox "0 0 24 15" :: attr) eye_
 
 hidden: List (Html.Attribute msg) -> Html.Html msg
-hidden attr = svg (viewBox "0 0 24 24" :: attr)
-    (path [d "M2 22 L 22 2", stroke "currentColor", strokeWidth "1", fill "none"] [] :: eye_)
+hidden attr = svg (viewBox "0 0 24 15" :: attr)
+    (path [d "M6 14 L 18 2", stroke "currentColor", strokeWidth "1", fill "none"] [] :: eye_)
 
 left: List (Html.Attribute msg) -> Html.Html msg
 left attr = svg (viewBox "0 0 24 24" :: attr)
@@ -92,13 +92,10 @@ default attr = svg (viewBox "0 0 24 24" :: attr)
     ,   path [d "M13 14A8 8 0 0 0 12 10A8 8 0 0 0 16 10A8 8 0 0 0 15 14", stroke "currentColor", strokeWidth "1", fill "none"] []
     ]
 
-block: List (Html.Attribute msg) -> Html.Html msg
-block attr = svg (viewBox "0 0 24 24" :: attr)
-    [   rect [x "1", y "1", width "22", height "22", rx "2", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   text_ [x "6", y "18", fontSize "12", stroke "currentColor"] [text "A"]
-    ]
-
-written: List (Html.Attribute msg) -> Html.Html msg
-written attr = svg (viewBox "0 0 24 24" :: attr)
-    [   text_ [x "4", y "18", fontSize "12", stroke "currentColor"] [text "Aa"]
+bin: List (Html.Attribute msg) -> Html.Html msg
+bin attr = svg (viewBox "0 0 24 24" :: attr)
+    [ path [d "M 7 3 C 7 3 1 3 1 5 C 1 8 23 8 23 5 C 23 3 17 3 17 3", stroke "currentColor", strokeWidth "2", fill "none"] []
+    , path [d "M 8 5 C 8 1 16 1 16 5", stroke "currentColor", strokeWidth "2", fill "none"] []
+    , path [d "M 2.5 8 L 4 21 C 8 23 16 23 20 21 L 21.5 8", stroke "currentColor", strokeWidth "2", fill "none"] []
+    , path [d "M 8 9 L 9 20 M 15 20 L 16 9", stroke "currentColor", strokeWidth "2", fill "none"] []
     ]
