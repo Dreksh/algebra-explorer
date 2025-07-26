@@ -57,13 +57,13 @@ advanceTime millis model =
         { model | rects = newRects, viewBox = newViewBox }
 
 view: (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
-view attrs model =
+view createAttrs model =
     -- TODO: allow blocks to share a border to make it look like mitosis
     -- TODO: can pass in some extra params here to allow dragging to move the node with cursor
     let
         -- we want ids that exist to be drawn on top, so prepend visible bricks to the resulting list first
-        visBricks = model.rects |> Dict.foldl (foldRectToBrick attrs True) []
-        bricks = model.rects |> Dict.foldl (foldRectToBrick attrs False) visBricks
+        visBricks = model.rects |> Dict.foldl (foldRectToBrick createAttrs True) []
+        bricks = model.rects |> Dict.foldl (foldRectToBrick createAttrs False) visBricks
         (maxX, maxY) = Animation.current model.viewBox
     in
         BrickSvg.bricks maxX maxY bricks

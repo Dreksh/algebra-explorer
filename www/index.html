@@ -51,12 +51,18 @@
                     cancelFunc();
                 }
             }(Date.now(), val["id"]);
+            let onLeave = function(start, id) {
+                return function(e) {
+                    cancelFunc();
+                }
+            }(Date.now(), val["id"]);
             cancelFunc = function() {
                 svgTarget.removeEventListener("mousemove", onMove);
                 svgTarget.removeEventListener("mouseup", onFinish);
             }
             svgTarget.addEventListener("mousemove", onMove);
             svgTarget.addEventListener("mouseup", onFinish);
+            svgTarget.addEventListener("mouseleave", onLeave);
         });
     </script>
 </body>
