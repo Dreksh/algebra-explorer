@@ -82,6 +82,7 @@ type alias Model =
 type alias Source =
     {   url: String
     ,   description: String
+    ,   preinstall: Bool
     }
 
 type LoadState_ obj =
@@ -318,14 +319,14 @@ addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing
                 ,   constants = constants
                 ,   topics = (  case (Dict.get topic.name model.topics, url) of
                         (Nothing, Nothing) -> Installed_ Nothing topic
-                        (Nothing, Just u) -> Installed_ (Just {url = u, description = "No description provided"}) topic
+                        (Nothing, Just u) -> Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
                         (Just (NotInstalled_ s), Nothing) -> Installed_ Nothing topic
                         (Just (NotInstalled_ s), Just u) -> if s.url == u then Installed_ (Just s) topic
-                            else Installed_ (Just {url = u, description = "No description provided"}) topic
+                            else Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
                         (Just (Installed_ _ _), Nothing) -> Installed_ Nothing topic
-                        (Just (Installed_ Nothing _), Just u) -> Installed_ (Just {url = u, description = "No description provided"}) topic
+                        (Just (Installed_ Nothing _), Just u) -> Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
                         (Just (Installed_ (Just s) _), Just u) -> if s.url == u then Installed_ (Just s) topic
-                            else Installed_ (Just {url = u, description = "No description provided"}) topic
+                            else Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
                     )
                     |> \t -> Dict.insert topic.name t model.topics
                 }
@@ -365,7 +366,7 @@ loadedTopics model = Dict.toList model.topics
         _ -> Nothing
     )
 
-addSources: Dict.Dict String {url: String, description: String} -> Model -> Model
+addSources: Dict.Dict String Source -> Model -> Model
 addSources map model =
     {   model
     |   topics = Dict.foldl (\name url dict ->
@@ -698,6 +699,7 @@ decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
     )
 
 sourceDecoder: Dec.Decoder Source
-sourceDecoder = Dec.map2 Source
+sourceDecoder = Dec.map3 Source
     (Dec.field "url" Dec.string)
     (Dec.field "description" Dec.string)
+    (Dec.map (Maybe.withDefault False) <|  Dec.maybe <| Dec.field "preinstall" Dec.bool)

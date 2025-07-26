@@ -1,6 +1,7 @@
 {
     "topics": {
         "Arithmetic": {
+            "preinstall": true,
             "url": "topics/arithmetic.json",
             "description": "Covers addition, subtraction, multiplication and division."
         },

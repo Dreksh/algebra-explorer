@@ -288,7 +288,7 @@ update event core = let model = core.swappable in
             Ok source ->
                 (   updateCore {model | rules = Rules.addSources source.topics model.rules}
                 ,   Dict.toList source.topics
-                    |> List.map (\(_, s) -> downloadTopicCmd_ s.url)
+                    |> List.filterMap (\(_, s) -> if s.preinstall then Just (downloadTopicCmd_ s.url) else Nothing)
                     |> Cmd.batch
                 )
         FileSelect fileType -> (core, FSelect.file ["application/json"] (FileSelected fileType))
