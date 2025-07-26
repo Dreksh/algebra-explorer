@@ -239,3 +239,38 @@ xxx|xxxx
   * these events then feed back via the port `svgMouseEvent` which fires the `Display.svgDragEvent`
 * whether a block is draggable is determined in `Bricks.stackRecursive_`
   * `GridItem` now contains a `Maybe (Int, List (Int, Int))` which contains the order of the sibling (e.g. first child, second child) plus sibling column start+ends
+* how to handle undo and redo?
+  * we need some sort of staging in the history
+    * as you hover over the undo you stage some history, then if you click it actually does it
+    * just like the toolbar will be
+  * which actions are difficult to do because they spawn modals?
+    * Expand (Core)
+    * Substitution
+    * Operate on both sides
+    * in this situation we can use the confirm button as the staging button
+  * which actions are difficult to do because they split history?
+    * Find Zeros
+    * in this situation maybe we should just spawn a modal to make them pick one...
+
+* where should Rules.Event actually go?
+  * ActionView is actually what calls `Matcher.matchSubtree`
+  * but it doesn't actually store the `Display.SelectedNode`, only renders it via a view
+  * should SelectedNode be stored somewhere else? Because it is only really
+
+
+* Any file x higher in the tree than another file y can handle events from y via
+* But y cannot ever handle an event from x because it cannot import x to avoid cyclic dependencies
+
+              Main
+              /
+          ActionView
+            /
+          Display
+        /    \    \        \
+Animation  Bricks  History  Draggable
+  /
+Rules
+  /
+Matcher
+  /
+Math

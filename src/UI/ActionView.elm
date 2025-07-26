@@ -41,6 +41,7 @@ isOpen (Current _ open) = open
 
 -- UI-related
 
+-- TODO: I think we probably want to cache these actions on update and then can reuse them in Display contextual toolbar
 type Action =
     DisplayOnly String
     | Disallowed String
@@ -102,8 +103,8 @@ coreTopic_ rModel selection = case selection of
         let
             evaluateAction = case Rules.evaluateStr rModel root of
                 Err _ -> Disallowed
-                Ok str -> Rules.Evaluate selected.eq selected.root str |> Allowed
-            result = CoreTopicAction (Rules.Substitute selected.eq selected.selected |> Allowed) Disallowed Disallowed Disallowed evaluateAction
+                Ok str -> Rules.Evaluate selected.root str |> Allowed
+            result = CoreTopicAction (Rules.Substitute |> Allowed) Disallowed Disallowed Disallowed evaluateAction
         in
         case root of
             Math.BinaryNode n -> if not n.associative then result
@@ -116,10 +117,10 @@ coreTopic_ rModel selection = case selection of
                                 _ -> False
                         selectedChildren = List.filter (\child -> Set.member (Math.getState child |> Matcher.getID) selected.nodes) n.children |> List.length
                     in
-                    let ungroupRes = if sameBinaryNode then {result | ungroup = Rules.Ungroup selected.eq selected.root |> Allowed} else result in
+                    let ungroupRes = if sameBinaryNode then {result | ungroup = Rules.Ungroup selected.root |> Allowed} else result in
                     if List.length n.children == selectedChildren || selectedChildren < 2 then ungroupRes
-                    else {ungroupRes | group = Rules.Group selected.eq selected.root selected.nodes |> Allowed }
-            Math.RealNode n -> {result | numSubstitute = Rules.NumericalSubstitution selected.eq selected.root n.value |> Allowed, substitute = Disallowed}
+                    else {ungroupRes | group = Rules.Group selected.root selected.nodes |> Allowed }
+            Math.RealNode n -> {result | numSubstitute = Rules.NumericalSubstitution selected.root n.value |> Allowed, substitute = Disallowed}
             _ -> result
 
 coreToList_: CoreTopicAction -> List Action
@@ -143,11 +144,12 @@ matchRule_ selected rule = rule.title |>
             in
                 if List.isEmpty matches then Disallowed
                 else
-                    Rules.Apply
-                    { title = rule.title
-                    , parameters = rule.parameters
-                    , matches = matches
-                    }
+                    (   Rules.Apply
+                        { title = rule.title
+                        , parameters = rule.parameters
+                        , matches = matches
+                        }
+                    )
                     |> Allowed
 
 {- Encoding and Decoding -}

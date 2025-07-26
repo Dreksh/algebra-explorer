@@ -116,8 +116,8 @@ type Event =
     | AnimationDelta Float
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
-    | ApplySubstitution Int (Set.Set Int) Int -- eqNum root otherEqNum
-    | ConvertSubString Int Int Float String -- eqNum root target subExpr
+    | ApplySubstitution Int -- otherEqNum
+    | ConvertSubString Int Float String -- root target subExpr
     | EvalComplete {id: Int, value: Float}
 
 type LoadableFile =
@@ -125,8 +125,8 @@ type LoadableFile =
     | SaveFile
 
 type EvalType =
-    NumSubType_ Int Int Float (Math.Tree (Maybe Rules.FunctionProp))
-    | EvalType_ Int Int
+    NumSubType_ Int Float (Math.Tree (Maybe Rules.FunctionProp))
+    | EvalType_ Int
 
 type alias Source =
     {   topics: Dict.Dict String Rules.Source
@@ -336,17 +336,17 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            Rules.Group eqNum root children -> case Display.groupChildren core.animation eqNum root children model.display of
+            Rules.Group root children -> case Display.groupChildren core.animation root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
-            Rules.Ungroup eqNum root -> case Display.ungroupChildren core.animation eqNum root model.display of
+            Rules.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
-            Rules.Substitute eqNum selected -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
-                else ({core | dialog = Just (substitutionDialog_ eqNum selected model, Nothing)} , Cmd.none)
-            Rules.NumericalSubstitution eqNum root target -> ({ core | dialog = Just (numSubDialog_ eqNum root target, Nothing)}, Cmd.none)
+            Rules.Substitute -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
+                else ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
+            Rules.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
             Rules.Download url -> (core, downloadTopicCmd_ url)
-            Rules.Evaluate eq id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ eq id) evalStr model.evaluator in
+            Rules.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
             Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ApplyParameters params -> case core.dialog of
@@ -375,25 +375,25 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution origNum selected eqNum -> case Display.substitute core.animation origNum selected eqNum model.display of
+        ApplySubstitution eqNum -> case Display.substitute core.animation eqNum model.display of
             Err errStr -> submitNotification_ core errStr
             Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}, updateQuery_ dModel)
-        ConvertSubString eqNum root target str -> case Math.parse (Rules.functionProperties model.rules) str of
+        ConvertSubString root target str -> case Math.parse (Rules.functionProperties model.rules) str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
                 Err errStr -> submitNotification_ core errStr
-                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ eqNum root target replacement) evalStr model.evaluator in
+                Ok evalStr -> let (eModel, cmd) = Evaluate.send (NumSubType_ root target replacement) evalStr model.evaluator in
                     (updateCore {model | evaluator = eModel}, cmd)
         EvalComplete reply -> let (eModel, c) = Evaluate.finish reply.id model.evaluator in
             let newCore = updateCore {model | evaluator = eModel } in
             case c of
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
-                Just (NumSubType_ eqNum root target replacement) -> if target /= reply.value
+                Just (NumSubType_ root target replacement) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber core.animation eqNum root target replacement model.display of
+                    else case Display.replaceNumber core.animation root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok (dModel, animation) -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
-                Just (EvalType_ eqNum id) -> case Display.replaceNodeWithNumber core.animation eqNum id reply.value model.display of
+                Just (EvalType_ id) -> case Display.replaceNodeWithNumber core.animation id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
                     Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
 
@@ -519,8 +519,8 @@ parameterDialog_ params =
     ,   focus = Nothing
     }
 
-substitutionDialog_: Int -> Set.Set Int -> Swappable -> Dialog.Model Event
-substitutionDialog_ eqNum selected model =
+substitutionDialog_: Swappable -> Dialog.Model Event
+substitutionDialog_ model = let eqNum = model.display.selected |> Maybe.map (\(eq, _) -> eq) |> Maybe.withDefault -1 in
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"
@@ -533,22 +533,22 @@ substitutionDialog_ eqNum selected model =
             ]]
         }]
     ,   success = (\dict -> case Dict.get "eqNum" dict of
-            Just (Dialog.IntValue a) -> ApplySubstitution eqNum selected a
+            Just (Dialog.IntValue a) -> ApplySubstitution a
             _ -> NoOp
         )
     ,   cancel = CloseDialog
     ,   focus = Just "eqNum"
     }
 
-numSubDialog_: Int -> Int -> Float -> Dialog.Model Event
-numSubDialog_ eqNum root target =
+numSubDialog_: Int -> Float -> Dialog.Model Event
+numSubDialog_ root target =
     {   title = "Expand a number into an expression"
     ,   sections =
         [{  subtitle = "The expression to replace " ++ String.fromFloat target
         ,   lines = [[Dialog.Text {id="expr"}]]
         }]
     ,   success = (\dict -> case Dict.get "expr" dict of
-            Just (Dialog.TextValue val) -> ConvertSubString eqNum root target val
+            Just (Dialog.TextValue val) -> ConvertSubString root target val
             _ -> NoOp
         )
     ,   cancel = CloseDialog
@@ -611,12 +611,11 @@ swappableDecoder updateQuery = Decode.map3 triplet
 evalTypeDecoder_: Decode.Decoder EvalType
 evalTypeDecoder_ = Decode.field "type" Decode.string
     |> Decode.andThen (\t -> case t of
-        "numSub" -> Decode.map4 NumSubType_
-            (Decode.field "eq" Decode.int)
+        "numSub" -> Decode.map3 NumSubType_
             (Decode.field "node" Decode.int)
             (Decode.field "target" Decode.float)
             (Decode.field "replacement" (Math.decoder (Decode.maybe Rules.functionPropDecoder)))
-        "eval" -> Decode.map2 EvalType_ (Decode.field "eq" Decode.int) (Decode.field "node" Decode.int)
+        "eval" -> Decode.map EvalType_ (Decode.field "node" Decode.int)
         _ -> Decode.fail "unknown type"
     )
 
@@ -631,9 +630,8 @@ saveFile model = Encode.encode 0
         ,   ("notification", Notification.encode model.notification)
         ,   ("menu", Menu.encode model.menu)
         ,   ("evaluator", Evaluate.encode (\t -> case t of
-                NumSubType_ eq node f replacement -> Encode.object
-                    [   ("eq",Encode.int eq)
-                    ,   ("node",Encode.int node)
+                NumSubType_ node f replacement -> Encode.object
+                    [   ("node",Encode.int node)
                     ,   ("target",Encode.float f)
                     ,   (   "replacement"
                         ,   Math.encode (\s -> case s of
@@ -644,7 +642,7 @@ saveFile model = Encode.encode 0
                         )
                     ,   ("type",Encode.string "numSub")
                     ]
-                EvalType_ eq node -> Encode.object [("eq",Encode.int eq),("node",Encode.int node),("type",Encode.string "eval")]
+                EvalType_ node -> Encode.object [("node",Encode.int node),("type",Encode.string "eval")]
                 ) model.evaluator
             )
         ,   ("showMenu", Encode.bool model.showMenu)

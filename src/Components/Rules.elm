@@ -91,12 +91,12 @@ type LoadState_ obj =
 
 type Event treeState =
     Apply (Parameters treeState)
-    | Group Int Int (Set.Set Int) -- eq root children
-    | Ungroup Int Int -- eq root
-    | NumericalSubstitution Int Int Float -- eq root matching value
-    | Substitute Int (Set.Set Int) -- eq selected
+    | Group Int (Set.Set Int) -- root children
+    | Ungroup Int -- root
+    | NumericalSubstitution Int Float -- root matching value
+    | Substitute
+    | Evaluate Int String -- root evalString
     | Download String
-    | Evaluate Int Int String -- eq nodeID evalString
     | Delete String
 
 coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}

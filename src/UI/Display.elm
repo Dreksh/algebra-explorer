@@ -55,6 +55,7 @@ type alias Entry =
     ,   show: Bool
     ,   ui: UIModel
     ,   commuting: Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
+    -- do I put the staged changes here?
     }
 
 type Event =
@@ -62,7 +63,7 @@ type Event =
     | Delete Int
     | ToggleHide Int
     | ToggleHistory Int
-    | HistoryEvent Int History.Event
+    | HistoryEvent Int (History.Event (FullEquation, Latex.Model State))
     | DraggableEvent Int Draggable.Event
     | MouseDown Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
     | Commute Int SvgDrag.Event
@@ -157,7 +158,7 @@ getSelected model = model.selected
 updateBricks: Animation.Tracker -> Entry -> (Entry, Animation.Tracker)
 updateBricks tracker entry =
     let
-        (eq, latex) = History.current entry.history
+        (eq, latex) = History.next entry.history
         (b, m) = entry.ui
         (newB, t0) = Bricks.updateTree tracker eq.root b
         (newW, newT) = MathIcon.set t0 Nothing latex m
@@ -173,34 +174,34 @@ advanceTime millis model =
     }
 
 undo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
-undo tracker model = case model.selected of
-    Nothing -> Err "Equation not found to undo"
-    Just (eqNum, selected) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation not found to undo"
-        Just entry -> let newHis = History.undo entry.history in
+undo tracker model = selectedEquation_ model
+    |> Result.andThen (\(eq, selected, entry) ->
+        let newHis = History.update (History.Stage History.Undo) entry.history in
             let (newEntry, newT) = updateBricks tracker {entry | history = newHis} in
             Ok
             (   {   model
-                |   equations = Dict.insert eqNum newEntry model.equations
-                ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
+                |   equations = Dict.insert eq newEntry model.equations
+                ,   selected = Just (eq, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
                 }
             ,   newT
             )
+        )
 
 redo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
-redo tracker model = case model.selected of
-    Nothing -> Err "Equation not found to redo"
-    Just (eqNum, selected) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation not found to redo"
-        Just entry -> let newHis = History.redo entry.history in
-            let (newEntry, newT) = updateBricks tracker {entry | history = newHis} in
+redo tracker model = selectedEquation_ model
+    |> Result.andThen (\(eq, selected, entry) ->
+        let
+            newHis = History.update (History.Stage History.Redo) entry.history
+            (newEntry, newT) = updateBricks tracker {entry | history = newHis}
+        in
             Ok
             (   {   model
-                |   equations = Dict.insert eqNum newEntry model.equations
-                ,   selected = Just (eqNum, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
+                |   equations = Dict.insert eq newEntry model.equations
+                ,   selected = Just (eq, newSelectedNodes_ selected (History.current newHis |> Tuple.first))
                 }
             ,   newT
             )
+        )
 
 updateQueryCmd: Animation.Tracker -> Model -> (Model, Animation.Tracker, Cmd Event)
 updateQueryCmd t model =
@@ -212,63 +213,73 @@ updateQueryCmd t model =
         |> model.updateQuery
     )
 
-groupChildren: Animation.Tracker -> Int -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
-groupChildren tracker eqNum root children model = case Dict.get eqNum model.equations of
-    Nothing -> Err "Equation not found"
-    Just entry -> History.current entry.history |> Tuple.first
+selectedEquation_: Model -> Result String (Int, Set.Set Int, Entry)
+selectedEquation_ model = case model.selected of
+    Nothing -> Err "No nodes were selected"
+    Just (eq, ids) -> case Dict.get eq model.equations of
+        Nothing -> Err "Equation is not found"
+        Just entry -> Ok (eq, ids, entry)
+
+groupChildren: Animation.Tracker -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
+groupChildren tracker root children model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) ->
+        History.current entry.history
+        |> Tuple.first
         |> Matcher.groupSubtree root children
         |> Result.map (\(newSelect, newEq) ->
             let
-                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
-            in
-            (   {   model
-                |   equations = Dict.insert eqNum newEntry model.equations
-                ,   selected = Just (eqNum, Set.singleton newSelect)
-                }
-            ,   newTracker
-            )
-        )
-
-ungroupChildren: Animation.Tracker -> Int -> Int -> Model -> Result String (Model, Animation.Tracker)
-ungroupChildren tracker eqNum id model = case Dict.get eqNum model.equations of
-    Nothing -> Err "Equation not found"
-    Just entry -> History.current entry.history
-        |> Tuple.first
-        |> Matcher.ungroupSubtree id
-        |> Result.map (\(newID,newEq) ->
-            let
-                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
             in
                 (   {   model
-                    |   equations = Dict.insert eqNum newEntry model.equations
-                    ,   selected = Just (eqNum, Set.singleton newID)
+                    |   equations = Dict.insert eq newEntry model.equations
+                    ,   selected = Just (eq, Set.singleton newSelect)
                     }
                 ,   newTracker
                 )
             )
+        )
 
-replaceNumber: Animation.Tracker -> Int -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
-replaceNumber tracker eqNum root target replacement model = case Dict.get eqNum model.equations of
-    Nothing -> Err "Equation not found"
-    Just entry -> History.current entry.history
+ungroupChildren: Animation.Tracker -> Int -> Model -> Result String (Model, Animation.Tracker)
+ungroupChildren tracker root model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) ->
+        History.current entry.history
+        |> Tuple.first
+        |> Matcher.ungroupSubtree root
+        |> Result.map (\(newID,newEq) ->
+            let
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
+            in
+                (   {   model
+                    |   equations = Dict.insert eq newEntry model.equations
+                    ,   selected = Just (eq, Set.singleton newID)
+                    }
+                ,   newTracker
+                )
+            )
+        )
+
+replaceNumber: Animation.Tracker -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
+replaceNumber tracker root target replacement model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) ->
+        History.current entry.history
         |> Tuple.first
         |> Matcher.replaceRealNode root target replacement
         |> Result.map (\(newSelect, newEq) ->
             let
-                (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
             in
                 (   {   model
-                    |   equations = Dict.insert eqNum newEntry model.equations
-                    ,   selected = Just (eqNum, Set.singleton newSelect)
+                    |   equations = Dict.insert eq newEntry model.equations
+                    ,   selected = Just (eq, Set.singleton newSelect)
                     }
                 ,   newTracker
                 )
             )
+        )
 
-replaceNodeWithNumber: Animation.Tracker -> Int -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
-replaceNodeWithNumber tracker eqNum id number model = case Dict.get eqNum model.equations of
-    Nothing -> Err "Equation not found"
-    Just entry ->
+replaceNodeWithNumber: Animation.Tracker -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
+replaceNodeWithNumber tracker root number model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) ->
         let
             replacement = if number < 0
                 then Math.UnaryNode {state = (Just Rules.negateProp,Nothing), name = "-", child = Math.RealNode {state = (Nothing, Nothing), value = -number}}
@@ -276,56 +287,60 @@ replaceNodeWithNumber tracker eqNum id number model = case Dict.get eqNum model.
         in
             History.current entry.history
             |> Tuple.first
-            |> Matcher.replaceSubtree (Set.singleton id) replacement Matcher.newResult
+            |> Matcher.replaceSubtree (Set.singleton root) replacement Matcher.newResult
             |> Result.map (\(newSelect, newEq) ->
                 let
-                    (newEntry, newTracker) = updateBricks tracker {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                    (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
                 in
                     (   {   model
-                        |   equations = Dict.insert eqNum newEntry model.equations
-                        ,   selected = Just (eqNum, Set.singleton newSelect)
+                        |   equations = Dict.insert eq newEntry model.equations
+                        ,   selected = Just (eq, Set.singleton newSelect)
                         }
                     ,   newTracker
                     )
                 )
+        )
 
 transform: Animation.Tracker -> List {a | root: Matcher.Replacement Rules.FunctionProp} -> Matcher.MatchResult Rules.FunctionProp Animation.State -> Model -> Result String (Model, Animation.Tracker)
-transform tracker replacement result model = case model.selected of
-    Nothing -> Err "No nodes were selected"
-    Just (eqNum, ids) -> case Dict.get eqNum model.equations of
-        Nothing -> Err "Equation is not found"
-        Just entry -> History.current entry.history
-            |> Tuple.first
-            |> \current -> Helper.resultList (\r (_, others) -> Matcher.replaceSubtree ids r.root result current
-                |> Result.map (\(num, newEq) -> (num, (newEq, Rules.toLatex newEq) :: others))
-                ) (0, []) replacement
-            |> Result.map (\(newSelect, newEq) -> let (newEntry, newTracker) = updateBricks tracker {entry | history = History.addAll (List.reverse newEq) entry.history} in
+transform tracker replacement result model = selectedEquation_ model
+    |> Result.andThen (\(eq, ids, entry) ->
+        History.current entry.history
+        |> Tuple.first
+        |> \current -> Helper.resultList (\r (_, others) -> Matcher.replaceSubtree ids r.root result current
+            |> Result.map (\(num, newEq) -> (num, (newEq, Rules.toLatex newEq) :: others))
+            ) (0, []) replacement
+        |> Result.map (\(newSelect, newEq) ->
+            let
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stageMany (List.reverse newEq) entry.history}
+            in
                 (   {   model
-                    |   equations = Dict.insert eqNum newEntry model.equations
-                    ,   selected = Just (eqNum, Set.singleton newSelect)
+                    |   equations = Dict.insert eq newEntry model.equations
+                    ,   selected = Just (eq, Set.singleton newSelect)
                     }
                 ,   newTracker
                 )
             )
+        )
 
-substitute: Animation.Tracker -> Int -> Set.Set Int -> Int -> Model -> Result String (Model, Animation.Tracker)
-substitute tracker origNum selected eqNum model = case Dict.get eqNum model.equations of
+substitute: Animation.Tracker -> Int -> Model -> Result String (Model, Animation.Tracker)
+substitute tracker eqSub model = case Dict.get eqSub model.equations of
     Nothing -> Err "Substitution equation not found"
-    Just subEntry -> case Dict.get origNum model.equations of
-        Nothing -> Err "Target equation not found"
-        Just origEntry -> let origEq = History.current origEntry.history |> Tuple.first in
-            Matcher.replaceAllOccurrences selected (History.current subEntry.history |> Tuple.first) origEq
-            |> Result.map (\(newSelected, newEq) ->
-                let
-                    (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.add (newEq,Rules.toLatex newEq) origEntry.history}
-                in
-                    (   {   model
-                        |   selected = Just (origNum, newSelected)
-                        ,   equations = Dict.insert origNum newEntry model.equations
-                        }
-                    ,   newTracker
+    Just subEntry -> selectedEquation_ model
+        |> Result.andThen (\(origNum, selected, origEntry) ->
+            let origEq = History.current origEntry.history |> Tuple.first
+            in Matcher.replaceAllOccurrences selected (History.current subEntry.history |> Tuple.first) origEq
+                |> Result.map (\(newSelected, newEq) ->
+                    let
+                        (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.stage (newEq, Rules.toLatex newEq) origEntry.history}
+                    in
+                        (   {   model
+                            |   selected = Just (origNum, newSelected)
+                            ,   equations = Dict.insert origNum newEntry model.equations
+                            }
+                        ,   newTracker
+                        )
                     )
-                )
+            )
 
 updateSelected_: Int -> Int -> Bool -> Model -> Model
 updateSelected_ eq node combine model = case (combine, model.selected) of
@@ -342,7 +357,7 @@ refresh: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionPro
 refresh dict tracker model = Dict.foldl (\key entry (nextDict, t) -> let eq = History.current entry.history |> Tuple.first in
         (   case Matcher.refreshFuncProp dict eq of
                 Nothing -> (entry, t)
-                Just newEq -> updateBricks t {entry | history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                Just newEq -> updateBricks t {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
         )
         |> \(newEntry, newT) -> (Dict.insert key newEntry nextDict, newT)
     )
@@ -419,7 +434,7 @@ update size tracker event model = case event of
                                     (newB, t0) = Bricks.updateTree t newEq.root b
                                     (newM, newT) = MathIcon.set t0 Nothing newL m
                                 in
-                                Just (   {   entry
+                                Just (  {   entry
                                         |   ui = (newB, newM)
                                         ,   commuting = Just {n | moved = True, currentIndex = newIndex}
                                         }
@@ -439,7 +454,7 @@ update size tracker event model = case event of
                                 |> Matcher.setChildIndex n.id newIndex
                                 |> \res -> case res of
                                     Err _ -> {entry | commuting = Nothing}
-                                    Ok newEq -> {entry | commuting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                                    Ok newEq -> {entry | commuting = Nothing, history = History.stage (newEq, Rules.toLatex newEq) entry.history}
                         )
                         |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
                             updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
@@ -498,7 +513,6 @@ views converter model = Dict.toList model.equations
     |> List.map (\(eqNum, entry) ->
         let
             (_, dModel) = entry.view
-            (eq, _) = History.current entry.history
             highlight = model.selected
                 |> Maybe.andThen (\(selEq, set) -> if selEq == eqNum then Just set else Nothing)
                 |> Maybe.withDefault Set.empty
@@ -524,8 +538,8 @@ views converter model = Dict.toList model.equations
                             ,   div [class "history"]
                                 (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
                                     case List.drop middle children |> List.head of
-                                        Nothing ->[historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)]
-                                        Just after -> historyEntry_ current (History.SelectPast index |> HistoryEvent eqNum |> converter) (MathIcon.static [] latex)
+                                        Nothing ->[historyEntry_ current (HistoryEvent eqNum (History.Stage (History.Revert index)) |> converter) (MathIcon.static [] latex)]
+                                        Just after -> historyEntry_ current (HistoryEvent eqNum (History.Stage (History.Revert index)) |> converter) (MathIcon.static [] latex)
                                             ::  (
                                                 List.map (Html.div []) (List.take middle children)
                                                 ++ after
@@ -535,7 +549,25 @@ views converter model = Dict.toList model.equations
                             ]
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
-                -- ,   div [class "contextualToolbar"] [text "undo+redo"]  -- TODO: connect ActionView up here
+                ,   div [class "contextualToolbar"]
+                    [   a
+                        [   class "clickable"  -- TODO: only show button as clickable if actually clickable
+                        ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
+                        ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
+                        ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+                        -- TODO: make the blocks look see-through or something to show it being committed
+                        -- TODO: allow user to undo a bunch of times without another mouseEnter
+                        --   maybe just skip the preview and allow direct commit in that case
+                        ]
+                        [text "Undo"]  -- TODO: make these icons instead
+                    ,   a
+                        [   class "clickable"
+                        ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
+                        ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
+                        ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+                        ]
+                        [text "Redo"]
+                    ]
                 ]
             )
     )
