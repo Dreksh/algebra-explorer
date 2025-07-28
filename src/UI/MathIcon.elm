@@ -182,7 +182,7 @@ iteratorToPart_ it =
             Latex.Param (s, _) num -> result next s (" " ++ String.fromInt num)
 
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
-toMatches_ input =
+toMatches_ inList =
     let
         strictID part = (part.id, part.str)
         matchID part = (part.corrID, part.str) -- Secondary matching is with prevID
@@ -195,7 +195,7 @@ toMatches_ input =
         BFS.Add new -> (new :: pending, done, (found, del))
         BFS.Delete old -> (pending, done, (found, insert strictID old del))
         BFS.None new old -> (pending, Dict.insert (new.id, new.occurrence) old done, (insert matchID old found, del))
-    ) ([], Dict.empty, (Dict.empty, Dict.empty)) input
+    ) ([], Dict.empty, (Dict.empty, Dict.empty)) inList
     -- Exact match with deleted values first
     |> (    \(pending, done, (found, del)) -> List.reverse pending
             |> List.foldl (\part (more, doneDict, (foundDict, delDict)) ->
@@ -420,16 +420,19 @@ symbolStrokes_ s str = case str of
     Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
 
 wordStrokes_: state -> String -> Frame state
-wordStrokes_ s = String.foldl (\c res -> case res of
-        Err err -> Err err
-        Ok (list, (_, top), (right, bot)) -> charStrokes_ c
-            |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) ->
-                (rightShiftStrokes_ right strokes ++ list, (0, min top newTop), (right + newRight, max bot newBot))
-            )
-    ) (Ok ([], (0, 0), (0, 0)))
-    >> \r -> case r of
-        Ok (list, topLeft, botRight) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
-        Err _ -> failedFrame_ s
+wordStrokes_ s str = if String.isEmpty str
+    -- This is for inputs, where we're waiting for something to be written
+    then {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, 0.1), botRight = (0.4,0.5)}
+    else String.foldl (\c res -> case res of
+            Err err -> Err err
+            Ok (list, (_, top), (right, bot)) -> charStrokes_ c
+                |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) ->
+                    (rightShiftStrokes_ right strokes ++ list, (0, min top newTop), (right + newRight, max bot newBot))
+                )
+        ) (Ok ([], (0, 0), (0, 0))) str
+        |> \r -> case r of
+            Ok (list, topLeft, botRight) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
+            Err _ -> failedFrame_ s
 
 charStrokes_: Char -> Result String (List Stroke, Vector2, Vector2)
 charStrokes_ c = case c of
@@ -548,11 +551,6 @@ frameToAttr_ frame =
     [   d (strokeToPath_ (Animation.current frame.origin) (Animation.current frame.scale) frame.strokes)
     ,   opacity (Animation.current frame.opacity |> String.fromFloat)
     ]
-
--- For inputting (i.e. with virtual keyboard that lists out all the available functions)
--- https://stackoverflow.com/a/37202118
--- input: Math.Tree elem -> Html.Html msg
--- input root = Html.p [] [Html.text "TODO"]
 
 {- UI -}
 

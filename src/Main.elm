@@ -34,7 +34,7 @@ import UI.Display as Display
 import UI.Draggable as Draggable
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
-import UI.Input as Input
+import UI.InputWithHistory as InputWithHistory
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
@@ -85,7 +85,7 @@ type alias Swappable =
     -- UI fields
     ,   showMenu: Bool
     ,   actionView: ActionView.Model
-    ,   input: Input.Model
+    ,   input: InputWithHistory.Model
     }
 
 type Event =
@@ -98,7 +98,7 @@ type Event =
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
     | ActionViewEvent ActionView.Event
-    | InputEvent Input.Event
+    | InputEvent InputWithHistory.Event
     | SvgDragEvent SvgDrag.Raw
     -- Event from the UI
     | NoOp -- For setting focus on textbox
@@ -154,7 +154,7 @@ init flags url key =
             , evaluator = Evaluate.init evaluateString
             , showMenu = False
             , actionView = ActionView.init
-            , input = Input.init newScreen
+            , input = InputWithHistory.init newScreen
             }
         , query = query
         , dialog = Nothing
@@ -216,22 +216,22 @@ update event core = let model = core.swappable in
         NotificationEvent e -> let (nModel, newT) = Notification.update core.animation e model.notification in
             ({core | animation = newT, swappable = {model | notification = nModel}}, Cmd.none)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        ActionViewEvent e -> let (newIn, newT) = Input.close core.animation model.input in
+        ActionViewEvent e -> let (newIn, newT) = InputWithHistory.close core.animation model.input in
             ({core | animation = newT, swappable = {model | actionView = ActionView.update e model.actionView, input = newIn}}, Cmd.none)
-        InputEvent e -> let (newIn, submitted, newT) = Input.update core.animation e model.input in
+        InputEvent e -> let (newIn, submitted, newT) = InputWithHistory.update core.animation (Rules.functionProperties model.rules) e model.input in
             case submitted of
-                Nothing -> ({core | animation = newT, swappable = {model | input = newIn}}, focusTextBar_ "textInput")
-                Just "" -> if Display.anyVisible model.display
-                    then ({core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
-                    else ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
-                Just str -> case parseEquation_ model.rules str of
-                    Result.Ok root -> Display.add newT root model.display
-                        |> (\(dModel, animation) ->
-                            (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
-                            ,   updateQuery_ dModel
-                            )
+                Err err -> submitNotification_ core err
+                Ok Nothing -> case newIn.current of
+                    Nothing -> if Display.anyVisible model.display
+                        then ({core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
+                        else ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
+                    Just _ -> ({core | animation = newT, swappable = {model | input = newIn}}, focusTextBar_ "textInput")
+                Ok (Just root) -> Display.add newT root model.display
+                    |> (\(dModel, animation) ->
+                        (   { core | swappable = {model | display = dModel, input = newIn}, animation = animation }
+                        ,   updateQuery_ dModel
                         )
-                    Result.Err err -> submitNotification_ core err
+                    )
         SvgDragEvent e -> case SvgDrag.resolve e core.svgDragMap of
             Nothing -> (core, Cmd.none)
             Just newE -> update newE core
@@ -244,13 +244,13 @@ update event core = let model = core.swappable in
                     then (updateCore {model | actionView = ActionView.hide model.actionView}, Cmd.none)
                     else case (Display.anyVisible model.display, model.showMenu, model.input.current) of
                         (True, True, _) -> ({core | swappable = {model | showMenu = False}}, Cmd.none)
-                        (True, False, Just _) -> let (newIn, newT) = Input.close core.animation model.input in
+                        (True, False, Just _) -> let (newIn, newT) = InputWithHistory.close core.animation model.input in
                             ({core | animation = newT, swappable = {model | input = newIn}}, Cmd.none)
                         (True, False, Nothing) -> ({core | swappable = {model | showMenu = True}}, Cmd.none)
                         (False, True, Just _) -> ({core | swappable = {model | showMenu = False}}, Cmd.none)
-                        (False, _, Nothing) -> let (newIn, newT) = Input.open core.animation model.input in
+                        (False, _, Nothing) -> let (newIn, newT) = InputWithHistory.open core.animation model.input in
                             ({core | animation = newT, swappable = {model | input = newIn, showMenu = False}}, Cmd.none)
-                        (False, False, Just _) -> let (newIn, newT) = Input.close core.animation model.input in
+                        (False, False, Just _) -> let (newIn, newT) = InputWithHistory.close core.animation model.input in
                             ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
             (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
@@ -259,7 +259,7 @@ update event core = let model = core.swappable in
                 Err errStr -> submitNotification_ core errStr
                 Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
             _ -> (core, Cmd.none)
-        EnterCreateMode -> let (inputModel, newT) = Input.open core.animation model.input in
+        EnterCreateMode -> let (inputModel, newT) = InputWithHistory.open core.animation model.input in
             (   {   core
                 |   swappable = {   model
                     |   input = inputModel
@@ -274,7 +274,7 @@ update event core = let model = core.swappable in
             then (updateCore {model | showMenu = True}, Cmd.none)
             else if Display.anyVisible model.display
             then (updateCore {model | showMenu = False}, Cmd.none)
-            else let (newIn, newT) = Input.open core.animation model.input in
+            else let (newIn, newT) = InputWithHistory.open core.animation model.input in
                 ({core | animation = newT, swappable = {model | showMenu = False, input = newIn}}, Cmd.none)
         Save -> (core, saveFile model)
         OpenDialog d ->
@@ -325,7 +325,7 @@ update event core = let model = core.swappable in
                 |   swappable =
                     {   model
                     |   display = Display.advanceTime millis model.display
-                    ,   input = Input.advance millis model.input
+                    ,   input = InputWithHistory.advance millis model.input
                     ,   notification = Notification.advance millis model.notification
                     }
                 ,   animation = Animation.updateTracker millis core.animation
@@ -464,7 +464,7 @@ view core = let model = core.swappable in
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
-                    (Input.view InputEvent model.input)
+                    (InputWithHistory.view InputEvent model.input)
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Menu.view MenuEvent model.menu
                         [   Menu.Section {name = "Settings", icon = Nothing}
@@ -622,7 +622,7 @@ swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
         (Decode.field "showMenu" Decode.bool)
         (Decode.field "actionView" ActionView.decoder)
-        (Decode.field "input" Input.decoder)
+        (Decode.field "input" InputWithHistory.decoder)
     )
     |> Decode.map (\(((display, tracker), rules, tutorial),(notification,menu,evaluator),(showMenu,actionView, input)) ->
        (Swappable display rules tutorial notification menu evaluator showMenu actionView input, tracker)
@@ -667,7 +667,7 @@ saveFile model = Encode.encode 0
             )
         ,   ("showMenu", Encode.bool model.showMenu)
         ,   ("actionView", ActionView.encode model.actionView)
-        ,   ("input", Input.encode model.input)
+        ,   ("input", InputWithHistory.encode model.input)
         ]
     )
     |> FDownload.string "math.json" "application/json"

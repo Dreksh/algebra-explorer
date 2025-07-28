@@ -1,205 +1,150 @@
-module UI.Input exposing (Model, Event, init, update, view, advance, open, close, decoder, encode)
+module UI.Input exposing (Model, Entry, init, set, view, toTree)
 
 import Dict
 import Html
-import Html.Attributes exposing (class, id, name, placeholder, type_, value)
-import Json.Decode as Decode
-import Json.Encode as Encode
+import Html.Attributes exposing (class, name, type_)
 -- Ours
 import Helper
+import Algo.Matcher as Matcher
+import Algo.Math as Math
+import Components.Latex as Latex
+import Components.Rules as Rules
 import UI.Animation as Animation
-import UI.HtmlEvent as HtmlEvent
-import UI.Icon as Icon
+import UI.Display as Display
+import UI.MathIcon as MathIcon
 
--- Will be placed as a percentage
-maxWidth_: Float
-maxWidth_ = 70
+-- a scope is which function + parameter number they belong to
+-- root is always (0, Just 1)
+-- a Nothing parameter means it's part of the function's written form
+type alias Scope_ =
+    {   function: Int
+    ,   argument: Maybe Int
+    ,   fixedArgs: Bool
+    }
 
-maxHeight_: Float
-maxHeight_ = 50
-
-animationDuration_: Float
-animationDuration_ = 750
+type alias Entry =
+    -- All Latex.Model has the first entry as either the model's scope, or a constant
+    {   latex: Latex.Model {immutable: Bool, scope: Scope_}
+    ,   funcName: Dict.Dict Int String
+    }
+type alias CursorPosition = List Int
 
 type alias Model =
-    {   options: List Selection
-    ,   openCount: Int
-    ,   selected: Maybe (String, Bool) -- The bool is to toggle to signal when state is changing to control overwriting the value
-    ,   current: Maybe (Int, Animation.EaseState Float, Animation.EaseState Float)
-    ,   closing: Dict.Dict Int (Animation.EaseState Float, Animation.EaseState Float)
+    {   entry: Entry
+    ,   functionInput: Maybe String
+    ,   cursor: Maybe CursorPosition
     }
 
-type Selection =
-    Default String
-    | Previous String
+init: Model
+init =
+    {   entry = {latex = [], funcName = Dict.empty}
+    ,   functionInput = Nothing
+    ,   cursor = Nothing
+    }
 
-type Event =
-    Click String
-    | Submit String
-    | ShowOptions
+set: Entry -> Model
+set entry =
+    {   entry = entry
+    ,   functionInput = Nothing
+    ,   cursor = Nothing
+    }
 
-defaultOptions_: List Selection
-defaultOptions_ =
-    [   Default "x+4=5"
-    ,   Default "\\f(x)=x+3"
-    ,   Default "x(x+2)=-1"
-    ,   Default "4x+3y=11"
-    ,   Default "2x+y=5"
+view: List (Html.Attribute msg) -> Model -> Html.Html msg
+view attr model = Html.div [class "mathInput"]
+    [   MathIcon.static [] model.entry.latex
+    ,   Html.input
+        (type_ "textarea" :: attr)
+        []
     ]
 
-init: Bool -> Model
-init show =
-    {   options = defaultOptions_
-    ,   openCount = if show then 1 else 0
-    ,   selected = Nothing
-    ,   current = if show
-            then Just
-                (   0
-                ,   Animation.newEaseFloat animationDuration_ maxWidth_
-                ,   Animation.newEaseFloat animationDuration_ 0
-                )
-            else Nothing
-    ,   closing = Dict.empty
+toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model -> Result String Display.FullEquation
+toTree dict model = toStringDict_ model.entry.funcName 0 model.entry.latex
+    |> Result.andThen (Dict.get 1 >> Result.fromMaybe "Unable to convert to a string")
+    |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
+
+type alias ProcessState_ =
+    {   currentParam: Int
+    ,   functionEntry: Dict.Dict Int String
+    ,   subscope: Maybe (Int, Dict.Dict Int String)
     }
 
-advance: Float -> Model -> Model
-advance time model =
-    {   model
-    |   current = model.current
-        |> Maybe.map (\(num, w, h) -> (num, Animation.advance time w, Animation.advance time h))
-    ,   closing = model.closing
-        |> Dict.map (\_ (w,h) -> (Animation.advance time w, Animation.advance time h))
-        |> Dict.filter (\_ (w,h) -> Animation.current h /= 0 || Animation.current w /= 0)
-    }
+-- Append scopes of the same function number to the assigned argument
+-- if scopes do not share the same function number, assume they are smaller functions in the scope,
+-- so they will be appended onto whatever the previous argument is (as a function)
+-- with the exception when the currentParam is 0, where they will be prepended onto the next argument, when seen
+toStringDict_: Dict.Dict Int String -> Int -> Latex.Model {immutable: Bool, scope: Scope_} ->  Result String (Dict.Dict Int String)
+toStringDict_ funcName function model =
+    let
+        appendString key str dict = case Dict.get key dict of
+            Nothing -> Dict.insert key str dict
+            Just prev -> Dict.insert key (prev++str) dict
 
-open: Animation.Tracker -> Model -> (Model, Animation.Tracker)
-open tracker model = case model.current of
-    Just _ -> (model, tracker)
-    Nothing -> let (newEase, newT) = Animation.newEaseFloat animationDuration_ 0 |> Animation.setEase tracker maxWidth_ in
-        (   {  model
-            |   openCount = model.openCount + 1
-            ,   current = Just (model.openCount, newEase, Animation.newEaseFloat animationDuration_ 0)
-            }
-        ,   newT
-        )
-
-close: Animation.Tracker -> Model -> (Model, Animation.Tracker)
-close tracker model = case model.current of
-    Nothing -> (model, tracker)
-    Just (id, width, height) ->
-        let
-            (newW, newT) = Animation.setEase tracker 0 width
-            (newH, finalT) = Animation.setEase newT 0 height
-        in
-            (   {   model
-                |   current = Nothing
-                ,   closing = Dict.insert id (newW, newH) model.closing
-                ,   selected = Nothing
-                }
-            , finalT
+        flush state = case state.subscope of
+            Nothing -> Ok state
+            Just (funcNum, argDict) -> case Dict.get funcNum funcName of
+                Nothing -> Err ("Cannot find the function name for the " ++ String.fromInt funcNum ++ " function")
+                Just name -> Helper.resultDict (\key str (prev, total) ->
+                        if prev + 1 /= key
+                        then Err ("function '" ++ name ++ "' is missing argument " ++ String.fromInt key)
+                        else if prev == 0 then Ok (key, str) else Ok (key, total ++ "," ++ str)
+                    ) (0, "") argDict
+                    |> Result.map (\(_, innerStr) ->
+                        {   state
+                        |   subscope = Nothing
+                        ,   functionEntry = appendString state.currentParam ("\\" ++ name ++ "(" ++ innerStr ++ ")") state.functionEntry
+                        }
+                    )
+        addText state elem text = case elem.scope.argument of
+            -- Part of the function's layout, not considered actual text
+            Nothing -> Ok state
+            Just arg -> if elem.scope.function == function
+                then flush state
+                    |> Result.map (\newState -> case Dict.get 0 newState.functionEntry of
+                        Nothing -> { newState | currentParam = arg , functionEntry = appendString arg text newState.functionEntry }
+                        Just t -> -- Case if other scope had text before this own scope
+                            {   newState
+                            |   currentParam = arg
+                            ,   functionEntry = appendString arg (t ++ text) newState.functionEntry
+                                |> Dict.remove 0
+                            }
+                    )
+                else case state.subscope of
+                    Nothing -> Ok {state | subscope = Just (elem.scope.function, Dict.singleton arg text)}
+                    Just (subFunc, subDict) -> if subFunc == elem.scope.function
+                        then Ok {state | subscope = Just (subFunc,appendString arg text subDict)}
+                        else flush state
+                            |> Result.map (\newState -> {newState | subscope = Just (elem.scope.function, Dict.singleton arg text)})
+        addDict state funcNum dict = case state.subscope of
+            Nothing -> Ok {state | subscope = Just (funcNum, dict)}
+            Just (subFunc, subDict) -> if subFunc == funcNum
+                then Ok {state | subscope = Just (subFunc, Dict.union dict subDict)}
+                else flush state
+                    |> Result.map (\newState -> {newState | subscope = Just (funcNum, dict)})
+    in
+    Helper.resultList (\symbol state -> case symbol of
+        Latex.Fraction elem top bot -> toStringDict_ funcName elem.scope.function top
+            |> Result.andThen (\extractedTop -> toStringDict_ funcName elem.scope.function bot
+                |> Result.andThen (\extractedBot -> addDict state elem.scope.function (Dict.union extractedTop extractedBot))
             )
-
-update: Animation.Tracker -> Event -> Model -> (Model, Maybe String, Animation.Tracker)
-update tracker event model = case event of
-    Click input -> case model.selected of
-        Nothing -> ({model | selected = Just (input, False)}, Nothing, tracker)
-        Just (_, token) -> ({model | selected = Just (input, not token)}, Nothing, tracker)
-    Submit input -> let (newModel, newT) = close tracker model in
-        (   {   newModel
-            |   options = if String.isEmpty input
-                    then newModel.options
-                    else Previous input :: newModel.options
-            }
-        ,   Just input
-        ,   newT
-        )
-    ShowOptions -> case model.current of
-        Nothing -> (model, Nothing, tracker)
-        Just (id, width, height) ->
-            let (newH, newT) = Animation.setEase tracker maxHeight_ height in
-                ({model | current = Just (id, width, newH)}, Nothing, newT)
-
-view: (Event -> msg) -> Model -> List (String, Html.Html msg)
-view converter model =
-    Dict.toList model.closing
-    |> List.map (\(id, (width, height)) -> createView_ converter model id width height)
-    |> \list -> case model.current of
-        Nothing -> list
-        Just (id, width, height) -> list ++ [createView_ converter model id width height]
-
-createView_: (Event -> msg) -> Model -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
-createView_ converter model inputNum width height =
-    (   "textbar"++String.fromInt inputNum
-    ,    Html.div
-        [   class "input"
-        ,   Html.Attributes.style "max-width" ((Animation.current width |> String.fromFloat) ++"dvw")
-        ]
-        [   Html.form
-            [   class "textbar"
-            ,   HtmlEvent.onSubmitField "equation" Submit
-            ]
-            [   Icon.equation []
-            ,   Html.input
-                (   [ type_ "text"
-                    , name "equation"
-                    , id "textInput"
-                    , placeholder "Type an equation to solve"
-                    , HtmlEvent.onFocus ShowOptions
-                    ]
-                    |> Helper.maybeAppend (Maybe.map (\(text, _) -> value text) model.selected)
+        Latex.Superscript elem inner -> toStringDict_ funcName elem.scope.function inner
+            |> Result.andThen (addDict state elem.scope.function)
+        Latex.Subscript elem inner -> toStringDict_ funcName elem.scope.function inner
+            |> Result.andThen (addDict state elem.scope.function)
+        Latex.Sqrt elem inner -> toStringDict_ funcName elem.scope.function inner
+            |> Result.andThen (addDict state elem.scope.function)
+        Latex.Bracket elem inner -> case elem.scope.argument of
+            -- Just a bracket for indicating a function
+            Nothing -> toStringDict_ funcName elem.scope.function inner
+                |> Result.andThen (addDict state elem.scope.function)
+            -- Part of the text
+            Just arg -> toStringDict_ funcName elem.scope.function inner
+                |> Result.andThen (\dict -> case Dict.get arg dict of
+                    Nothing -> Err "text bracket contained random stuff"
+                    Just text -> addText state elem ("(" ++ text ++")")
                 )
-                []
-            ]
-        ,   Html.ul
-            [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
-            (   List.map
-                (\entry -> case entry of
-                    Default val -> Html.li [HtmlEvent.onClick (Click val)]
-                        [   Icon.default []
-                        , Html.a [class "clickable"] [Html.text val]
-                        ]
-                    Previous val -> Html.li [HtmlEvent.onClick (Click val)]
-                        [   Icon.history []
-                        , Html.a [class "clickable"] [Html.text val]
-                        ]
-                )
-                model.options
-            )
-        ]
-        |> Html.map converter
-    )
-
-encode: Model -> Encode.Value
-encode model = Encode.object
-    [   ("options", Encode.list Encode.string <| List.filterMap (\e -> case e of
-            Default _ -> Nothing
-            Previous value -> Just value
-            ) model.options
-        )
-    ,   ("open", Encode.int model.openCount)
-    ,   ("selected", case model.selected of
-            Nothing -> Encode.null
-            Just (val, token) -> Encode.object [("value", Encode.string val), ("token", Encode.bool token)]
-        )
-    ,   ("current", case model.current of
-            Nothing -> Encode.null
-            Just (id, width, height) -> Encode.object
-                [   ("id", Encode.int id)
-                ,   ("width", Animation.target width |> Encode.float)
-                ,   ("height", Animation.target height |> Encode.float)
-                ]
-        )
-    ]
-
-decoder: Decode.Decoder Model
-decoder = Decode.map4 (\a b c d -> Model a b c d Dict.empty)
-    (Decode.field "options" <| Decode.map (\prev -> List.map Previous prev ++ defaultOptions_) <| Decode.list <| Decode.string)
-    (Decode.field "open" Decode.int)
-    (Decode.maybe <| Decode.field "selected" <|
-        Decode.map2 Tuple.pair (Decode.field "value" Decode.string) (Decode.field "token" Decode.bool)
-    )
-    (Decode.maybe <| Decode.field "current" <| Decode.map3 (\a b c -> (a,b,c))
-        (Decode.field "id" <| Decode.int)
-        (Decode.field "width" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
-        (Decode.field "height" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
-    )
+        Latex.Text elem text -> addText state elem text
+        Latex.SymbolPart elem symb -> addText state elem ("\\" ++ Latex.symbolToStr symb)
+        Latex.Argument _ _ -> Err "Found latex argument in input"
+        Latex.Param _ _ -> Err "Found latex parameter in input"
+    ) (ProcessState_ 0 Dict.empty Nothing) model
+    |> Result.map .functionEntry

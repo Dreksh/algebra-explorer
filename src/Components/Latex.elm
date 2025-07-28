@@ -1,4 +1,4 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, unparse, symbolToStr, decoder, encode)
+module Components.Latex exposing (Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, decoder, encode)
 
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -26,6 +26,18 @@ type Symbol =
     | CrossMultiplcation
     | Division
     | Integration
+
+getState: Part a -> a
+getState p = case p of
+    Fraction e _ _ -> e
+    Text e _ -> e
+    SymbolPart e _ -> e
+    Superscript e _ -> e
+    Subscript e _ -> e
+    Bracket e _ -> e
+    Sqrt e _ -> e
+    Argument e _ -> e
+    Param e _ -> e
 
 map: (a -> b) -> Model a -> Model b
 map convert = List.map (\root -> case root of
@@ -132,7 +144,9 @@ extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
         Argument _ arg -> if Set.member arg found
             then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
             else Ok (Set.insert arg found, max m arg)
-        Param _ arg -> Ok (Set.insert arg found, max m arg)
+        Param _ arg -> if Set.member arg found
+            then Err ("Param number " ++ String.fromInt arg ++ " is repeated")
+            else Ok (Set.insert arg found, max m arg)
     )
 
 modelParser_: Parser.Parser (Model ())
