@@ -1,12 +1,12 @@
 module UI.HtmlEvent exposing (
     onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onSubmitField, onSubmitForm,
-    onPointerCapture, onPointerMove)
+    onPointerCapture, onPointerMove, onKeyDown)
 
 -- Event is needed to block the js events from propagating upwards
 
 import Html
 import Html.Events exposing(custom, preventDefaultOn, stopPropagationOn)
-import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, string, succeed, value)
+import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, map3, string, succeed, value)
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
@@ -48,10 +48,18 @@ onPointerCapture converter activate = custom "pointerdown"
         clientPos_
     )
 
-
 onPointerMove: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
 onPointerMove converter move cancel = let pointerId = field "pointerId" value in
     [   custom "pointermove" (map2 (\pid input -> {message = move pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId clientPos_)
     ,   custom "pointerup" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ]
+
+onKeyDown: ((String, Bool, Bool) -> msg) -> Html.Attribute msg
+onKeyDown event = custom "keydown"
+    (   map3
+        (\key shift cmd -> {message = event (key, shift, cmd), stopPropagation = True, preventDefault = True})
+        (field "key" string)
+        (field "shiftKey" bool)
+        (field "metaKey" bool)
+    )

@@ -43,6 +43,7 @@ type Event =
     Click Input.Entry
     | Submit
     | ShowOptions
+    | InputEvent Input.Event
 
 defaultOptions_: List Selection
 defaultOptions_ =
@@ -138,6 +139,7 @@ update tracker funcDict event model = case event of
         Just (id, width, height) ->
             let (newH, newT) = Animation.setEase tracker maxHeight_ height in
                 ({model | current = Just (id, width, newH)}, Ok Nothing, newT)
+    InputEvent e -> ({model | input = Input.update e model.input}, Ok Nothing, tracker)
 
 view: (Event -> msg) -> Model -> List (String, Html.Html msg)
 view converter model =
@@ -159,10 +161,9 @@ createView_ converter model inputNum width height =
             ,   HtmlEvent.onSubmitField "equation" (\_ -> Submit)
             ]
             [   Icon.equation []
-            ,   Input.view
+            ,   Input.view InputEvent
                 [ name "equation"
                 , id "textInput"
-                , placeholder "Type an equation to solve"
                 , HtmlEvent.onFocus ShowOptions
                 ]
                 model.input

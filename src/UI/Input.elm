@@ -1,8 +1,8 @@
-module UI.Input exposing (Model, Entry, init, set, view, toTree)
+module UI.Input exposing (Model, Event, Entry, init, update, set, view, toTree)
 
 import Dict
 import Html
-import Html.Attributes exposing (class, name, type_)
+import Html.Attributes exposing (class, name, style, type_)
 -- Ours
 import Helper
 import Algo.Matcher as Matcher
@@ -11,6 +11,7 @@ import Components.Latex as Latex
 import Components.Rules as Rules
 import UI.Animation as Animation
 import UI.Display as Display
+import UI.HtmlEvent as HtmlEvent
 import UI.MathIcon as MathIcon
 
 -- a scope is which function + parameter number they belong to
@@ -34,6 +35,7 @@ type alias Model =
     ,   functionInput: Maybe String
     ,   cursor: Maybe CursorPosition
     }
+type Event = Key (String, Bool, Bool)
 
 init: Model
 init =
@@ -49,12 +51,43 @@ set entry =
     ,   cursor = Nothing
     }
 
-view: List (Html.Attribute msg) -> Model -> Html.Html msg
-view attr model = Html.div [class "mathInput"]
-    [   MathIcon.static [] model.entry.latex
-    ,   Html.input
-        (type_ "textarea" :: attr)
+update: Event -> Model -> Model
+update event model = case event of
+    Key e -> let entry = model.entry in
+        let _ = Debug.log "keyPressed" e in case e of
+        (c, shift, False) -> if String.length c == 1
+            then case String.uncons c of
+                Nothing -> model
+                Just (char, _) -> if char >= 'a' && char <= 'z'
+                    then if shift
+                        then {model | entry = {entry | latex = appendString_ (Char.toLocaleUpper char |> String.fromChar) entry.latex} }
+                        else {model | entry = {entry | latex = appendString_ c entry.latex} }
+                    else model
+            else model
+        _ -> model
+
+appendString_: String -> Latex.Model {immutable: Bool, scope: Scope_} -> Latex.Model {immutable: Bool, scope: Scope_}
+appendString_ str latex =
+    let
+        lastIndex = List.length latex - 1
+        (front,last) = (List.take lastIndex latex, List.drop lastIndex latex)
+    in
+        case last of
+            [] -> front ++ [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} str]
+            (x::_) -> case x of
+                Latex.Text e prev -> front ++ [Latex.Text e (prev ++ str)]
+                _ -> latex ++ [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} str]
+
+view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html.Html msg
+view convert attr model = Html.div [class "mathInput"]
+    [   Html.input
+        (   [   type_ "textarea"
+            ,   HtmlEvent.onKeyDown (Key >> convert)
+            ]
+        ++ attr
+        )
         []
+    ,   MathIcon.static [style "pointer-events" "none"] model.entry.latex
     ]
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model -> Result String Display.FullEquation
