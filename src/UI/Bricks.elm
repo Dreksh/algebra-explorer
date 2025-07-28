@@ -34,8 +34,8 @@ type alias Model =
 smoothTime_: Float
 smoothTime_ = 750
 
-splitDeclarativeNodesFlag_: Bool
-splitDeclarativeNodesFlag_ = True
+splitDeclarativeNodeFlag_: Bool
+splitDeclarativeNodeFlag_ = True
 
 init: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> (Model, Animation.Tracker)
 init tracker root =
@@ -65,16 +65,11 @@ view createAttrs model =
     -- TODO: can pass in some extra params here to allow dragging to move the node with cursor
     let
         -- we want ids that exist to be drawn on top, so make sure not visible ones are drawn first
-        sortedRects = model.rects |> Dict.toList |> List.sortWith (\((id, id2), irect) ((jd, jd2), jrect) ->
-            case (irect.visible, jrect.visible) of
-                (False, False) -> EQ
-                (True, False) -> GT
-                (False, True) -> LT
-                (True, True) -> compare (id, id2) (jd, jd2)
-                -- DeclarativeNodes should have low ids so this should place them behind
-            )
+        -- Dicts are already sorted on the keys by default, and DeclarativeNodes should have low ids
+        -- so this should place them earlier in the SVG children list, appearing behind other visible elements
+        (visible, invisible) = model.rects |> Dict.toList |> List.partition (\(_, rect) -> rect.visible)
 
-        bricks = sortedRects |> List.map (\((id, _), rect) ->
+        bricks = invisible ++ visible |> List.map (\((id, _), rect) ->
             let
                 attrs = createAttrs id rect.commutable
                 (blX, blY) = Animation.current rect.bottomLeft
@@ -99,8 +94,8 @@ updateTree tracker root model =
 calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict (Int, Int) Rect -> (Dict.Dict (Int, Int) Rect, Animation.Vector2, Animation.Tracker)
 calculateTree_ animation root rects =
     let
-        (grid, _) = stackRecursive_ 0 root ({items = Dict.empty, lines = Array.empty}, -1)
-        items = Dict.foldl expandDeclarativeItems Dict.empty grid.items
+        grid = stack root
+        (declID, items) = distributeDeclarative grid
 
         -- don't tween if they aren't visible
         oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
@@ -111,9 +106,9 @@ calculateTree_ animation root rects =
 
         (visibleRects, newAnimation, easedIds) = items |> Dict.foldl (\(id, id2) item (foldRects, a0, foldEased) ->
             let
-                (offset, opTarget) = case (splitDeclarativeNodesFlag_, item.declarative) of
-                    (True, Just _) -> ((0, 0.5), 0.4)  -- move DeclarativeNodes up a bit to differentiate them from children
-                    _ -> ((0, 0), 1)
+                (offset, opTarget) = if id == declID
+                    then ((0, 0.5), 0.4)  -- move DeclarativeNodes up a bit to differentiate them from children
+                    else ((0, 0), 1)
 
                 blTarget = Animation.addVector2 (getColX item.colStart grid.lines, toFloat item.rowStart) offset
                 trTarget = Animation.addVector2 (getColX item.colEnd grid.lines, toFloat item.rowEnd) offset
@@ -163,15 +158,15 @@ calculateTree_ animation root rects =
             ) (Dict.empty, animation, Set.empty)
 
         -- need to keep deleted nodes in order to animate them away
-        (leavingRects, finalA) = oldRects |> Dict.foldl (\(id, id2) rect (foldRects, a) ->
-            if Dict.member (id, id2) foldRects || Set.member (id, id2) easedIds
+        (leavingRects, finalA) = oldRects |> Dict.foldl (\id rect (foldRects, a) ->
+            if Dict.member id foldRects || Set.member id easedIds
             then (foldRects, a)
             else
                 let
                     (op, a1) = Animation.setEase a 0 rect.opacity
                     leavingRect = { rect | visible = False, opacity = op }
                 in
-                    (Dict.insert (id, id2) leavingRect foldRects, a1)
+                    (Dict.insert id leavingRect foldRects, a1)
             ) (visibleRects, newAnimation)
 
         viewBox = visibleRects |> Dict.foldl (\_ rect (foldX, foldY) ->
@@ -185,41 +180,43 @@ calculateTree_ animation root rects =
 
 
 -- this takes a GridItem from a DeclarativeNode and splits it into multiple GridItems to place between each child
--- meant to be used with Dict.foldl
-expandDeclarativeItems: Int -> GridItem -> Dict.Dict (Int, Int) GridItem -> Dict.Dict (Int, Int) GridItem
-expandDeclarativeItems id item foldDict =
-    case (splitDeclarativeNodesFlag_, item.declarative) of
-        (True, Just children) -> case List.head children of
-            Nothing -> foldDict  -- this should never happen since DeclarativeNode should have a child
-            Just head -> (List.foldl
-                (\(colStart, colEnd) ((prevColStart, prevColEnd), id2, foldDict2) ->
-                    (   (colStart, colEnd)
-                    ,   id2 + 1
-                    ,   Dict.insert (id, id2) { item | colStart = prevColEnd, colEnd = colStart } foldDict2
+-- returns the index of the DeclarativeNode and a new Dict of items with compound keys
+distributeDeclarative: Grid -> (Int, Dict.Dict (Int, Int) GridItem)
+distributeDeclarative grid =
+    let
+        nonDeclItems = grid.items |> Dict.foldl (\id item foldDict -> foldDict |> Dict.insert (id, 0) item) Dict.empty
+    in case grid.declarative of
+        Nothing -> (-1, nonDeclItems)
+        Just declItem -> case declItem.commutable of
+            Nothing -> (-1, nonDeclItems)  -- this should never happen since we should always set the commutable field
+            Just (id, ranges) -> case List.head ranges of
+                Nothing -> (-1, nonDeclItems)  -- this should never happen since DeclarativeNode always needs children
+                Just head -> (List.tail ranges |> Maybe.withDefault []) |> List.foldl
+                    (\(colStart, colEnd) ((prevColStart, prevColEnd), id2, foldItems) ->
+                        (   (colStart, colEnd)
+                        ,   id2 + 1
+                        ,   foldItems |> Dict.insert (id, id2) { declItem | colStart = prevColEnd, colEnd = colStart }
+                        )
                     )
-                )
-                (head, 0, foldDict)
-                (List.tail children |> Maybe.withDefault [])
-                )
-                |> (\(_, _, expanded) -> expanded)
+                    (head, 0, nonDeclItems)
+                    |> (\(_, _, items) -> (id, items))
 
-        _ -> Dict.insert (id, 0) item foldDict
-
+type alias GridText = {frame: Latex.Model (Matcher.State Animation.State), scale: Float}
 
 type alias GridItem =
     {   prevID: Int
-    ,   text: {frame: Latex.Model (Matcher.State Animation.State), scale: Float}
+    ,   text: GridText
     ,   colStart: Int
     ,   colEnd: Int
     ,   rowStart: Int
     ,   rowEnd: Int
     ,   commutable: Maybe (Int, List (Int, Int))  -- nth-child index, siblings' (colStart, colEnd)
-    ,   declarative: Maybe (List (Int, Int))  -- children's (colStart, colEnd)
     }
 
 type alias Grid =
     {   items: Dict.Dict Int GridItem
     ,   lines: Array.Array Float  -- only need column lines because children only nest in the x-axis
+    ,   declarative: Maybe GridItem  -- for DeclarativeNode, reuses commutable as child ranges
     }
 
 -- getColX returns the x-component of the column's right-most point
@@ -227,89 +224,120 @@ type alias Grid =
 getColX: Int -> Array.Array Float -> Float
 getColX col = Array.get col >> Maybe.withDefault 0
 
+appendLine: Float -> Array.Array Float -> Array.Array Float
+appendLine width array =
+    let
+        colEnd = (Array.length array) - 1
+        prevWidth = getColX colEnd array
+    in Array.push (prevWidth + width) array
+
 textWidth_: Float
 textWidth_ = 0.5
 
-stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int) -> (Grid, Int)
-stackRecursive_ depth node (grid, colStart) =
+extractText_: Math.Tree (Matcher.State Animation.State) -> (GridText, Float)
+extractText_ node =
     let
         latex = Rules.toSymbol .function node
         textFrame = MathIcon.latexToFrames latex
         textHeight = (Tuple.second textFrame.botRight) - (Tuple.second textFrame.topLeft)
         textScale = textWidth_ / textHeight
         width = (Tuple.first textFrame.botRight)*textScale + 2*textWidth_ -- Add a char's width on either side
-        insertItem colEnd declarative dict =
+    in
+        ({frame = latex, scale = textScale}, width)
+
+stack: Math.Tree (Matcher.State Animation.State) -> Grid
+stack root = let initialGrid = (Grid Dict.empty Array.empty Nothing, -1) in
+    case (splitDeclarativeNodeFlag_, root) of
+        (True, Math.DeclarativeNode n) -> let (text, width) = extractText_ root in
+            n.children |> List.foldl (\child ((foldGrid, foldColEnd), nthChild, ranges) ->
+                let
+                    -- DeclarativeNode should only ever be the root
+                    (childGrid, childColEnd) = stackRecursive_ 0 child (foldGrid, foldColEnd)
+
+                    -- declarative nodes need a column of space between each child
+                    -- if condition prevents one dangling off the right side
+                    filledGrid = if nthChild < (List.length n.children) - 1
+                        then { childGrid | lines = appendLine width childGrid.lines }
+                        else childGrid
+
+                    -- need ranges of children to determine where to place in-between nodes
+                    range = (foldColEnd, childColEnd)
+                in
+                    ((filledGrid, childColEnd+1), nthChild+1, range :: ranges)
+                ) (initialGrid, 0, [])
+            |> (\((grid, colEnd), _, revRange) ->
+                let
+                    childRanges = List.reverse revRange
+                    newItems = updateCommutativeChildren grid.items childRanges n.children
+                    declarative = Just
+                        (   GridItem
+                            (n.state |> Matcher.getState |> .prevID)
+                            text 0 (colEnd-1) 0 1
+                            (Just (n.state |> Matcher.getID, childRanges))
+                            -- reuse the commutable field because it fits our use case perfectly
+                        )
+                in
+                    { grid | items = newItems, declarative = declarative }
+                )
+        _ -> stackRecursive_ 0 root initialGrid |> Tuple.first
+
+updateCommutativeChildren: Dict.Dict Int GridItem -> List (Int, Int) -> List (Math.Tree (Matcher.State Animation.State)) -> Dict.Dict Int GridItem
+updateCommutativeChildren items siblingRanges children =
+    children |> List.foldl (\child (foldGrid, nthChild) ->
+        let childId = Math.getState child |> Matcher.getID
+        in  (   Dict.update childId (Maybe.map (\entry -> {entry | commutable = Just (nthChild, siblingRanges)})) foldGrid
+            ,   nthChild + 1
+            )
+    ) (items, 0)
+    |> Tuple.first
+
+stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int) -> (Grid, Int)
+stackRecursive_ depth node (grid, colStart) =
+    let
+        (text, width) = extractText_ node
+        insertItem colEnd dict =
             GridItem
             (Math.getState node |> Matcher.getState |> .prevID)
-            {frame = latex, scale = textScale} colStart colEnd depth (depth + 1) Nothing declarative
+            text colStart colEnd depth (depth + 1) Nothing
             |> \item -> Dict.insert (Math.getState node |> Matcher.getID) item dict
-
-        appendLine array =
-            let
-                colEnd = (Array.length array) - 1
-                prevWidth = getColX colEnd array
-            in Array.push (prevWidth + width) array
     in
         case Math.getChildren node of
             [] ->
                 let colEnd = colStart + 1
                 in
                 (   { grid
-                    | items = insertItem colEnd Nothing grid.items
-                    , lines = appendLine grid.lines
+                    | items = insertItem colEnd grid.items
+                    , lines = appendLine width grid.lines
                     }
                 ,   colEnd
                 )
-            children -> List.foldl (\child ((foldGrid, foldCol), nthChild, list) ->
-                let
-                    -- declarative nodes are between children so
-                    depthOffset = case (splitDeclarativeNodesFlag_, node) of
-                        (True, Math.DeclarativeNode _)  -> 0
-                        _ -> 1
-
-                    (newGrid, newCol) = stackRecursive_ (depth+depthOffset) child (foldGrid, foldCol)
-
-                    -- declarative nodes need a column of space between each child
-                    (newNewGrid, newNewCol) = case (splitDeclarativeNodesFlag_, node, nthChild>0) of
-                        (True, Math.DeclarativeNode _, True)  -> ({ newGrid | lines = appendLine newGrid.lines }, newCol+1)
-                        _ -> (newGrid, newCol)
-                in
-                    ((newNewGrid, newNewCol), nthChild-1, (foldCol, newCol) :: list)
-                ) ((grid, colStart), (List.length children)-1, []) children
-                |> \((childrenGrid, colEnd), _, revRange) ->
-                    let
-                        lineStart = (getColX colStart childrenGrid.lines)
-                        lineEnd = (getColX colEnd childrenGrid.lines)
-                        childrenWidth = lineEnd - lineStart
-                    in
+            children -> List.foldl (\elem ((input, prevIndex), list) ->
+                    let (cGrid, cEnd) = stackRecursive_ (depth+1) elem (input, prevIndex)
+                    in ((cGrid, cEnd), (prevIndex, cEnd) :: list)
+                ) ((grid, colStart), []) children
+                |> \((childrenGrid, colEnd), revRange) ->
                     (   {   childrenGrid
                         |   items =
                                 let
-                                    declarative = case node of
-                                        Math.DeclarativeNode _ -> Just (List.reverse revRange)
-                                        _ -> Nothing
-
-                                    added = insertItem colEnd declarative childrenGrid.items
-
-                                    updateChildren allChildren = let childRanges = List.reverse revRange in
-                                        List.foldl (\child (dict, index) -> let num = Math.getState child |> Matcher.getID in
-                                            (   Dict.update num (Maybe.map (\entry -> {entry | commutable = Just (index, childRanges)})) dict
-                                            ,   index + 1
-                                            )
-                                        ) (added, 0) allChildren
-                                        |> Tuple.first
-                                in
-                                case node of
+                                    added = insertItem colEnd childrenGrid.items
+                                    updateChildren = updateCommutativeChildren added (List.reverse revRange)
+                                in case node of
                                     Math.BinaryNode n -> if n.commutative then updateChildren n.children else added
                                     Math.DeclarativeNode n -> updateChildren n.children -- Assume it's commutative for now (until we introduce inequalities)
                                     _ -> added
-                        ,   lines = if width <= childrenWidth then childrenGrid.lines
-                                -- if the parent is wider than all its children, then expand all contained columns to fit inside parent
-                                else Array.indexedMap (\col line ->
+                        ,   lines =
+                                let
+                                    childrenXMin = (getColX colStart childrenGrid.lines)
+                                    childrenXMax = (getColX colEnd childrenGrid.lines)
+                                    childrenWidth = childrenXMax - childrenXMin
+                                in
+                                    -- if the parent is wider than all its children, then expand all contained columns to fit inside parent
+                                    if width <= childrenWidth then childrenGrid.lines
+                                    else Array.indexedMap (\col line ->
                                         if col > colStart
-                                        then lineStart + (line - lineStart) * (width / childrenWidth)
+                                        then childrenXMin + (line - childrenXMin) * (width / childrenWidth)
                                         else line
-                                    ) childrenGrid.lines
+                                        ) childrenGrid.lines
                         }
                     ,   colEnd
                     )
