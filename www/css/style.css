@@ -378,11 +378,11 @@ dialog svg {
 .brick.selected > .brickRect {
     fill: var(--color-selected);
 }
-.brick.draggable:active > .brickRect {
+.brick.commutable:active > .brickRect {
     stroke: var(--color-drag);
     cursor: grabbing;
 }
-.brick.draggable > .brickRect {
+.brick.commutable > .brickRect {
     cursor: ew-resize;
 }
 .stroke {
