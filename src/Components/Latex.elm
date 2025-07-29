@@ -10,7 +10,7 @@ import Helper
 type alias Model elem = List (Part elem)
 
 type Part elem =
-    Fraction elem (Model elem) (Model elem)
+    Fraction elem (Model elem) elem (Model elem)
     | Text elem String
     | SymbolPart elem Symbol
     | Superscript elem (Model elem)
@@ -27,9 +27,10 @@ type Symbol =
     | Division
     | Integration
 
+-- note that fraction doesn't reveal the other state of the bottom fraction
 getState: Part a -> a
 getState p = case p of
-    Fraction e _ _ -> e
+    Fraction e _ _ _ -> e
     Text e _ -> e
     SymbolPart e _ -> e
     Superscript e _ -> e
@@ -41,7 +42,7 @@ getState p = case p of
 
 map: (a -> b) -> Model a -> Model b
 map convert = List.map (\root -> case root of
-        Fraction e top bot -> Fraction (convert e) (map convert top) (map convert bot)
+        Fraction e top e2 bot -> Fraction (convert e) (map convert top) (convert e2) (map convert bot)
         Text e str -> Text (convert e) str
         SymbolPart e symbol -> SymbolPart (convert e) symbol
         Superscript e inner -> Superscript (convert e) (map convert inner)
@@ -55,9 +56,10 @@ map convert = List.map (\root -> case root of
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
 decoder inner = Decode.field "type" Decode.string
     |> Decode.andThen (\str -> case str of
-        "fraction" -> Decode.map3 Fraction
-            (Decode.field "state" inner)
+        "fraction" -> Decode.map4 Fraction
+            (Decode.field "topState" inner)
             (Decode.field "top" (Decode.lazy (\_ -> decoder inner)))
+            (Decode.field "botState" inner)
             (Decode.field "bot" (Decode.lazy (\_ -> decoder inner)))
         "text" -> Decode.map2 Text (Decode.field "state" inner) (Decode.field "text" Decode.string)
         "symbol" -> Decode.map2 SymbolPart (Decode.field "state" inner) (Decode.field "symbol" symbolDecoder_)
@@ -72,7 +74,9 @@ decoder inner = Decode.field "type" Decode.string
 
 encode: (s -> Encode.Value) -> Model s -> Encode.Value
 encode convert = Encode.list (\n -> case n of
-        Fraction e top bot -> Encode.object [("type",Encode.string "fraction"), ("state",convert e),("top",encode convert top),("bot",encode convert bot)]
+        Fraction e top e2 bot -> Encode.object
+            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot)
+            ,("topState",convert e),("botState", convert e2)]
         Text e str -> Encode.object [("type",Encode.string "text"),("state", convert e),("text",Encode.string str)]
         SymbolPart e symbol -> Encode.object [("type",Encode.string "symbol"),("state", convert e),("symbol",encodeSymbol_ symbol)]
         Superscript e inner -> Encode.object [("type",Encode.string "sup"),("state", convert e),("inner",encode convert inner)]
@@ -109,7 +113,7 @@ encodeSymbol_ = symbolToStr >> Encode.string
 
 unparse: Model s -> String
 unparse = List.map (\token -> case token of
-    Fraction _ up down -> "\\frac{" ++ unparse up ++ "}{" ++ unparse down ++ "}"
+    Fraction _ up _ down -> "\\frac{" ++ unparse up ++ "}{" ++ unparse down ++ "}"
     Text _ t -> t ++ " "
     SymbolPart _ s -> "\\" ++ symbolToStr s ++ " "
     Superscript _ inner -> "_{" ++ unparse inner ++ "}"
@@ -133,7 +137,7 @@ parse str = case Parser.run (modelParser_ |. Parser.end) str of
 
 extractArgs_: (Set.Set Int, Int) -> Model () -> Result String (Set.Set Int, Int)
 extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
-        Fraction _ top bot -> extractArgs_ (found, m) top
+        Fraction _ top _ bot -> extractArgs_ (found, m) top
             |> Result.andThen (\b -> extractArgs_ b bot)
         Text _ _ -> Ok (found, m)
         SymbolPart _ _ -> Ok (found, m)
@@ -178,7 +182,7 @@ valueParser_ = Parser.oneOf
     [   Parser.succeed identity
         |. Parser.token "\\"
         |= Parser.oneOf
-            [   Parser.succeed (Fraction ()) |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
+            [   Parser.succeed (\top -> Fraction () top ()) |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
             ,   Parser.succeed (Sqrt ()) |. Parser.keyword "sqrt" |= bracketParser_
             ,   Parser.succeed (Argument ()) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
             ,   Parser.succeed (Param ()) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"

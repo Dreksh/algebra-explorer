@@ -246,8 +246,8 @@ toLatex_ converter complete tree =
 
 substituteArgs_: (state -> Maybe FunctionProp) -> Bool -> Matcher.State state -> List (Math.Tree (Matcher.State state)) -> Latex.Model () -> Latex.Model (Matcher.State state)
 substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem of
-    Latex.Fraction _ top bottom ->
-        [Latex.Fraction state (substituteArgs_ convert complete state args top) (substituteArgs_ convert complete state args bottom)]
+    Latex.Fraction _ top _ bottom ->
+        [Latex.Fraction state (substituteArgs_ convert complete state args top) state (substituteArgs_ convert complete state args bottom)]
     Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ convert complete state args inner)]
     Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert complete state args inner)]
     Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert complete state args inner)]

@@ -153,13 +153,13 @@ iteratorToPart_ it =
     case it.remaining of
         [] -> (it, Nothing)
         (current::next) -> case current of
-            Latex.Fraction (s, seen) top bot -> if seen
+            Latex.Fraction (s, seen) top botS bot -> if seen
                 then if List.isEmpty bot then result next s " )"
                     else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
-                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) s " /"
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top botS innerIt.remaining :: next}, part)
+                else if List.isEmpty top then result (Latex.Fraction (s, True) top botS bot :: next) s " /"
                     else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining botS bot :: next}, part)
             Latex.Text (s, _) text -> result next s text
             Latex.SymbolPart (s, _) symbol -> result next s (" " ++ Latex.symbolToStr symbol)
             Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
@@ -243,7 +243,7 @@ newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat anim
 type FrameData state =
     BaseFrame {strokes: List Stroke, elem: state}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
-    | Cursor {top: Float, bot: Float, elem: state} -- elem is a placeholder, we don't actually rely on it
+    | Cursor {elem: state} -- elem is a placeholder, we don't actually rely on it
 type alias Frame state =
     {   data: FrameData state
     ,   topLeft: Vector2
@@ -270,9 +270,9 @@ latexToFramesWithCursor_ cursorPosition = List.foldl
         let
             (insertion, next, children) = case pos of
                 [] -> (NoCursor, [], [])
-                [current] -> if current < 0
+                [current] -> if current <= 0
                     then (InFront, [], [])
-                    else if current == 0
+                    else if current == 1
                     then (Behind, [], [])
                     else (NoCursor, [current-1], [])
                 (first::other) -> if first == 0
@@ -286,10 +286,7 @@ latexToFramesWithCursor_ cursorPosition = List.foldl
                 newBotRight = Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
                 totalFrames = {frame = new, origin = offset, scale = 1} :: list
                 newCursorFrame xoffset =
-                    {   frame = {   data = Cursor {top = newRef.topY, bot = newRef.botY, elem = Latex.getState elem}
-                        , topLeft = (0,ref.topY)
-                        , botRight = (0,ref.botY)
-                        }
+                    {   frame = {data = Cursor {elem = Latex.getState elem}, topLeft = (0,newRef.topY), botRight = (0,newRef.botY)}
                     ,   origin = (xoffset, 0)
                     ,   scale = 1
                     }
@@ -310,7 +307,7 @@ latexToFramesWithCursor_ cursorPosition = List.foldl
 
 symbolsToFrames_: List Int -> Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ cursor ref elem = case elem of
-    Latex.Fraction s top bottom ->
+    Latex.Fraction s top _ bottom ->
         let
             innerCursor num = case cursor of
                 (now::next) -> if now == num then next else []
@@ -436,7 +433,7 @@ processFrame_ combine origin scale initial frame = case frame.data of
             result
             elem.frame
         ) initial list
-    Cursor s -> combine s.elem [Move (0,s.top), Line (0,s.bot)] origin scale True initial
+    Cursor s -> combine s.elem [Move (0,Tuple.second frame.topLeft), Line (0,Tuple.second frame.botRight)] origin scale True initial
 
 {- toStrokes
 
@@ -463,13 +460,15 @@ symbolStrokes_ s str = case str of
 wordStrokes_: Maybe Int -> state -> String -> Frame state
 wordStrokes_ cursorPos s str = if String.isEmpty str
     -- This is for inputs, where we're waiting for something to be written
-    then {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, 0.1), botRight = (0.4,0.5)}
+    then {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (0.4,0.5)}
     else String.foldl (\c res -> case res of
             Err err -> Err err
             Ok ((list, cursorX), ((_, top), (right, bot)), countdown) -> charStrokes_ c
                 |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) -> case countdown of
                     Nothing -> ((rightShiftStrokes_ right strokes ++ list, cursorX), ((0, min top newTop), (right + newRight, max bot newBot)), Nothing)
                     Just count -> if count <= 0
+                        then ((rightShiftStrokes_ right strokes ++ list, Just right), ((0, min top newTop), (right + newRight, max bot newBot)), Nothing)
+                        else if count == 1
                         then ((rightShiftStrokes_ right strokes ++ list, Just (right + newRight)), ((0, min top newTop), (right + newRight, max bot newBot)), Nothing)
                         else ((rightShiftStrokes_ right strokes ++ list, Nothing), ((0, min top newTop), (right + newRight, max bot newBot)), Just (count - 1))
                 )
@@ -481,10 +480,7 @@ wordStrokes_ cursorPos s str = if String.isEmpty str
                     Just pos ->
                         {   data = Position
                             [   {frame = wordFrame, origin = (0,0), scale = 1}
-                            ,   {frame = { data = Cursor {top = Tuple.second topLeft, bot = Tuple.second botRight, elem = s} |> Debug.log "text"
-                                    , topLeft = (0, Tuple.second topLeft)
-                                    , botRight = (0, Tuple.second botRight)
-                                    }
+                            ,   {frame = { data = Cursor {elem = s}, topLeft = (0, Tuple.second topLeft), botRight = (0, Tuple.second botRight)}
                                 , origin = (pos, 0)
                                 , scale = 1
                                 }
@@ -593,7 +589,10 @@ staticWithCursor attrs position model = let frames = latexToFramesWithCursor_ po
         Svg.path (if isCursor then (class "cursor" :: pathAttr) else pathAttr ) [] :: list
         ) (0,0) 20 [] frames
     |> \children ->  Svg.svg
-        (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
+        (   toViewBox_
+            -- Add horizontal shift to allow for cursor to be displayed
+            (Animation.scaleVector2 20 frames.topLeft |> Animation.addVector2 (-1,0))
+            (Animation.scaleVector2 20 frames.botRight |> Animation.addVector2 (1,0))
         ::  attrs
         )
         (   Svg.style [] [Svg.text cursorStyle]

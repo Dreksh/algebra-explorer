@@ -1,4 +1,4 @@
-module UI.InputWithHistory exposing (Model, Event, init, update, view, advance, open, close, decoder, encode)
+module UI.InputWithHistory exposing (Model, Event(..), init, update, view, advance, open, close)
 
 import Dict
 import Html
@@ -27,12 +27,13 @@ maxHeight_ = 50
 animationDuration_: Float
 animationDuration_ = 750
 
-type alias Model =
+type alias Model msg =
     {   options: List Selection
     ,   openCount: Int
     ,   input: Input.Model
     ,   current: Maybe (Int, Animation.EaseState Float, Animation.EaseState Float)
     ,   closing: Dict.Dict Int (Animation.EaseState Float, Animation.EaseState Float)
+    ,   focusCmd: String -> Cmd msg
     }
 
 type Selection =
@@ -42,7 +43,6 @@ type Selection =
 type Event =
     Click Input.Entry
     | Submit
-    | ShowOptions
     | InputEvent Input.Event
 
 defaultOptions_: List Selection
@@ -68,11 +68,11 @@ defaultOptions_ =
     ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "4x+3y=11"], funcName = Dict.empty}
     ]
 
-init: Bool -> Model
-init show =
+init: Bool -> ((Float, Float) -> Cmd Input.Event) -> (String -> Cmd msg) -> Model msg
+init show mouseCmd focusCmd =
     {   options = defaultOptions_
     ,   openCount = if show then 1 else 0
-    ,   input = Input.init
+    ,   input = Input.init mouseCmd
     ,   current = if show
             then Just
                 (   0
@@ -81,9 +81,10 @@ init show =
                 )
             else Nothing
     ,   closing = Dict.empty
+    ,   focusCmd = focusCmd
     }
 
-advance: Float -> Model -> Model
+advance: Float -> Model msg -> Model msg
 advance time model =
     {   model
     |   current = model.current
@@ -93,7 +94,7 @@ advance time model =
         |> Dict.filter (\_ (w,h) -> Animation.current h /= 0 || Animation.current w /= 0)
     }
 
-open: Animation.Tracker -> Model -> (Model, Animation.Tracker)
+open: Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
 open tracker model = case model.current of
     Just _ -> (model, tracker)
     Nothing -> let (newEase, newT) = Animation.newEaseFloat animationDuration_ 0 |> Animation.setEase tracker maxWidth_ in
@@ -104,7 +105,7 @@ open tracker model = case model.current of
         ,   newT
         )
 
-close: Animation.Tracker -> Model -> (Model, Animation.Tracker)
+close: Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
 close tracker model = case model.current of
     Nothing -> (model, tracker)
     Just (id, width, height) ->
@@ -115,33 +116,35 @@ close tracker model = case model.current of
             (   {   model
                 |   current = Nothing
                 ,   closing = Dict.insert id (newW, newH) model.closing
-                ,   input = Input.init
+                ,   input = Input.clear model.input
                 }
             , finalT
             )
 
-update: Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model -> (Model, Result String (Maybe Display.FullEquation), Animation.Tracker)
-update tracker funcDict event model = case event of
-    Click input -> ({model | input = Input.set input}, Ok Nothing, tracker)
+update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
+update convert tracker funcDict event model = case event of
+    Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "textInput")
     Submit -> case Input.toTree funcDict model.input of
-        Err err -> (model, Err err, tracker)
+        Err err -> ((model, tracker), Err err, Cmd.none)
         Ok tree -> let (newModel, newT) = close tracker model in
-            (   {   newModel
-                |   options = if List.isEmpty model.input.entry.latex
-                        then newModel.options
-                        else Previous model.input.entry :: newModel.options
-                }
+            (   (   {   newModel
+                    |   options = if List.isEmpty model.input.entry.latex
+                            then newModel.options
+                            else Previous model.input.entry :: newModel.options
+                    }
+                ,   newT
+                )
             ,   Ok (Just tree)
-            ,   newT
+            ,   Cmd.none
             )
-    ShowOptions -> case model.current of
-        Nothing -> (model, Ok Nothing, tracker)
-        Just (id, width, height) ->
-            let (newH, newT) = Animation.setEase tracker maxHeight_ height in
-                ({model | current = Just (id, width, newH)}, Ok Nothing, newT)
-    InputEvent e -> ({model | input = Input.update e model.input}, Ok Nothing, tracker)
+    InputEvent e -> let (inModel, inCmd) = Input.update e model.input in
+        case (e, model.current) of
+            (Input.ShowCursor, Just (id, width, height)) ->
+                let (newH, newT) = Animation.setEase tracker maxHeight_ height in
+                (({model | current = Just (id, width, newH), input = inModel}, newT), Ok Nothing, Cmd.map (InputEvent >> convert) inCmd)
+            _ -> (({model | input = inModel}, tracker), Ok Nothing, Cmd.map (InputEvent >> convert) inCmd)
 
-view: (Event -> msg) -> Model -> List (String, Html.Html msg)
+view: (Event -> msg) -> Model msg -> List (String, Html.Html msg)
 view converter model =
     Dict.toList model.closing
     |> List.map (\(id, (width, height)) -> createView_ converter model id width height)
@@ -149,7 +152,7 @@ view converter model =
         Nothing -> list
         Just (id, width, height) -> list ++ [createView_ converter model id width height]
 
-createView_: (Event -> msg) -> Model -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
+createView_: (Event -> msg) -> Model msg -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
 createView_ converter model inputNum width height =
     (   "textbar"++String.fromInt inputNum
     ,    Html.div
@@ -161,10 +164,9 @@ createView_ converter model inputNum width height =
             ,   HtmlEvent.onSubmitField "equation" (\_ -> Submit)
             ]
             [   Icon.equation []
-            ,   Input.view InputEvent
+            ,   Input.view InputEvent "mainInput"
                 [ name "equation"
                 , id "textInput"
-                , HtmlEvent.onFocus ShowOptions
                 ]
                 model.input
             ]
@@ -185,26 +187,4 @@ createView_ converter model inputNum width height =
             )
         ]
         |> Html.map converter
-    )
-
-encode: Model -> Encode.Value
-encode model = Encode.object
-    [   ("open", Encode.int model.openCount)
-    ,   ("current", case model.current of
-            Nothing -> Encode.null
-            Just (id, width, height) -> Encode.object
-                [   ("id", Encode.int id)
-                ,   ("width", Animation.target width |> Encode.float)
-                ,   ("height", Animation.target height |> Encode.float)
-                ]
-        )
-    ]
-
-decoder: Decode.Decoder Model
-decoder = Decode.map2 (\a b -> Model defaultOptions_ a Input.init b Dict.empty)
-    (Decode.field "open" Decode.int)
-    (Decode.maybe <| Decode.field "current" <| Decode.map3 (\a b c -> (a,b,c))
-        (Decode.field "id" <| Decode.int)
-        (Decode.field "width" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
-        (Decode.field "height" <| Decode.map (Animation.newEaseFloat animationDuration_) Decode.float)
     )

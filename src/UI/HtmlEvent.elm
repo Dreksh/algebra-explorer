@@ -1,5 +1,5 @@
 module UI.HtmlEvent exposing (
-    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onSubmitField, onSubmitForm,
+    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onBlur, onSubmitField, onSubmitForm,
     onPointerCapture, onPointerMove, onKeyDown)
 
 -- Event is needed to block the js events from propagating upwards
@@ -7,6 +7,7 @@ module UI.HtmlEvent exposing (
 import Html
 import Html.Events exposing(custom, preventDefaultOn, stopPropagationOn)
 import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, map3, string, succeed, value)
+import Set
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
@@ -22,6 +23,9 @@ onSubmit = Html.Events.onSubmit
 
 onFocus: msg -> Html.Attribute msg
 onFocus = Html.Events.onFocus
+
+onBlur: msg -> Html.Attribute msg
+onBlur = Html.Events.onBlur
 
 onSubmitField: String -> (String -> msg) -> Html.Attribute msg
 onSubmitField target event = preventDefaultOn "submit"
@@ -55,10 +59,18 @@ onPointerMove converter move cancel = let pointerId = field "pointerId" value in
     ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ]
 
+propagatableEvents_: Set.Set String
+propagatableEvents_ = Set.fromList ["Tab", "Escape"]
+
 onKeyDown: ((String, Bool, Bool) -> msg) -> Html.Attribute msg
 onKeyDown event = custom "keydown"
     (   map3
-        (\key shift cmd -> {message = event (key, shift, cmd), stopPropagation = True, preventDefault = True})
+        (\key shift cmd ->
+            {   message = event (key, shift, cmd)
+            ,   stopPropagation = Set.member key propagatableEvents_ |> not
+            ,   preventDefault = Set.member key propagatableEvents_ |> not
+            }
+        )
         (field "key" string)
         (field "shiftKey" bool)
         (field "metaKey" bool)
