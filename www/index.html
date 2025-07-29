@@ -55,20 +55,12 @@
                     cancelFunc();
                 }
             }();
-            let onLeave = function() {
-                return function(e) {
-                    app.ports.svgMouseEvent.send({"event": 2, "id": id, "x": startP.x, "y": startP.y, "time": Date.now() - start});
-                    cancelFunc();
-                }
-            }();
             cancelFunc = function() {
-                svgTarget.removeEventListener("mousemove", onMove);
-                svgTarget.removeEventListener("mouseup", onFinish);
-                svgTarget.removeEventListener("mouseleave", onLeave);
+                svgTarget.removeEventListener("mousemove", onMove, true);
+                svgTarget.removeEventListener("mouseup", onFinish, true);
             }
-            svgTarget.addEventListener("mousemove", onMove);
-            svgTarget.addEventListener("mouseup", onFinish);
-            svgTarget.addEventListener("mouseleave", onLeave);
+            svgTarget.addEventListener("mousemove", onMove, true);
+            svgTarget.addEventListener("mouseup", onFinish, true);
             // Send the start version
             app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});
         });
