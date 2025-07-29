@@ -157,6 +157,7 @@ span.space {
 .mathInput > svg {
     display: block;
     position: absolute;
+    margin: 0;
     top: 0;
     left: 0;
     height: 100%;

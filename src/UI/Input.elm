@@ -29,11 +29,16 @@ type alias Entry =
     ,   funcName: Dict.Dict Int String
     }
 type alias CursorPosition = List Int
+type Movement_ =
+    Up
+    | Down
+    | Left
+    | Right
 
 type alias Model =
     {   entry: Entry
     ,   functionInput: Maybe String
-    ,   cursor: Maybe CursorPosition
+    ,   cursor: CursorPosition
     }
 type Event = Key (String, Bool, Bool)
 
@@ -41,30 +46,55 @@ init: Model
 init =
     {   entry = {latex = [], funcName = Dict.empty}
     ,   functionInput = Nothing
-    ,   cursor = Nothing
+    ,   cursor = []
     }
 
 set: Entry -> Model
 set entry =
     {   entry = entry
     ,   functionInput = Nothing
-    ,   cursor = Nothing
+    ,   cursor = [List.length entry.latex - 1]
     }
+
+view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html.Html msg
+view convert attr model = Html.div [class "mathInput"]
+    [   Html.input
+        (   [   type_ "textarea"
+            ,   HtmlEvent.onKeyDown (Key >> convert)
+            ]
+        ++ attr
+        )
+        []
+    ,   MathIcon.staticWithCursor [style "pointer-events" "none"] model.cursor model.entry.latex
+    ]
+
+{- ## Updates -}
 
 update: Event -> Model -> Model
 update event model = case event of
     Key e -> let entry = model.entry in
         let _ = Debug.log "keyPressed" e in case e of
-        (c, shift, False) -> if String.length c == 1
+        (c, _, False) -> if String.length c == 1
             then case String.uncons c of
                 Nothing -> model
-                Just (char, _) -> if char >= 'a' && char <= 'z'
-                    then if shift
-                        then {model | entry = {entry | latex = appendString_ (Char.toLocaleUpper char |> String.fromChar) entry.latex} }
-                        else {model | entry = {entry | latex = appendString_ c entry.latex} }
+                Just (char, _) -> if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
+                    then {model | entry = {entry | latex = appendString_ c entry.latex} }
+                    else if String.contains c "0123456789 ."
+                    then {model | entry = {entry | latex = appendString_ c entry.latex} }
                     else model
             else model
+        ("z", False, True) -> model -- Undo
+        ("Z", True, True) -> model -- Redo
+        ("Backspace", _, _) -> model
+        ("Delete", _, _) -> model
+        ("ArrowRight", _, _) -> moveCursor_ Right model
+        ("ArrowDown", _, _) -> moveCursor_ Down model
+        ("ArrowLeft", _, _) -> moveCursor_ Left model
+        ("ArrowUp", _, _) -> moveCursor_ Up model
         _ -> model
+
+moveCursor_: Movement_ -> Model -> Model
+moveCursor_ movement model = model
 
 appendString_: String -> Latex.Model {immutable: Bool, scope: Scope_} -> Latex.Model {immutable: Bool, scope: Scope_}
 appendString_ str latex =
@@ -78,17 +108,7 @@ appendString_ str latex =
                 Latex.Text e prev -> front ++ [Latex.Text e (prev ++ str)]
                 _ -> latex ++ [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} str]
 
-view: (Event -> msg) -> List (Html.Attribute msg) -> Model -> Html.Html msg
-view convert attr model = Html.div [class "mathInput"]
-    [   Html.input
-        (   [   type_ "textarea"
-            ,   HtmlEvent.onKeyDown (Key >> convert)
-            ]
-        ++ attr
-        )
-        []
-    ,   MathIcon.static [style "pointer-events" "none"] model.entry.latex
-    ]
+{- ## For Interpreting the field -}
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model -> Result String Display.FullEquation
 toTree dict model = toStringDict_ model.entry.funcName 0 model.entry.latex

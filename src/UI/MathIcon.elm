@@ -1,9 +1,9 @@
-module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime, view, static, toSvgGroup)
+module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime, view, static, staticWithCursor, toSvgGroup)
 
 import Dict
 import Html
 import Svg
-import Svg.Attributes exposing (d, fill, opacity, stroke, strokeWidth, viewBox)
+import Svg.Attributes exposing (class, d, fill, opacity, stroke, strokeWidth, viewBox)
 -- Ours
 import Algo.BFS as BFS
 import Algo.Matcher as Matcher
@@ -218,7 +218,7 @@ toMatches_ inList =
     |> Tuple.first
 
 toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
-toAnimationDict_ scale = processFrame_ (\s strokes origin inScale dict -> let id = Matcher.getID s in
+toAnimationDict_ scale = processFrame_ (\s strokes origin inScale _ dict -> let id = Matcher.getID s in
         Dict.insert
         (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
         {strokes = strokes, origin = origin, scale = inScale}
@@ -243,11 +243,16 @@ newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat anim
 type FrameData state =
     BaseFrame {strokes: List Stroke, elem: state}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
+    | Cursor {top: Float, bot: Float, elem: state} -- elem is a placeholder, we don't actually rely on it
 type alias Frame state =
     {   data: FrameData state
     ,   topLeft: Vector2
     ,   botRight: Vector2
     }
+type CursorInsertion =
+    InFront
+    | Behind
+    | NoCursor
 
 type alias Ref =
     {   topX: Float -- how left (most cases)
@@ -257,26 +262,61 @@ type alias Ref =
     }
 
 latexToFrames: Latex.Model state -> Frame state
-latexToFrames = List.foldl
-    (\elem ((list, topLeft, botRight), ref) ->
-        symbolsToFrames_ ref elem
-        |> \(new, newRef) -> let offset = (max ref.topX ref.botX, 0) in
-            (   (   {frame = new, origin = offset, scale = 1} :: list
+latexToFrames = latexToFramesWithCursor_ []
+
+latexToFramesWithCursor_: List Int -> Latex.Model state -> Frame state
+latexToFramesWithCursor_ cursorPosition = List.foldl
+    (\elem ((list, topLeft, botRight), ref, pos) ->
+        let
+            (insertion, next, children) = case pos of
+                [] -> (NoCursor, [], [])
+                [current] -> if current < 0
+                    then (InFront, [], [])
+                    else if current == 0
+                    then (Behind, [], [])
+                    else (NoCursor, [current-1], [])
+                (first::other) -> if first == 0
+                    then (NoCursor, [], other)
+                    else (NoCursor, (first - 1 :: other), [])
+        in
+        symbolsToFrames_ children ref elem
+        |> \(new, newRef) ->
+            let
+                offset = (max ref.topX ref.botX, 0)
+                newBotRight = Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
+                totalFrames = {frame = new, origin = offset, scale = 1} :: list
+                newCursorFrame xoffset =
+                    {   frame = {   data = Cursor {top = newRef.topY, bot = newRef.botY, elem = Latex.getState elem}
+                        , topLeft = (0,ref.topY)
+                        , botRight = (0,ref.botY)
+                        }
+                    ,   origin = (xoffset, 0)
+                    ,   scale = 1
+                    }
+            in
+            (   (   case insertion of
+                    InFront -> newCursorFrame (Tuple.first offset) :: totalFrames
+                    Behind -> newCursorFrame (Tuple.first newBotRight) :: totalFrames
+                    NoCursor -> totalFrames
                 ,   Animation.minVector2 topLeft (Animation.addVector2 offset new.topLeft)
-                ,   Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
+                ,   newBotRight
                 )
             ,   newRef
+            ,   next
             )
     )
-    (([], (0,0), (0, 0)), {topX = 0, botX=0, topY = 0, botY = 0})
-    >> \((list, topLeft, botRight),_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
+    (([], (0,0), (0, 0)), {topX = 0, botX=0, topY = 0, botY = 0}, cursorPosition)
+    >> \((list, topLeft, botRight),_,_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
 
-symbolsToFrames_: Ref -> Latex.Part state -> (Frame state, Ref)
-symbolsToFrames_ ref elem = case elem of
+symbolsToFrames_: List Int -> Ref -> Latex.Part state -> (Frame state, Ref)
+symbolsToFrames_ cursor ref elem = case elem of
     Latex.Fraction s top bottom ->
         let
-            topFrame = latexToFrames top
-            botFrame = latexToFrames bottom
+            innerCursor num = case cursor of
+                (now::next) -> if now == num then next else []
+                _ -> []
+            topFrame = latexToFramesWithCursor_ (innerCursor 0) top
+            botFrame = latexToFramesWithCursor_ (innerCursor 1) bottom
             maxWidth = max (Tuple.first topFrame.botRight) (Tuple.first botFrame.botRight)
             width = maxWidth*0.75 + 0.25
             topOrigin = -(Tuple.second topFrame.botRight)*0.75 - 0.1
@@ -302,7 +342,7 @@ symbolsToFrames_ ref elem = case elem of
             ,   let offsetX = (max ref.topX ref.botX) + width in
                 {topX = offsetX, botX = offsetX, topY = up, botY = bot}
             )
-    Latex.Superscript _ inner -> latexToFrames inner
+    Latex.Superscript _ inner -> latexToFramesWithCursor_ cursor inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0,ref.topY), scale = 0.5}]
                 ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.topY)
@@ -310,7 +350,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   { ref | topX = ref.topX + 0.5*(Tuple.first new.botRight)}
             )
-    Latex.Subscript _ inner -> latexToFrames inner
+    Latex.Subscript _ inner -> latexToFramesWithCursor_ cursor inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0,ref.botY), scale = 0.5}]
                 ,   topLeft = Animation.scaleVector2 0.5 new.topLeft |> Animation.addVector2 (0, ref.botY)
@@ -318,7 +358,7 @@ symbolsToFrames_ ref elem = case elem of
                 }
             ,   { ref | botX = ref.botX + 0.5*(Tuple.first new.botRight)}
             )
-    Latex.Text s str -> wordStrokes_ s str
+    Latex.Text s str -> wordStrokes_ (List.head cursor) s str
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0,0), scale = 1}]
                 ,   topLeft = new.topLeft
@@ -336,7 +376,7 @@ symbolsToFrames_ ref elem = case elem of
             ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
                 {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
-    Latex.Bracket s inner -> latexToFrames inner
+    Latex.Bracket s inner -> latexToFramesWithCursor_ cursor inner
         |> \new ->
             let
                 (top, bot) = (Tuple.second new.topLeft, Tuple.second new.botRight)
@@ -355,7 +395,7 @@ symbolsToFrames_ ref elem = case elem of
             ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 2*shift in
                 {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
-    Latex.Sqrt _ inner -> latexToFrames inner
+    Latex.Sqrt _ inner -> latexToFramesWithCursor_ cursor inner
         |> \new ->
             (   {   data = Position [{frame = new, origin = (0.75, 0), scale = 1}] -- TODO: Add the sqrt line
                 ,   topLeft = new.topLeft |> Animation.addVector2 (0, 1)
@@ -386,9 +426,9 @@ symbolsToFrames_ ref elem = case elem of
             {topX = offsetX, botX = offsetX, topY = -0.5, botY = 0.5}
         )
 
-processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
+processFrame_: (state -> List Stroke -> Vector2 -> Float -> Bool -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of
-    BaseFrame s -> combine s.elem s.strokes origin scale initial
+    BaseFrame s -> combine s.elem s.strokes origin scale False initial
     Position list -> List.foldl (\elem result ->
             processFrame_ combine
             (Animation.scaleVector2 scale elem.origin |> Animation.addVector2 origin)
@@ -396,6 +436,7 @@ processFrame_ combine origin scale initial frame = case frame.data of
             result
             elem.frame
         ) initial list
+    Cursor s -> combine s.elem [Move (0,s.top), Line (0,s.bot)] origin scale True initial
 
 {- toStrokes
 
@@ -419,19 +460,38 @@ symbolStrokes_ s str = case str of
     Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
     Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
 
-wordStrokes_: state -> String -> Frame state
-wordStrokes_ s str = if String.isEmpty str
+wordStrokes_: Maybe Int -> state -> String -> Frame state
+wordStrokes_ cursorPos s str = if String.isEmpty str
     -- This is for inputs, where we're waiting for something to be written
     then {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, 0.1), botRight = (0.4,0.5)}
     else String.foldl (\c res -> case res of
             Err err -> Err err
-            Ok (list, (_, top), (right, bot)) -> charStrokes_ c
-                |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) ->
-                    (rightShiftStrokes_ right strokes ++ list, (0, min top newTop), (right + newRight, max bot newBot))
+            Ok ((list, cursorX), ((_, top), (right, bot)), countdown) -> charStrokes_ c
+                |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) -> case countdown of
+                    Nothing -> ((rightShiftStrokes_ right strokes ++ list, cursorX), ((0, min top newTop), (right + newRight, max bot newBot)), Nothing)
+                    Just count -> if count <= 0
+                        then ((rightShiftStrokes_ right strokes ++ list, Just (right + newRight)), ((0, min top newTop), (right + newRight, max bot newBot)), Nothing)
+                        else ((rightShiftStrokes_ right strokes ++ list, Nothing), ((0, min top newTop), (right + newRight, max bot newBot)), Just (count - 1))
                 )
-        ) (Ok ([], (0, 0), (0, 0))) str
+        ) (Ok (([],Nothing), ((0, 0), (0, 0)), cursorPos)) str
         |> \r -> case r of
-            Ok (list, topLeft, botRight) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
+            Ok ((list, cursorX), (topLeft, botRight), _) -> let wordFrame = {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight} in
+                case cursorX of
+                    Nothing -> wordFrame
+                    Just pos ->
+                        {   data = Position
+                            [   {frame = wordFrame, origin = (0,0), scale = 1}
+                            ,   {frame = { data = Cursor {top = Tuple.second topLeft, bot = Tuple.second botRight, elem = s} |> Debug.log "text"
+                                    , topLeft = (0, Tuple.second topLeft)
+                                    , botRight = (0, Tuple.second botRight)
+                                    }
+                                , origin = (pos, 0)
+                                , scale = 1
+                                }
+                            ]
+                        ,   topLeft = topLeft
+                        ,   botRight = botRight
+                        }
             Err _ -> failedFrame_ s
 
 charStrokes_: Char -> Result String (List Stroke, Vector2, Vector2)
@@ -503,6 +563,7 @@ charStrokes_ c = case c of
     '-' -> Ok ([Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '+' -> Ok ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '=' -> Ok ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
+    ' ' -> Ok ([], (0, 0), (0.4, 0))
     _ -> Err ("invalid character found: " ++ (Char.toCode c |> String.fromInt))
 
 rightShiftStrokes_: Float -> List Stroke -> List Stroke
@@ -516,7 +577,7 @@ rightShiftStrokes_ left = List.map (\elem -> case elem of
 
 static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in
-    processFrame_ (\_ strokes origin scale list ->
+    processFrame_ (\_ strokes origin scale _ list ->
         Svg.path [d (strokeToPath_ origin scale strokes), stroke "currentColor", strokeWidth "1", fill "none"] []
         :: list
         ) (0,0) 20 [] frames
@@ -524,6 +585,34 @@ static attrs l = let frames = latexToFrames l in
         (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
         ::  attrs
         )
+
+staticWithCursor: List (Html.Attribute msg) -> List Int -> Latex.Model a -> Html.Html msg
+staticWithCursor attrs position model = let frames = latexToFramesWithCursor_ position model in
+    processFrame_ (\_ strokes origin scale isCursor list ->
+        let pathAttr = [d (strokeToPath_ origin scale strokes), stroke "currentColor", strokeWidth "1", fill "none"] in
+        Svg.path (if isCursor then (class "cursor" :: pathAttr) else pathAttr ) [] :: list
+        ) (0,0) 20 [] frames
+    |> \children ->  Svg.svg
+        (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
+        ::  attrs
+        )
+        (   Svg.style [] [Svg.text cursorStyle]
+        ::  children
+        )
+
+cursorStyle: String
+cursorStyle = """
+@keyframes blink {
+  49%{ opacity: 1; }
+  50% { opacity: 0; }
+  100%{ opacity: 0; }
+}
+.cursor {
+    animation: 2s blink 0s infinite;
+    opacity: 1;
+}
+"""
+
 
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
 view convert attrs model = Dict.toList model.frames
