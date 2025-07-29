@@ -22,7 +22,6 @@ import Algo.History as History
 import Algo.Matcher as Matcher
 import Algo.Math as Math
 import Components.Evaluate as Evaluate
-import Components.Latex as Latex
 import Components.Query as Query
 import Components.Rules as Rules
 import Components.Tutorial as Tutorial
@@ -37,6 +36,7 @@ import UI.Icon as Icon
 import UI.Input as Input
 import UI.Menu as Menu
 import UI.Notification as Notification
+import UI.SvgDrag as SvgDrag
 
 -- Overall Structure of the app: it's a document
 
@@ -54,14 +54,14 @@ port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
-port svgMouseBegin: {id: Int} -> Cmd msg
-port svgMouseEvent: ({final: Bool, id: Int, x: Float, y: Float, time: Float} -> msg) -> Sub msg
+port svgMouseBegin: {id: String, x: Float, y: Float} -> Cmd msg
+port svgMouseEvent: (SvgDrag.Raw -> msg) -> Sub msg
 
 setCapture: Bool -> String -> Encode.Value -> Cmd msg
 setCapture s e p = capture {set = s, eId = e, pId = p}
 
-svgMouseCmd: Int -> Cmd msg
-svgMouseCmd id = svgMouseBegin {id = id}
+displayMouseCmd: Int -> (Float, Float) -> Cmd msg
+displayMouseCmd id (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y}
 
 -- Types
 
@@ -71,6 +71,7 @@ type alias Model =
     ,   size: Draggable.Size
     ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Animation.State))
     ,   animation: Animation.Tracker
+    ,   svgDragMap: SvgDrag.Model Event
     }
 
 type alias Swappable =
@@ -96,6 +97,7 @@ type Event =
     | MenuEvent Menu.Event
     | ActionEvent ActionView.Event
     | InputEvent Input.Event
+    | SvgDragEvent SvgDrag.Raw
     -- Event from the UI
     | NoOp -- For setting focus on textbox
     | RedirectTo String
@@ -138,7 +140,7 @@ init flags url key =
         query = Query.parseInit url key
         (eqs, errs) = List.foldl (parseEquations_ Rules.init) ([], []) query.equations
         newScreen = List.isEmpty eqs
-        (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) svgMouseCmd -1 eqs
+        (newDisplay, tracker) = Display.init setCapture (Query.pushEquations query) displayMouseCmd -1 eqs
         (nModel, finalT, nCmd) = List.foldl Notification.displayError (Notification.init, tracker, Cmd.none) errs
     in
     (   {   swappable =
@@ -160,6 +162,11 @@ init flags url key =
             |> Result.toMaybe
             |> Maybe.withDefault (0, 0)
         , animation = finalT
+        , svgDragMap = SvgDrag.init
+            (   Dict.singleton "Equation-" (\str event -> String.toInt str
+                    |> Maybe.map (\eqNum -> Display.Commute eqNum event |> DisplayEvent)
+                )
+            )
         }
     ,   Cmd.batch
         [   loadSources query.sources
@@ -180,7 +187,7 @@ subscriptions model = Sub.batch
     [   onKeyDown PressedKey
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
-    ,   svgMouseEvent (Display.svgDragEvent >> DisplayEvent)
+    ,   svgMouseEvent SvgDragEvent
     ,   if model.animation >= 0 then BrowserEvent.onAnimationFrameDelta AnimationDelta else Sub.none
     ]
 
@@ -223,6 +230,9 @@ update event core = let model = core.swappable in
                             )
                         )
                     Result.Err err -> submitNotification_ core err
+        SvgDragEvent e -> case SvgDrag.resolve e core.svgDragMap of
+            Nothing -> (core, Cmd.none)
+            Just newE -> update newE core
         NoOp -> (core, Cmd.none)
         RedirectTo url -> (core, Nav.load url)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
@@ -580,7 +590,7 @@ quarter w x y z = ((w,x),(y,z))
 swappableDecoder: (List Display.FullEquation -> Cmd Display.Event) -> Decode.Decoder (Swappable, Animation.Tracker)
 swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
-        (Decode.field "display" (Display.decoder setCapture updateQuery svgMouseCmd))
+        (Decode.field "display" (Display.decoder setCapture updateQuery displayMouseCmd))
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )

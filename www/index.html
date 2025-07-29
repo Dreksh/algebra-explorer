@@ -27,42 +27,42 @@
             }
         });
         app.ports.svgMouseBegin.subscribe(function (val) {
-            let target = document.getElementById("Equation-"+val["id"]).getElementsByClassName("bricks");
-            if (target.length != 1) return;
+            let id = val["id"];
+            let target = document.getElementById(id).getElementsByClassName("bricks");
+            if (target.length != 1) target = document.getElementById(id).getElementsByTagName("svg")
+            if (target.length < 1) return;
+            let start = Date.now();
             let svgTarget = target[0];
-            let convertPoint = function(e) {
+            let convertPoint = function(x, y) {
                 // https://stackoverflow.com/a/20958980
                 let p = svgTarget.createSVGPoint();
-                p.x = e.clientX;
-                p.y = e.clientY;
+                p.x = x;
+                p.y = y;
                 return p.matrixTransform(svgTarget.getScreenCTM().inverse());
             }
+            let startP = convertPoint(val["x"], val["y"]);
             var cancelFunc;
-            let onMove = function(id) {
+            let onMove = function() {
                 return function(e) {
-                    let p = convertPoint(e);
-                    app.ports.svgMouseEvent.send({"final": false, "id": id, "x": p.x, "y": p.y, "time": 0});
+                    let p = convertPoint(e.clientX, e.clientY);
+                    app.ports.svgMouseEvent.send({"event": 1, "id": id, "x": p.x, "y": p.y, "time": Date.now() - start});
                 }
-            }(val["id"]);
-            let onFinish = function(start, id) {
+            }();
+            let onFinish = function() {
                 return function(e) {
-                    let p = convertPoint(e);
-                    app.ports.svgMouseEvent.send({"final": true, "id": id, "x": p.x, "y": p.y, "time": Date.now() - start});
+                    let p = convertPoint(e.clientX, e.clientY);
+                    app.ports.svgMouseEvent.send({"event": 2, "id": id, "x": p.x, "y": p.y, "time": Date.now() - start});
                     cancelFunc();
                 }
-            }(Date.now(), val["id"]);
-            let onLeave = function(start, id) {
-                return function(e) {
-                    cancelFunc();
-                }
-            }(Date.now(), val["id"]);
+            }();
             cancelFunc = function() {
-                svgTarget.removeEventListener("mousemove", onMove);
-                svgTarget.removeEventListener("mouseup", onFinish);
+                svgTarget.removeEventListener("mousemove", onMove, true);
+                svgTarget.removeEventListener("mouseup", onFinish, true);
             }
-            svgTarget.addEventListener("mousemove", onMove);
-            svgTarget.addEventListener("mouseup", onFinish);
-            svgTarget.addEventListener("mouseleave", onLeave);
+            svgTarget.addEventListener("mousemove", onMove, true);
+            svgTarget.addEventListener("mouseup", onFinish, true);
+            // Send the start version
+            app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});
         });
     </script>
 </body>
