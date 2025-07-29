@@ -1,6 +1,6 @@
 module UI.Display exposing (
     Model, Event(..), FullEquation, SelectedNode, init, update, views, menu,
-    anyVisible, undo, redo, updateQueryCmd, svgDragEvent, refresh,
+    anyVisible, undo, redo, updateQueryCmd, refresh,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
     encode, decoder
@@ -27,6 +27,7 @@ import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.MathIcon as MathIcon
 import UI.Menu as Menu
+import UI.SvgDrag as SvgDrag
 
 type alias State = Matcher.State Animation.State
 type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
@@ -38,16 +39,12 @@ type alias Model =
     ,   createModeForEquation: Maybe Int
     -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
-    ,   svgMouseCmd: Int -> Cmd Event -- start/stop eqNum
+    ,   svgMouseCmd: Int -> (Float, Float) -> Cmd Event
     ,   updateQuery: List FullEquation -> Cmd Event
     }
 
 longClickThreshold: Float
 longClickThreshold = 300 -- in ms
-
-svgDragEvent: {final: Bool, id: Int, x: Float, y: Float, time: Float} -> Event
-svgDragEvent n = if n.final then CommuteEnd n.id n.time (n.x,n.y)
-    else CommuteContinue n.id (n.x,n.y)
 
 type alias UIModel = (Bricks.Model, MathIcon.Model)
 
@@ -67,9 +64,8 @@ type Event =
     | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
-    | CommuteStart Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
-    | CommuteContinue Int (Float, Float)
-    | CommuteEnd Int Float (Float, Float)
+    | MouseDown Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
+    | Commute Int SvgDrag.Event
 
 type alias SelectedNode =
     {   eq: Int
@@ -99,7 +95,7 @@ newEntry_ tracker size index eq =
 anyVisible: Model -> Bool
 anyVisible model = Dict.foldl (\_ value -> (||) value.show) False model.equations
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Cmd Event) ->
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> (Float, Float) -> Cmd Event) ->
     Animation.Tracker -> List FullEquation -> (Model, Animation.Tracker)
 init setCapture updateQuery svgMouseCmd tracker l =
     let
@@ -390,7 +386,7 @@ update size tracker event model = case event of
                     ) action
                     |> Maybe.withDefault Cmd.none
                 )
-    CommuteStart eq root index midpoints _ -> case Dict.get eq model.equations of
+    MouseDown eq root index midpoints point -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry ->
             (   {   model
@@ -401,52 +397,54 @@ update size tracker event model = case event of
                     model.equations
                 }
             ,   tracker
-            ,   model.svgMouseCmd eq
+            ,   model.svgMouseCmd eq point
             )
-    CommuteContinue eq (x, _) -> modifyEntry_ model tracker eq
-        (\entry t -> entry.commuting
-            -- Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
-            |> Maybe.andThen (\n ->
-                if n.originalIndex == -1 then Just (entry, t)-- It is not draggable, and we've detected a drag
-                else let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
-                    if newIndex == n.currentIndex then Nothing
-                    else let (b, m) = entry.ui in
-                        History.current entry.history
-                        |> (\(currentEq, currentLatex) -> case Matcher.setChildIndex n.id newIndex currentEq of
-                            Err _ -> (currentEq, currentLatex)
-                            Ok newEq -> (newEq, Rules.toLatex newEq)
-                        )
-                        |> \(newEq, newL) ->
-                            let
-                                (newB, t0) = Bricks.updateTree t newEq.root b
-                                (newM, newT) = MathIcon.set t0 Nothing newL m
-                            in
-                            Just (   {   entry
-                                    |   ui = (newB, newM)
-                                    ,   commuting = Just {n | moved = True, currentIndex = newIndex}
-                                    }
-                                ,   newT
-                                )
+    Commute eqNum dragEvent -> case dragEvent of
+        SvgDrag.Start _ -> (model, tracker, Cmd.none) -- Handled in MouseDown
+        SvgDrag.Move _ (x, _) -> modifyEntry_ model tracker eqNum
+            (\entry t -> entry.commuting
+                -- Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
+                |> Maybe.andThen (\n ->
+                    if n.originalIndex == -1 then Just (entry, t)-- It is not draggable, and we've detected a drag
+                    else let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
+                        if newIndex == n.currentIndex then Nothing
+                        else let (b, m) = entry.ui in
+                            History.current entry.history
+                            |> (\(currentEq, currentLatex) -> case Matcher.setChildIndex n.id newIndex currentEq of
+                                Err _ -> (currentEq, currentLatex)
+                                Ok newEq -> (newEq, Rules.toLatex newEq)
+                            )
+                            |> \(newEq, newL) ->
+                                let
+                                    (newB, t0) = Bricks.updateTree t newEq.root b
+                                    (newM, newT) = MathIcon.set t0 Nothing newL m
+                                in
+                                Just (   {   entry
+                                        |   ui = (newB, newM)
+                                        ,   commuting = Just {n | moved = True, currentIndex = newIndex}
+                                        }
+                                    ,   newT
+                                    )
+                )
             )
-        )
-    CommuteEnd eqNum time (x, _) -> case Dict.get eqNum model.equations of
-        Nothing -> (model, tracker, Cmd.none)
-        Just entry -> case entry.commuting of
+        SvgDrag.End time (x, _) -> case Dict.get eqNum model.equations of
             Nothing -> (model, tracker, Cmd.none)
-            Just n -> if n.moved
-                then let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
-                    (   if newIndex == n.originalIndex
-                        then {entry | commuting = Nothing}
-                        else History.current entry.history |> Tuple.first
-                            |> Matcher.setChildIndex n.id newIndex
-                            |> \res -> case res of
-                                Err _ -> {entry | commuting = Nothing}
-                                Ok newEq -> {entry | commuting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
-                    )
-                    |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
-                        updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
-                else updateSelected_ eqNum n.id (time > longClickThreshold) model
-                    |> \newModel -> (newModel, tracker, Cmd.none)
+            Just entry -> case entry.commuting of
+                Nothing -> (model, tracker, Cmd.none)
+                Just n -> if n.moved
+                    then let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
+                        (   if newIndex == n.originalIndex
+                            then {entry | commuting = Nothing}
+                            else History.current entry.history |> Tuple.first
+                                |> Matcher.setChildIndex n.id newIndex
+                                |> \res -> case res of
+                                    Err _ -> {entry | commuting = Nothing}
+                                    Ok newEq -> {entry | commuting = Nothing, history = History.add (newEq, Rules.toLatex newEq) entry.history}
+                        )
+                        |>\newEntry -> let (finalEntry, finalT) = updateBricks tracker newEntry in
+                            updateQueryCmd finalT {model | equations = Dict.insert eqNum finalEntry model.equations}
+                    else updateSelected_ eqNum n.id (time > longClickThreshold) model
+                        |> \newModel -> (newModel, tracker, Cmd.none)
 
 newSelectedNodes_: Set.Set Int -> FullEquation -> Set.Set Int
 newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
@@ -550,11 +548,11 @@ brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.A
 brickAttr_ highlight eqNum id draggable =
     (   case draggable of
             Nothing ->
-                [   HtmlEvent.onMouseDown (CommuteStart eqNum id -1 [])
+                [   HtmlEvent.onMouseDown (MouseDown eqNum id -1 [])
                 ]
             Just (originalIndex, midpoints) ->
                 [   Svg.Attributes.class "draggable"
-                ,   HtmlEvent.onMouseDown (CommuteStart eqNum id originalIndex midpoints)
+                ,   HtmlEvent.onMouseDown (MouseDown eqNum id originalIndex midpoints)
                 ]
     )
     |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
@@ -594,7 +592,7 @@ encodeHistoryState_ (eq, l) = Encode.object
     ,   ("latex", Latex.encode (Matcher.encodeState Animation.encodeState) l)
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Cmd Event) ->
+decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
 decoder setCapture updateQuery svgMouseCmd = Decode.map4 (\(eq, t) next sel create -> (Model eq next sel create setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
