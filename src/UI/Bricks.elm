@@ -195,7 +195,7 @@ distributeDeclarative grid =
                     (\(colStart, colEnd) ((prevColStart, prevColEnd), id2, foldItems) ->
                         (   (colStart, colEnd)
                         ,   id2 + 1
-                        ,   foldItems |> Dict.insert (id, id2) { declItem | colStart = prevColEnd, colEnd = colStart }
+                        ,   foldItems |> Dict.insert (id, id2) { declItem | colStart = prevColEnd, colEnd = colStart, commutable = Nothing }
                         )
                     )
                     (head, 0, nonDeclItems)
