@@ -468,7 +468,7 @@ view core = let model = core.swappable in
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
-                    (InputWithHistory.view InputEvent core.input)
+                    (InputWithHistory.view InputEvent (Rules.functionProperties model.rules) core.input)
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Menu.view MenuEvent model.menu
                         [   Menu.Section {name = "Settings", icon = Nothing}

@@ -1,6 +1,6 @@
 module UI.HtmlEvent exposing (
     onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onBlur, onSubmitField, onSubmitForm,
-    onPointerCapture, onPointerMove, onKeyDown)
+    onPointerCapture, onPointerMove, onKeyChange, onKeyDown)
 
 -- Event is needed to block the js events from propagating upwards
 
@@ -20,6 +20,9 @@ onPointerLeave event = stopPropagationOn "pointerleave" (succeed (event, True))
 
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit
+
+onKeyChange: (String -> msg) -> Html.Attribute msg
+onKeyChange event = Html.Events.on "keydown" (field "target" <| field "value" <| map event string)
 
 onFocus: msg -> Html.Attribute msg
 onFocus = Html.Events.onFocus

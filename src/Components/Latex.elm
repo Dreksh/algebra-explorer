@@ -1,5 +1,6 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, decoder, encode)
+module Components.Latex exposing (Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, greekLetters, decoder, encode)
 
+import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Parser exposing ((|.), (|=))
@@ -107,6 +108,14 @@ symbolToStr s = case s of
     CrossMultiplcation -> "cross"
     Division -> "div"
     Integration -> "int"
+
+greekLetters: Dict.Dict String Symbol
+greekLetters =
+    [   AlphaLower
+    ,   BetaLower
+    ]
+    |> List.map (\s -> (symbolToStr s,s))
+    |> Dict.fromList
 
 encodeSymbol_: Symbol -> Encode.Value
 encodeSymbol_ = symbolToStr >> Encode.string

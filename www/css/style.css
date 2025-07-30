@@ -163,6 +163,27 @@ span.space {
     height: 100%;
     max-width: 100%;
 }
+.mathInput > .popup {
+    z-index: 1;
+    display: flex;
+    flex-direction: row;
+    position: absolute;
+    bottom: -2.5rem;
+    height: 2rem;
+    width: 100%;
+    border-radius: 1rem;
+    padding: 0 1rem;
+    background-color: var(--color-textbox);
+    box-sizing: border-box;
+}
+.mathInput > .popup > div {
+    flex-shrink: 1;
+    display: flex;
+    flex-direction: row;
+    overflow-x: scroll;
+    overflow-y: hidden;
+    box-sizing: border-box;
+}
 /* Menu */
 #menuToggle {
     position: absolute;

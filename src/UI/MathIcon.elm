@@ -417,10 +417,21 @@ symbolsToFrames_ cursor ref elem = case elem of
         ,   let offsetX = (max ref.topX ref.botX) + 1 in
             {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
-    Latex.Param s _ ->
-        (   failedFrame_ s
+    Latex.Param s _ -> -- Same as Argument for displaying options, for input selection
+        (   {   data = BaseFrame
+                {   strokes =
+                    [   Move (0.4, -0.3), Line (0.2,-0.3), Line (0.2,-0.1)
+                    ,   Move (0.4, 0.3), Line (0.2,0.3), Line (0.2,0.1)
+                    ,   Move (0.6, 0.3), Line (0.8,0.3), Line (0.8,0.1)
+                    ,   Move (0.6, -0.3), Line (0.8,-0.3), Line (0.8,-0.1)
+                    ]
+                , elem = s
+                }
+            ,   topLeft  = (0, -0.5)
+            ,   botRight = (1,0.5)
+            }
         ,   let offsetX = (max ref.topX ref.botX) + 1 in
-            {topX = offsetX, botX = offsetX, topY = -0.5, botY = 0.5}
+            {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
 
 processFrame_: (state -> List Stroke -> Vector2 -> Float -> Bool -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end

@@ -1,8 +1,8 @@
 {
     "name": "Fractions",
     "functions":{
-        "frac": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\frac{\\arg{1}}{\\arg{2}}"},
-        "mixedfrac": {"arguments": 3, "latex": "\\arg{1}\\frac{\\arg{2}}{\\arg{3}}"}
+        "fraction": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\frac{\\arg{1}}{\\arg{2}}"},
+        "mixedfraction": {"arguments": 3, "latex": "\\arg{1}\\frac{\\arg{2}}{\\arg{3}}"}
     },
     "constants": {},
     "actions": [
@@ -10,11 +10,11 @@
             "title": "Expand",
             "description": "Split a mixed number into a whole number and a proper fraction",
             "matches": [
-                {"from": "\\mixedfrac(a,b,c)", "to": ["a+\\frac(b,c)"]},
-                {"from": "\\frac(\\frac(a,b)*c,d)", "to": ["\\frac(a*c,b*d)"]},
-                {"from": "\\frac(a/b,c)", "to": ["\\frac(a,b*c)"]},
-                {"from": "\\frac(a,\\frac(b,c)*d)", "to": ["\\frac(a*c,b*d)"]},
-                {"from": "\\frac(a,b/c)", "to": ["\\frac(a*c,b)"]}
+                {"from": "\\mixedfraction(a,b,c)", "to": ["a+\\fraction(b,c)"]},
+                {"from": "\\fraction(\\fraction(a,b)*c,d)", "to": ["\\fraction(a*c,b*d)"]},
+                {"from": "\\fraction(a/b,c)", "to": ["\\fraction(a,b*c)"]},
+                {"from": "\\fraction(a,\\fraction(b,c)*d)", "to": ["\\fraction(a*c,b*d)"]},
+                {"from": "\\fraction(a,b/c)", "to": ["\\fraction(a*c,b)"]}
             ]
         },
         {
@@ -23,40 +23,40 @@
             "parameters": {
                 "\\multiplier": "Number of times to split it. It will be multiplied on both the top and bottom of the fraction"
             },
-            "matches": [{"from": "\\frac(a,b)", "to": ["\\frac(a*\\multiplier,b*\\multiplier)"]}]
+            "matches": [{"from": "\\fraction(a,b)", "to": ["\\fraction(a*\\multiplier,b*\\multiplier)"]}]
         },
         {
             "title": "To Fraction",
             "description": "Change a number into a fraction",
-            "matches": [{"from": "a", "to": ["\\frac(a,1)"]}]
+            "matches": [{"from": "a", "to": ["\\fraction(a,1)"]}]
         },
         {
             "title": "Split",
             "description": "Change the fraction back into division",
-            "matches": [{"from": "\\frac(a,b)", "to": ["a/b"]}]
+            "matches": [{"from": "\\fraction(a,b)", "to": ["a/b"]}]
         },
         {
             "title": "Merge",
             "description": "Multiplication and division can be put into the fraction",
             "matches": [
-                {"from": "\\frac(a,b)*\\frac(c,d)*e", "to": ["\\frac(a*c,b*d)*e"]},
-                {"from": "\\frac(b,c)/a*d", "to": ["\\frac(b,a*c)*d"]},
-                {"from": "a*\\frac(b,c)*d", "to": ["\\frac(a*b,c)*d"]}
+                {"from": "\\fraction(a,b)*\\fraction(c,d)*e", "to": ["\\fraction(a*c,b*d)*e"]},
+                {"from": "\\fraction(b,c)/a*d", "to": ["\\fraction(b,a*c)*d"]},
+                {"from": "a*\\fraction(b,c)*d", "to": ["\\fraction(a*b,c)*d"]}
             ]
         },
         {
             "title": "Factorise",
             "description": "Combine the fractions that contain the same denominator",
             "matches": [
-                {"from": "\\frac(a,b)+\\frac(c,b)", "to": ["\\frac(a+c,b)"]},
-                {"from": "\\frac(a,b)-\\frac(c,b)", "to": ["\\frac(a-c,b)"]}
+                {"from": "\\fraction(a,b)+\\fraction(c,b)", "to": ["\\fraction(a+c,b)"]},
+                {"from": "\\fraction(a,b)-\\fraction(c,b)", "to": ["\\fraction(a-c,b)"]}
             ]
         },
         {
             "title": "Cancel out",
             "description": "Remove factors from the top and bottomt hat are the same",
             "matches": [
-                {"from": "\\frac(a*b,a*c)", "to": ["\\frac(b,c)"]}
+                {"from": "\\fraction(a*b,a*c)", "to": ["\\fraction(b,c)"]}
             ]
         }
     ]

@@ -1,5 +1,6 @@
 module UI.Input exposing (Model, Event(..), Entry, init, update, clear, set, view, toTree)
 
+import Array
 import Dict
 import Html
 import Html.Attributes exposing (class, id, name, style, type_)
@@ -44,6 +45,9 @@ type Event =
     | HideCursor
     | MouseDown (Float, Float)
     | Shift SvgDrag.Event
+    | FunctionChoice String (Latex.Model ())
+    | SymbolChoice Latex.Symbol
+    | AdditionalInput String
 
 init: ((Float, Float) -> Cmd Event) -> Model
 init mouseCmd =
@@ -71,22 +75,33 @@ clear model =
     ,   showCursor = False
     }
 
-view: (Event -> msg) -> String -> List (Html.Attribute msg) -> Model -> Html.Html msg
-view convert holderID attr model =
+view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (Html.Attribute msg) -> Model -> Html.Html msg
+view convert functions holderID attr model =
     Html.div [id holderID, class "mathInput"]
-    [   Html.input
-        (   [   type_ "textarea"
-            ,   HtmlEvent.onKeyDown (Key >> convert)
-            ,   HtmlEvent.onFocus (convert ShowCursor)
-            ,   HtmlEvent.onBlur (convert HideCursor)
-            ,   HtmlEvent.onMouseDown (MouseDown >> convert)
-            ]
-        ++ attr
+    (   [   Html.input
+            (   [   type_ "textarea"
+                ,   HtmlEvent.onKeyDown (Key >> convert)
+                ,   HtmlEvent.onFocus (convert ShowCursor)
+                ,   HtmlEvent.onBlur (convert HideCursor)
+                ,   HtmlEvent.onMouseDown (MouseDown >> convert)
+                ]
+            ++ attr
+            )
+            []
+        ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
+            (if model.showCursor then model.cursor else []) model.entry.latex
+        ]
+    |> Helper.maybeAppend (model.functionInput
+            |> Maybe.map (\str -> displaySuggestions_ functions str
+                |> \selectable -> Html.div
+                    [class "popup"]
+                    [   Html.input [type_ "text", HtmlEvent.onKeyChange AdditionalInput] []
+                    ,   Html.div [] selectable
+                    ]
+                |> Html.map convert
+            )
         )
-        []
-    ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
-        (if model.showCursor then model.cursor else []) model.entry.latex
-    ]
+    )
 
 {- ## Updates -}
 
@@ -116,7 +131,15 @@ update event model = case event of
                     then ({model | entry = {entry | latex = appendString_ c entry.latex} }, Cmd.none)
                     else if String.contains c "0123456789 ."
                     then ({model | entry = {entry | latex = appendString_ c entry.latex} }, Cmd.none)
-                    else (model, Cmd.none)
+                    else case char of
+                        '(' -> (model, Cmd.none)
+                        '+' -> (model, Cmd.none)
+                        '*' -> (model, Cmd.none)
+                        '/' -> (model, Cmd.none)
+                        '=' -> (model, Cmd.none)
+                        ',' -> (model, Cmd.none)
+                        '\\' -> ({model | functionInput = Just ""}, Cmd.none)
+                        _ -> (model, Cmd.none)
             else (model, Cmd.none)
         _ -> (model, Cmd.none)
     ShowCursor -> ({model | showCursor = True}, Cmd.none)
@@ -124,7 +147,10 @@ update event model = case event of
     MouseDown point -> (model, model.mouseCmd point)
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, Cmd.none)
-        _ -> (model, Cmd.none) -- Start & Move for selecting text
+        _ -> (model, Cmd.none) -- TODO: Start & Move for selecting text
+    FunctionChoice name latex -> ({model | functionInput = Nothing}, Cmd.none)
+    SymbolChoice symb -> ({model | functionInput = Nothing}, Cmd.none)
+    AdditionalInput str -> ({model | functionInput = Just str}, Cmd.none)
 
 {- ## Cursor Movement -}
 
@@ -321,3 +347,50 @@ toStringDict_ funcName function model =
         Latex.Param _ _ -> Err "Found latex parameter in input"
     ) (ProcessState_ 0 Dict.empty Nothing) model
     |> Result.map .functionEntry
+
+{- ## Suggestion -}
+
+displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (Html.Html Event)
+displaySuggestions_ functions input =
+    let
+        inputOrder = letterOrder_ input
+        greekSymbols = Dict.toList Latex.greekLetters
+            |> List.map (\(name, s) ->
+                (   cosineCorrelation_ inputOrder (letterOrder_ name)
+                ,   Html.a [class "clickable", HtmlEvent.onClick (SymbolChoice s)]
+                    [MathIcon.static [] [Latex.SymbolPart () s]]
+                )
+            )
+        functionSymbols = Dict.toList functions
+            |> List.filterMap (\(key, value) -> value.property |> Math.getState |> .latex
+                |> Maybe.map (\func ->
+                    (   cosineCorrelation_ inputOrder (letterOrder_ key)
+                    ,   Html.a [class "clickable", HtmlEvent.onClick (FunctionChoice key func)]
+                        [MathIcon.static [] func]
+                    )
+                )
+            )
+    in
+        List.sortBy (\(corr, _) -> -corr) (greekSymbols ++ functionSymbols |> Debug.log "order")
+        |> List.map Tuple.second
+
+letterOrder_: String -> Array.Array Float
+letterOrder_ = String.toLower
+    >> String.foldl (\char (arr, sum, rank) -> let index = (Char.toCode char) - 97 in
+        case Array.get index arr of
+            Nothing -> (arr, sum, rank - 1)
+            Just r -> if r == 0 then (Array.set index rank arr, sum + rank, rank - 1)
+                else (arr, sum, rank - 1)
+    ) (Array.repeat 26 0, 0, 26)
+    >> \(arr, sum, _) -> let shift = sum / sqrt(26) in -- for removing the [1,1,1,...,1] vector, equivalent to shifting
+        Array.map (\elem -> elem - shift) arr
+
+-- Assumes the length of the 2 arrays are 26
+cosineCorrelation_: Array.Array Float -> Array.Array Float -> Float
+cosineCorrelation_ left right = List.range 0 25
+    |> List.foldl (\index (cross, l, r) -> case (Array.get index left, Array.get index right) of
+        (Just a, Just b) -> (cross + a*b, l + a*a, r + b*b)
+        _ -> (cross, l, r)
+    ) (0, 0, 0)
+    |> \(cross, l, r) -> if l == 0 || r == 0 then -1
+        else cross / sqrt (l * r)
