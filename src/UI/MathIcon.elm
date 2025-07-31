@@ -218,7 +218,9 @@ toMatches_ inList =
     |> Tuple.first
 
 toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
-toAnimationDict_ scale = processFrame_ (\s strokes origin inScale _ dict -> let id = Matcher.getID s in
+toAnimationDict_ scale = processFrame_ (\s strokes origin inScale _ dict -> case s of
+    Nothing -> dict
+    Just state -> let id = Matcher.getID state in
         Dict.insert
         (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
         {strokes = strokes, origin = origin, scale = inScale}
@@ -243,7 +245,7 @@ newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat anim
 type FrameData state =
     BaseFrame {strokes: List Stroke, elem: state}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
-    | Cursor {elem: state} -- elem is a placeholder, we don't actually rely on it
+    | Cursor
 type alias Frame state =
     {   data: FrameData state
     ,   topLeft: Vector2
@@ -265,8 +267,10 @@ latexToFrames: Latex.Model state -> Frame state
 latexToFrames = latexToFramesWithCursor_ []
 
 latexToFramesWithCursor_: List Int -> Latex.Model state -> Frame state
-latexToFramesWithCursor_ cursorPosition = List.foldl
-    (\elem ((list, topLeft, botRight), ref, pos) ->
+latexToFramesWithCursor_ cursorPosition model = if List.isEmpty model
+    then if List.isEmpty cursorPosition then {data = Position [], topLeft = (0,0), botRight = (0,0)}
+        else {data = Cursor, topLeft = (0,-0.5), botRight = (0, 0.5) }
+    else List.foldl (\elem ((list, topLeft, botRight), ref, pos) ->
         let
             (insertion, next, children) = case pos of
                 [] -> (NoCursor, [], [])
@@ -286,7 +290,7 @@ latexToFramesWithCursor_ cursorPosition = List.foldl
                 newBotRight = Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
                 totalFrames = {frame = new, origin = offset, scale = 1} :: list
                 newCursorFrame xoffset =
-                    {   frame = {data = Cursor {elem = Latex.getState elem}, topLeft = (0,newRef.topY), botRight = (0,newRef.botY)}
+                    {   frame = {data = Cursor, topLeft = (0,newRef.topY), botRight = (0,newRef.botY)}
                     ,   origin = (xoffset, 0)
                     ,   scale = 1
                     }
@@ -303,7 +307,8 @@ latexToFramesWithCursor_ cursorPosition = List.foldl
             )
     )
     (([], (0,0), (0, 0)), {topX = 0, botX=0, topY = 0, botY = 0}, cursorPosition)
-    >> \((list, topLeft, botRight),_,_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
+    model
+    |> \((list, topLeft, botRight),_,_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
 
 symbolsToFrames_: List Int -> Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ cursor ref elem = case elem of
@@ -434,9 +439,9 @@ symbolsToFrames_ cursor ref elem = case elem of
             {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
 
-processFrame_: (state -> List Stroke -> Vector2 -> Float -> Bool -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
+processFrame_: (Maybe state -> List Stroke -> Vector2 -> Float -> Bool -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of
-    BaseFrame s -> combine s.elem s.strokes origin scale False initial
+    BaseFrame s -> combine (Just s.elem) s.strokes origin scale False initial
     Position list -> List.foldl (\elem result ->
             processFrame_ combine
             (Animation.scaleVector2 scale elem.origin |> Animation.addVector2 origin)
@@ -444,7 +449,7 @@ processFrame_ combine origin scale initial frame = case frame.data of
             result
             elem.frame
         ) initial list
-    Cursor s -> combine s.elem [Move (0,Tuple.second frame.topLeft), Line (0,Tuple.second frame.botRight)] origin scale True initial
+    Cursor -> combine Nothing [Move (0,Tuple.second frame.topLeft), Line (0,Tuple.second frame.botRight)] origin scale True initial
 
 {- toStrokes
 
@@ -491,7 +496,7 @@ wordStrokes_ cursorPos s str = if String.isEmpty str
                     Just pos ->
                         {   data = Position
                             [   {frame = wordFrame, origin = (0,0), scale = 1}
-                            ,   {frame = { data = Cursor {elem = s}, topLeft = (0, Tuple.second topLeft), botRight = (0, Tuple.second botRight)}
+                            ,   {frame = { data = Cursor, topLeft = (0, Tuple.second topLeft), botRight = (0, Tuple.second botRight)}
                                 , origin = (pos, 0)
                                 , scale = 1
                                 }

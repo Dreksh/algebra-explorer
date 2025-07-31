@@ -47,7 +47,7 @@ type Event =
 
 defaultOptions_: List Selection
 defaultOptions_ =
-    [   Default {latex =[Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "x+4=5"], funcName = Dict.empty}
+    [   Default {latex =[Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "x+4=5"], funcName = Dict.empty, nextFunc = 1}
     ,   Default
         {   latex =
             [   Latex.Text {immutable = False, scope = {function = 1, argument = Nothing, fixedArgs = False}} "f"
@@ -55,6 +55,7 @@ defaultOptions_ =
             ,   Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "=x+3"
             ]
         ,   funcName = Dict.singleton 1 "f"
+        ,   nextFunc = 2
         }
     ,   Default
         {   latex =
@@ -63,9 +64,10 @@ defaultOptions_ =
             ,   Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "=-1"
             ]
         ,   funcName = Dict.empty
+        ,   nextFunc = 1
         }
-    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "2x+y=5"], funcName = Dict.empty}
-    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "4x+3y=11"], funcName = Dict.empty}
+    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
+    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
     ]
 
 init: Bool -> ((Float, Float) -> Cmd Input.Event) -> (String -> Cmd msg) -> Model msg

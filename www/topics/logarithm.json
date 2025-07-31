@@ -2,9 +2,9 @@
     "name": "Logarithm",
     "functions":{
         "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"},
-        "log": {"arguments": 2, "associative": false, "commutative": false, "latex": "log_\\param{1}\\arg{2}"},
-        "ln": {"arguments": 1, "latex": "ln(\\arg{1})"},
-        "log10": {"arguments": 1, "latex": "log(\\arg{1})"}
+        "logarithm": {"arguments": 2, "associative": false, "commutative": false, "latex": "log_\\param{1}\\arg{2}"},
+        "lnlogarithm": {"arguments": 1, "latex": "ln(\\arg{1})"},
+        "log10logarithm": {"arguments": 1, "latex": "log(\\arg{1})"}
     },
     "constants": {
         "e": "Math.E"
