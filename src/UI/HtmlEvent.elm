@@ -5,7 +5,7 @@ module UI.HtmlEvent exposing (
 -- Event is needed to block the js events from propagating upwards
 
 import Html
-import Html.Events exposing(custom, preventDefaultOn, stopPropagationOn)
+import Html.Events exposing(custom, on, preventDefaultOn, stopPropagationOn)
 import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, map3, string, succeed, value)
 import Set
 
@@ -41,8 +41,8 @@ clientPos_: Decoder (Float, Float)
 clientPos_ = map2 Tuple.pair (field "clientX" float) (field "clientY" float)
 
 onPointerCapture: (event -> msg) -> (Value -> (Float, Float) -> event) -> Html.Attribute msg
-onPointerCapture converter activate = custom "pointerdown"
-    (map2 (\pid input -> {message = activate pid input |> converter, stopPropagation = True, preventDefault = True})
+onPointerCapture converter activate = on "pointerdown"
+    (map2 (\pid input -> activate pid input |> converter)
         (field "pointerId" value)
         clientPos_
     )

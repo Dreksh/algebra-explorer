@@ -65,8 +65,8 @@ setCapture s e p = capture {set = s, eId = e, pId = p}
 displayMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd msg
 displayMouseCmd id pId (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y, pointerID = pId}
 
-mainInputMouseCmd: (Float, Float) -> Cmd msg
-mainInputMouseCmd (x, y) = svgMouseBegin {id = "mainInput", x=x, y=y}
+mainInputMouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
+mainInputMouseCmd pId (x, y) = svgMouseBegin {id = "mainInput", x=x, y=y, pointerID = pId}
 
 -- Types
 

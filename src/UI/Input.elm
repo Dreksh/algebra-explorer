@@ -5,6 +5,7 @@ import Dict
 import Html
 import Html.Attributes exposing (class, id, name, style, type_)
 import Html.Keyed
+import Json.Encode as Encode
 -- Ours
 import Helper
 import Algo.Matcher as Matcher
@@ -41,21 +42,21 @@ type alias Model msg =
     ,   cursor: Latex.CaretPosition
     ,   showCursor: Bool
     ,   holderID: String
-    ,   mouseCmd: (Float, Float) -> Cmd msg
+    ,   mouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
     ,   focusCmd: String -> Cmd msg
     }
 type Event =
     Key (String, Bool, Bool)
     | ShowCursor
     | HideCursor
-    | MouseDown (Float, Float)
+    | MouseDown Encode.Value (Float, Float)
     | Shift SvgDrag.Event
     | FunctionChoice String Bool (Latex.Model ()) -- The bool is for whether the args are fixed
     | SymbolChoice Latex.Symbol
     | HelperInput String
     | HelperClear
 
-init: ((Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
+init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
     {   entry = {latex = [], funcName = Dict.empty, nextFunc = 1}
     ,   functionInput = Nothing
@@ -92,7 +93,7 @@ view convert functions attr model =
                 ,   HtmlEvent.onKeyDown (Key >> convert)
                 ,   HtmlEvent.onFocus (convert ShowCursor)
                 ,   HtmlEvent.onBlur (convert HideCursor)
-                ,   HtmlEvent.onMouseDown (MouseDown >> convert)
+                ,   HtmlEvent.onPointerCapture convert MouseDown
                 ]
             ++ attr
             )
@@ -147,7 +148,7 @@ update event model = case event of
         _ -> (model, "", Cmd.none)
     ShowCursor -> ({model | showCursor = True}, "", Cmd.none)
     HideCursor -> ({model | showCursor = False}, "", Cmd.none)
-    MouseDown point -> (model, "", model.mouseCmd point)
+    MouseDown val point -> (model, "", model.mouseCmd val point)
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
@@ -440,7 +441,7 @@ displaySuggestions_ functions input =
         createEntry key event latex = Just
             (   cosineCorrelation_ inputOrder (letterOrder_ key)
             ,   (   key
-                ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> event)] -- don't use onClick, because some onBlurs get triggered first
+                ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> event)] -- don't use onClick, because some onBlurs get triggered first
                     [MathIcon.static [] latex]
                 )
             )

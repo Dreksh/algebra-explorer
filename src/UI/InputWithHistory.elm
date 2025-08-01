@@ -75,7 +75,7 @@ defaultOptions_ =
     ,   Default {latex = [Latex.Text Input.baseState "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
     ]
 
-init: Bool -> ((Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
+init: Bool -> (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
 init show mouseCmd focusCmd =
     {   options = defaultOptions_
     ,   openCount = if show then 1 else 0
