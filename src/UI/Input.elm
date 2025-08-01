@@ -1,4 +1,4 @@
-module UI.Input exposing (Model, Event(..), Entry, init, update, clear, set, view, toTree)
+module UI.Input exposing (Model, Event(..), Entry, baseState, init, update, clear, set, view, toTree)
 
 import Array
 import Dict
@@ -20,17 +20,16 @@ import UI.SvgDrag as SvgDrag
 -- a scope is which function + parameter number they belong to
 -- root is always (0, Just 1)
 -- a Nothing parameter means it's part of the function's written form
-type alias Scope_ =
+type alias EntryState_ =
     {   function: Int
     ,   argument: Maybe Int
     ,   fixedArgs: Bool
     }
-type alias EntryState_ = {immutable: Bool, scope: Scope_}
-baseState_: EntryState_
-baseState_ = {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}}
+baseState: EntryState_
+baseState = {function = 0, argument = Just 1, fixedArgs = True}
 
 type alias Entry =
-    -- All Latex.Model has the first entry as either the model's scope, or a constant
+    -- All entries are implied as a `Latex.Scope baseState model`, but only the model is stored.
     {   latex: Latex.Model EntryState_
     ,   funcName: Dict.Dict Int String
     ,   nextFunc: Int
@@ -88,7 +87,7 @@ view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Ru
 view convert functions attr model =
     Html.div [id model.holderID, class "mathInput"]
     (   [   Html.input
-            (   [   type_ "textarea"
+            (   [   type_ "text"
                 ,   id (model.holderID ++ "-input")
                 ,   HtmlEvent.onKeyDown (Key >> convert)
                 ,   HtmlEvent.onFocus (convert ShowCursor)
@@ -119,15 +118,15 @@ view convert functions attr model =
 update: Event -> Model msg -> (Model msg, String, Cmd msg)
 update event model = case event of
     Key e -> let entry = model.entry in
-        case e of
+        case e |> Debug.log "key" of
         ("z", False, True) -> (model, "", Cmd.none) -- Undo
         ("Z", True, True) -> (model, "", Cmd.none) -- Redo
         ("Backspace", _, _) -> (model, "", Cmd.none)
         ("Delete", _, _) -> (model, "", Cmd.none)
-        ("ArrowUp", _, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowDown", _, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowLeft", _, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor |> Debug.log "left"}, "", Cmd.none)
-        ("ArrowRight", _, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor |> Debug.log "right"}, "", Cmd.none)
+        ("ArrowUp", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
+        ("ArrowDown", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
+        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor |> Debug.log "left"}, "", Cmd.none)
+        ("ArrowRight", False, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor |> Debug.log "right"}, "", Cmd.none)
         (c, _, False) -> if String.length c == 1
             then case String.uncons c of
                 Nothing -> (model, "", Cmd.none)
@@ -164,90 +163,101 @@ update event model = case event of
 {- ## Cursor Movement -}
 
 type CaretShiftResult =
-    GetNext (Latex.Model EntryState_) -- I want to get the next value (i.e. [1,0,5] to [1,1])
-    | GetPrevious (Latex.Model EntryState_) -- I want to get the previous value (i.e. [1,1] to [1,0,5], or [1,0] to [1])
+    ShiftNext (Latex.Model EntryState_) -- I want to get the next value (i.e. [1,0,5] to [1,1])
+    | ShiftPrevious (Latex.Model EntryState_) -- I want to get the previous value (i.e. [1,1] to [1,0,5]) (i.e. [1,0] to [1])
 
 cursorNext_: Bool -> Latex.Model EntryState_ -> List Int -> List Int
 cursorNext_ forwards latex current = Latex.modifyCaret
     (\_ input -> case input of
-        Latex.EOF -> Latex.Processing (if forwards then GetNext [] else GetPrevious [])
+        Latex.EOF -> Latex.Processing (if forwards then ShiftNext [] else ShiftPrevious [])
         Latex.TextCase (state, str) others num -> let newNum = if forwards then num + 1 else num - 1 in
-            if newNum < 0 then Latex.Complete (Latex.Text state str :: others, [0])
+            if newNum <= 0 then Latex.Complete (Latex.Text state str :: others, [0])
             else if newNum >= String.length str
-            then Latex.Complete (Latex.Text state str :: others, [1])  |> Debug.log "test"
-            else Latex.Complete (Latex.Text state str :: others, [0,newNum]) |> Debug.log "blah"
-        Latex.SymbolCase (state, symb) others -> if forwards
-            then Latex.Complete (Latex.SymbolPart state symb :: others, [1])
-            else Latex.Processing (GetPrevious (Latex.SymbolPart state symb :: others))
-        Latex.IntermediateCase next -> if not forwards then Latex.Processing (GetPrevious next)
-            else Latex.Complete (next, cursorFirstOf_ next)
-        Latex.FractionCase (topState, top) (botState, bot) others -> let fulllist = Latex.Fraction topState top botState bot::others in
-            if not forwards
-            then Latex.Complete (fulllist, [0])
-            else case (topState.immutable, botState.immutable) of
-                (False, _) -> Latex.Complete (fulllist, [0,0] ++ cursorFirstOf_ top) |> Debug.log "blah"
-                (True, False) -> Latex.Complete (fulllist, [0,1] ++ cursorFirstOf_ bot)
-                (True, True) -> Latex.Complete (fulllist, cursorFirstOf_ fulllist)
+            then Latex.Complete (Latex.Text state str :: others, [1])
+            else Latex.Complete (Latex.Text state str :: others, [0,newNum])
+        Latex.IntermediateCase next -> if not forwards then Latex.Processing (ShiftPrevious next)
+            else case cursorFirstOf_ next of
+                Just c -> Latex.Complete (next, c)
+                Nothing -> Latex.Processing (ShiftNext next)
     )
-    (\part _ res -> case res of
-        GetNext remaining -> Latex.Processing (GetNext (part::remaining))
-        GetPrevious remaining -> case cursorLastOf_ part of
-            Just c -> Latex.Complete (part::remaining, c)
-            Nothing -> Latex.Processing (GetPrevious (part::remaining))
+    (\part scope res -> case res of
+        ShiftNext remaining -> Latex.Processing (ShiftNext (part::remaining)) -- already checked in preprocess
+        ShiftPrevious remaining -> case cursorLastOf_ part of
+            Just c -> Latex.Complete (part::remaining, 0::c)
+            Nothing -> case scope.argument of
+                Nothing -> Latex.Processing (ShiftPrevious (part::remaining))
+                Just _ -> Latex.Complete (part::remaining, [0])
     )
-    (\combine s next res -> case res of
-        GetNext children -> Latex.Complete (combine s children::next, [1])
-        GetPrevious children -> Latex.Complete (combine s children::next, [0])
+    (\combine s next parent res -> let newl children = combine s children::next in
+        case res of
+            ShiftNext children -> case parent.argument of
+                Just _ -> Latex.Complete (newl children, [1]) -- Allow to append random stuff
+                Nothing -> case cursorFirstOf_ next of
+                    Just (c::other) -> Latex.Complete (newl children, c+1::other)
+                    _ -> Latex.Processing (ShiftNext (newl children))
+            ShiftPrevious children -> case parent.argument of
+                Just _ -> Latex.Complete (newl children, [1]) -- Allow to prepend random stuff
+                Nothing -> Latex.Processing (ShiftPrevious (newl children))
     )
-    baseState_ latex current
+    baseState latex current
     |> \res -> case res of
         Ok (Latex.Complete (_,c)) -> c
-        Ok (Latex.Processing (GetPrevious _)) -> [0]
-        _ -> [List.length latex]
+        _ -> current
 
-cursorFirstOf_: Latex.Model EntryState_ -> List Int
+cursorFirstOf_: Latex.Model EntryState_ -> Maybe (List Int)
 cursorFirstOf_ = List.foldl (\part (result, childNum) ->
         (   case result of
                 Nothing -> case part of
-                    Latex.Fraction topState top botState bot -> case (topState.immutable, botState.immutable) of -- Prefer top over bottom
-                        (False, _) -> Just ([childNum,0] ++ cursorFirstOf_ top)
-                        (True, False) -> Just ([childNum,1] ++ cursorFirstOf_ bot)
-                        (True, True) -> Nothing
-                    Latex.SymbolPart s _ -> if s.immutable then Nothing else Just [childNum+1]
-                    Latex.Text s t -> if s.immutable then Nothing else
-                        if String.isEmpty t then Just [childNum+1] else Just [childNum, 0]
-                    Latex.Superscript s inner -> if s.immutable then Nothing else Just [childNum, 0]
-                    Latex.Subscript s inner -> if s.immutable then Nothing else Just [childNum, 0]
-                    Latex.Bracket s inner -> if s.immutable then Nothing else Just [childNum, 0]
-                    Latex.Sqrt s inner -> if s.immutable then Nothing else Just [childNum, 0]
+                    Latex.Fraction _ top bot ->
+                        case  cursorFirstOf_ top of
+                            Just r -> Just ([childNum, 0] ++ r)
+                            Nothing -> cursorFirstOf_ bot |> Maybe.map ((++) [childNum, 1])
+                    Latex.SymbolPart s _ -> s.argument |> Maybe.map (\_ -> [childNum+1])
+                    Latex.Text s t -> s.argument |> Maybe.map (\_ -> if String.isEmpty t then [childNum+1] else [childNum, 0])
+                    Latex.Superscript _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
+                    Latex.Subscript _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
+                    Latex.Bracket _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
+                    Latex.Sqrt _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
+                    Latex.Scope s inner -> case s.argument of
+                        Nothing -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
+                        Just _ -> Just [childNum]
                     _ -> Nothing
                 _ -> result
         ,   childNum + 1
         )
     ) (Nothing, 0)
-    >> \(res, count) -> case res of
-        Nothing -> [count]
-        Just c -> c
+    >> Tuple.first
 
 cursorLastOf_: Latex.Part EntryState_ -> Maybe (List Int)
-cursorLastOf_ part = case part of
-    Latex.Fraction topState top botState bot -> case (topState.immutable, botState.immutable) of
-        (False, _) -> Just [0,0,List.length top]
-        (True, False) -> Just [0,1,List.length bot]
-        (True, True) -> Nothing
-    Latex.SymbolPart s _ -> if s.immutable then Nothing else Just [0]
-    Latex.Text s text -> if s.immutable then Nothing else let newIndex = String.length text - 1 in
-        if newIndex < 0 then Nothing else Just [0,newIndex]
-    Latex.Superscript s inner -> if s.immutable then Nothing else Just [0,List.length inner]
-    Latex.Subscript s inner -> if s.immutable then Nothing else Just [0,List.length inner]
-    Latex.Bracket s inner -> if s.immutable then Nothing else Just [0,List.length inner]
-    Latex.Sqrt s inner -> if s.immutable then Nothing else Just [0,List.length inner]
-    _ -> Nothing
+cursorLastOf_ part =
+    let
+        recursive model = List.foldr (\p (res,postIndex) -> case res of
+                Just _ -> (res, postIndex)
+                Nothing -> case cursorLastOf_ p of
+                    Nothing -> (Nothing, postIndex - 1)
+                    Just c -> (Just (postIndex::c), postIndex)
+            ) (Nothing,List.length model-1) model
+            |> Tuple.first
+    in
+    case part of
+        Latex.Fraction _ top bot -> case recursive top of
+            Just c -> Just (0 :: c)
+            Nothing -> recursive bot |> Maybe.map (\c -> 1 :: c)
+        Latex.SymbolPart s _ -> Nothing
+        Latex.Text s text -> s.argument
+            |> Maybe.andThen (\_ -> if String.length text == 0 then Nothing else Just [String.length text - 1])
+        Latex.Superscript s inner -> recursive inner
+        Latex.Subscript s inner -> recursive inner
+        Latex.Bracket s inner -> recursive inner
+        Latex.Sqrt s inner -> recursive inner
+        Latex.Scope s inner -> recursive inner
+        _ -> Nothing
 
 {- ## Insertion -}
 
 type InsertionResult =
     AppendOrCreate (Latex.Model EntryState_)
+    | AppendError
 
 insertChar_: Char -> Model msg -> Result String (Model msg)
 insertChar_ char model = Latex.modifyCaret
@@ -256,65 +266,67 @@ insertChar_ char model = Latex.modifyCaret
         Latex.TextCase (state, str) others num ->
             let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
             Latex.Complete (Latex.Text state newStr :: others, [0, num+1])
-        Latex.SymbolCase (state, symb) others -> Latex.Processing (AppendOrCreate others)
         Latex.IntermediateCase next -> case next of
-            (Latex.Text state str :: others) ->
-                Latex.Complete (Latex.Text state (String.cons char str)::others,[0,1])
+            (Latex.Text state str :: others) -> case state.argument of
+                Just _ -> Latex.Complete (Latex.Text state (String.cons char str)::others,[0,1])
+                Nothing -> Latex.Processing (AppendOrCreate (Latex.Text state str :: others))
             _ -> Latex.Processing (AppendOrCreate next)
-        Latex.FractionCase (topState, top) (botState, bot) others ->
-            Latex.Processing (AppendOrCreate (Latex.Fraction topState top botState bot::others))
     )
     (\part parentState res -> case res of
         AppendOrCreate others -> case part of
-            Latex.Text s str -> if s.immutable
-                then Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
-                else Latex.Complete (Latex.Text s (str ++ String.fromChar char) :: others, [1])
-            _ -> Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
+            Latex.Text s str -> case s.argument of
+                Nothing -> Latex.Processing AppendError
+                Just _ -> Latex.Complete (Latex.Text s (str ++ String.fromChar char) :: others, [1])
+            _ -> case parentState.argument of
+                Nothing -> Latex.Processing AppendError
+                Just _ -> Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
+        AppendError -> Latex.Processing AppendError
     )
-    (\combine s next res -> case res of
-        AppendOrCreate others -> let newEntry = Latex.Text s (String.fromChar char) in
-            Latex.Complete (combine s (newEntry::others)::next, [0,1])
+    (\combine s next _ res -> case res of
+        AppendOrCreate others -> case s.argument of
+            Nothing -> Latex.Processing AppendError
+            Just _ -> let newEntry = Latex.Text s (String.fromChar char) in
+                Latex.Complete (combine s (newEntry::others)::next, [0,1])
+        AppendError -> Latex.Processing AppendError
     )
-    baseState_ model.entry.latex model.cursor
+    baseState model.entry.latex model.cursor
     |> \res -> let entry = model.entry in case res of
         Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
-        Ok (Latex.Processing (AppendOrCreate _)) -> let newEntry = Latex.Text baseState_ (String.fromChar char) in
+        Ok (Latex.Processing (AppendOrCreate _)) -> let newEntry = Latex.Text baseState (String.fromChar char) in
             Ok {model | entry = {entry | latex = newEntry::model.entry.latex}, cursor = [0,1]}
+        Ok (Latex.Processing AppendError) -> Err "Shouldn't be allowed to insert text here"
         _ -> Err "Something went wrong"
 
 insertSymbol_: Latex.Symbol -> Model msg -> Result String (Model msg)
 insertSymbol_ symb model = Latex.modifyCaretSimple
-    (\parentState input -> let symPart = Latex.SymbolPart parentState symb in
-        case input of
-        Latex.EOF -> ([symPart],[1])
-        Latex.TextCase (state, str) others num ->
-            if num == 0 then (symPart :: Latex.Text state str :: others, [1])
-            else (Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others,[2])
-        Latex.SymbolCase (state, symb2) others -> (symPart::Latex.SymbolPart state symb2::others, [1])
-        Latex.IntermediateCase next -> (symPart :: next, [1])
-        Latex.FractionCase (topState, top) (botState, bot) others ->
-            (symPart:: Latex.Fraction topState top botState bot :: others, [1])
-    ) baseState_ model.entry.latex model.cursor
+    (\parentState input -> case parentState.argument of
+        Nothing -> Err "Shouldn't be allowed to insert symbols here"
+        Just _ -> let symPart = Latex.SymbolPart parentState symb in
+            case input of
+            Latex.EOF -> Ok ([symPart],[1])
+            Latex.TextCase (state, str) others num ->
+                if num == 0 then Ok (symPart :: Latex.Text state str :: others, [1])
+                else Ok (Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others,[2])
+            Latex.IntermediateCase next -> Ok (symPart :: next, [1])
+    ) baseState model.entry.latex model.cursor
     |> \res -> let entry = model.entry in case res of
         Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
         _ -> Err "Something went wrong"
 
-insertLatex_: String -> (Latex.Model EntryState_, Latex.CaretPosition) -> Model msg -> Result String (Model msg)
+insertLatex_: String -> (Latex.Part EntryState_, Latex.CaretPosition) -> Model msg -> Result String (Model msg)
 insertLatex_ name (latex, caret) model = Latex.modifyCaretSimple
-    (\_ input -> case input of
-        Latex.EOF -> (latex, caret)
-        Latex.TextCase (state, str) others num ->
-            if num == 0 then (latex ++ (Latex.Text state str :: others), caret)
-            else (  (Latex.Text state (String.left num str):: latex) ++ (Latex.Text state (String.dropLeft num str)::others)
-                ,   case caret of
-                    (x::next) -> (x+1::next)
-                    [] -> []
-                )
-        Latex.SymbolCase (state, symb) others -> (latex++(Latex.SymbolPart state symb::others), caret)
-        Latex.IntermediateCase next -> (latex ++ next, caret)
-        Latex.FractionCase (topState, top) (botState, bot) others ->
-            (latex ++ (Latex.Fraction topState top botState bot :: others), caret)
-    ) baseState_ model.entry.latex model.cursor
+    (\parent input -> case parent.argument of
+        Nothing -> Err "Shouldn't be allowed to insert functions here"
+        Just _ -> case input of
+            Latex.EOF -> Ok ([latex], 0::caret)
+            Latex.TextCase (state, str) others num ->
+                if num == 0 then Ok (latex :: Latex.Text state str :: others, 0::caret)
+                else Ok
+                    (  Latex.Text state (String.left num str):: latex :: Latex.Text state (String.dropLeft num str)::others
+                    ,   1::caret
+                    )
+            Latex.IntermediateCase next -> Ok (latex :: next, 0::caret)
+    ) baseState model.entry.latex model.cursor
     |> \res -> let entry = model.entry in case res of
         Ok (Latex.Complete (l,c)) ->
             Ok  {   model
@@ -328,147 +340,96 @@ insertLatex_ name (latex, caret) model = Latex.modifyCaretSimple
                 }
         _ -> Err "Something went wrong"
 
-rewriteLatex_: Int -> Bool -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
-rewriteLatex_ scopeNum fixed =
-    rewriteLatexRecursive_ {function = scopeNum, argument = Nothing, fixedArgs = fixed}
-    >> \(a,b,_) -> (a,b)
+rewriteLatex_: Int -> Bool -> Latex.Model () -> (Latex.Part EntryState_, Latex.CaretPosition)
+rewriteLatex_ scopeNum fixed latex = let newState = {function = scopeNum, argument = Nothing, fixedArgs = fixed} in
+    rewriteLatexRecursive_ newState latex
+    |> \(model, caret) -> (Latex.Scope newState model, caret)
 
-rewriteLatexRecursive_: Scope_ -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition, Bool)
-rewriteLatexRecursive_ scope =
-    let
-        createState arg immutable = case arg of
-            Just _ -> {immutable = False, scope = {scope | argument = arg}}
-            Nothing -> {immutable = immutable, scope = scope}
-    in
-    List.foldl (\part (newModel, caret, (index, immutable)) -> case part of
-        Latex.Fraction _ top _ bot ->
+rewriteLatexRecursive_: EntryState_ -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
+rewriteLatexRecursive_ newState latex = List.foldr (\part (newModel, caret, index) -> case part of
+        Latex.Fraction _ top bot ->
             let
-                (newTop, topCar, topImm) = rewriteLatexRecursive_ scope top
-                (newBot, botCar, botImm) = rewriteLatexRecursive_ scope bot
+                (newTop, topCar) = rewriteLatexRecursive_ newState top
+                (newBot, botCar) = rewriteLatexRecursive_ newState bot
             in
-                (   Latex.Fraction (createState Nothing topImm) newTop (createState Nothing topImm) newBot :: newModel
+                (   Latex.Fraction newState newTop newBot :: newModel
                 ,   if List.isEmpty topCar
                     then if List.isEmpty botCar then caret
                         else (index::1::botCar)
                     else (index::0::topCar)
-                ,   (index + 1, topImm && botImm)
+                ,   index - 1
                 )
-        Latex.Text _ str -> (Latex.Text (createState Nothing True) str::newModel, caret, (index+1, True))
-        Latex.SymbolPart _ symb -> (Latex.SymbolPart (createState Nothing True) symb::newModel, caret, (index+1, True))
-        Latex.Superscript _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
-            (Latex.Superscript (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
-        Latex.Subscript _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
-            (Latex.Subscript (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
-        Latex.Bracket _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
-            (Latex.Bracket (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
-        Latex.Sqrt _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
-            (Latex.Sqrt (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
+        Latex.Text _ str -> (Latex.Text newState str::newModel, caret, index - 1)
+        Latex.SymbolPart _ symb -> (Latex.SymbolPart newState symb::newModel, caret, index - 1)
+        Latex.Superscript _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
+            (Latex.Superscript newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
+        Latex.Subscript _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
+            (Latex.Subscript newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
+        Latex.Bracket _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
+            (Latex.Bracket newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
+        Latex.Sqrt _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
+            (Latex.Sqrt newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
         Latex.Argument _ num ->
-            (   Latex.Text (createState (Just num) False) "" :: newModel
+            (   Latex.Scope {newState | argument = (Just num)} [] :: newModel
             ,   if num == 1 then [index+1] else caret
-            ,   (index + 1, False)
+            ,   index - 1
             )
         Latex.Param _ num ->
-            (   Latex.Text (createState (Just num) False) "" :: newModel
+            (   Latex.Scope {newState | argument = (Just num)} [] :: newModel
             ,   if num == 1 then [index+1] else caret
-            ,   (index + 1, False)
+            ,   index-1
             )
-    ) ([], [], (0,True))
-    >> \(a,b,(_,c)) -> (List.reverse a, b, c)
+        Latex.Scope _ inner -> rewriteLatexRecursive_ newState inner
+            |> \(a,b) -> (a,b,index - 1)
+    ) ([], [], List.length latex - 1 ) latex
+    |> \(a,b, _) -> (a, b)
 
 {- ## Extraction -}
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String Display.FullEquation
-toTree dict model = toStringDict_ model.entry.funcName 0 model.entry.latex
-    |> Result.andThen (Dict.get 1 >> Result.fromMaybe "Unable to convert to a string")
+toTree dict model = toEntryString_ model.entry.funcName model.entry.latex
     |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
 
-type alias ProcessState_ =
-    {   currentParam: Int
-    ,   functionEntry: Dict.Dict Int String
-    ,   subscope: Maybe (Int, Dict.Dict Int String)
-    }
-
--- Append scopes of the same function number to the assigned argument
--- if scopes do not share the same function number, assume they are smaller functions in the scope,
--- so they will be appended onto whatever the previous argument is (as a function)
--- with the exception when the currentParam is 0, where they will be prepended onto the next argument, when seen
-toStringDict_: Dict.Dict Int String -> Int -> Latex.Model {immutable: Bool, scope: Scope_} ->  Result String (Dict.Dict Int String)
-toStringDict_ funcName function model =
-    let
-        appendString key str dict = case Dict.get key dict of
-            Nothing -> Dict.insert key str dict
-            Just prev -> Dict.insert key (prev++str) dict
-
-        flush state = case state.subscope of
-            Nothing -> Ok state
-            Just (funcNum, argDict) -> case Dict.get funcNum funcName of
-                Nothing -> Err ("Cannot find the function name for the " ++ String.fromInt funcNum ++ " function")
-                Just name -> Helper.resultDict (\key str (prev, total) ->
-                        if prev + 1 /= key
-                        then Err ("function '" ++ name ++ "' is missing argument " ++ String.fromInt key)
-                        else if prev == 0 then Ok (key, str) else Ok (key, total ++ "," ++ str)
-                    ) (0, "") argDict
-                    |> Result.map (\(_, innerStr) ->
-                        {   state
-                        |   subscope = Nothing
-                        ,   functionEntry = appendString state.currentParam ("\\" ++ name ++ "(" ++ innerStr ++ ")") state.functionEntry
-                        }
-                    )
-        addText state elem text = case elem.scope.argument of
-            -- Part of the function's layout, not considered actual text
-            Nothing -> Ok state
-            Just arg -> if elem.scope.function == function
-                then flush state
-                    |> Result.map (\newState -> case Dict.get 0 newState.functionEntry of
-                        Nothing -> { newState | currentParam = arg , functionEntry = appendString arg text newState.functionEntry }
-                        Just t -> -- Case if other scope had text before this own scope
-                            {   newState
-                            |   currentParam = arg
-                            ,   functionEntry = appendString arg (t ++ text) newState.functionEntry
-                                |> Dict.remove 0
-                            }
-                    )
-                else case state.subscope of
-                    Nothing -> Ok {state | subscope = Just (elem.scope.function, Dict.singleton arg text)}
-                    Just (subFunc, subDict) -> if subFunc == elem.scope.function
-                        then Ok {state | subscope = Just (subFunc,appendString arg text subDict)}
-                        else flush state
-                            |> Result.map (\newState -> {newState | subscope = Just (elem.scope.function, Dict.singleton arg text)})
-        addDict state funcNum dict = case state.subscope of
-            Nothing -> Ok {state | subscope = Just (funcNum, dict)}
-            Just (subFunc, subDict) -> if subFunc == funcNum
-                then Ok {state | subscope = Just (subFunc, Dict.union dict subDict)}
-                else flush state
-                    |> Result.map (\newState -> {newState | subscope = Just (funcNum, dict)})
-    in
-    Helper.resultList (\symbol state -> case symbol of
-        Latex.Fraction topElem top botElem bot -> toStringDict_ funcName topElem.scope.function top
-            |> Result.andThen (\extractedTop -> toStringDict_ funcName botElem.scope.function bot
-                |> Result.andThen (\extractedBot -> addDict state topElem.scope.function (Dict.union extractedTop extractedBot))
-            )
-        Latex.Superscript elem inner -> toStringDict_ funcName elem.scope.function inner
-            |> Result.andThen (addDict state elem.scope.function)
-        Latex.Subscript elem inner -> toStringDict_ funcName elem.scope.function inner
-            |> Result.andThen (addDict state elem.scope.function)
-        Latex.Sqrt elem inner -> toStringDict_ funcName elem.scope.function inner
-            |> Result.andThen (addDict state elem.scope.function)
-        Latex.Bracket elem inner -> case elem.scope.argument of
-            -- Just a bracket for indicating a function
-            Nothing -> toStringDict_ funcName elem.scope.function inner
-                |> Result.andThen (addDict state elem.scope.function)
-            -- Part of the text
-            Just arg -> toStringDict_ funcName elem.scope.function inner
-                |> Result.andThen (\dict -> case Dict.get arg dict of
-                    Nothing -> Err "text bracket contained random stuff"
-                    Just text -> addText state elem ("(" ++ text ++")")
+-- Argument scope
+toEntryString_: Dict.Dict Int String -> Latex.Model EntryState_ ->  Result String String
+toEntryString_ funcName model = Helper.resultList (\symbol prev -> case symbol of
+        Latex.Text elem text -> Ok (prev++text)
+        Latex.SymbolPart elem symb -> Ok (prev++"\\" ++ Latex.symbolToStr symb)
+        Latex.Bracket _ inner -> toEntryString_ funcName inner
+            |> Result.map (\str -> prev++ "(" ++ str ++ ")")
+        Latex.Scope elem inner -> case Dict.get elem.function funcName of
+            Nothing -> Err "Function not found"
+            Just name -> toEntryMap_ funcName Dict.empty inner
+                |> Result.andThen (\dict -> Helper.resultDict (\key value (str, index) ->
+                    if key /= index then Err "Missing an argument"
+                    else if value == "" then Err "An input is empty"
+                    else Ok
+                        (   if String.isEmpty str then value else str++","++value
+                        ,   index + 1
+                        )
+                    ) ("", 1) dict
+                    |> Result.map (\(res,_) -> prev ++ "\\" ++ name ++ "(" ++ res ++ ")")
                 )
-        Latex.Text elem text -> addText state elem text
-        Latex.SymbolPart elem symb -> addText state elem ("\\" ++ Latex.symbolToStr symb)
-        Latex.Argument _ _ -> Err "Found latex argument in input"
-        Latex.Param _ _ -> Err "Found latex parameter in input"
-    ) (ProcessState_ 0 Dict.empty Nothing) model
-    |> Result.map .functionEntry
+        _ -> Err "Unable to stringify the latex parts"
+    ) "" model
+
+-- Non-argument scope
+toEntryMap_: Dict.Dict Int String -> Dict.Dict Int String -> Latex.Model EntryState_ ->  Result String (Dict.Dict Int String)
+toEntryMap_ funcName resDict model = Helper.resultList (\part res -> case part of
+        Latex.Fraction _ top bot -> toEntryMap_ funcName res top
+            |> Result.andThen (\newRes -> toEntryMap_ funcName newRes bot)
+        Latex.Superscript _ inner -> toEntryMap_ funcName res inner
+        Latex.Subscript _ inner -> toEntryMap_ funcName res inner
+        Latex.Sqrt _ inner -> toEntryMap_ funcName res inner
+        Latex.Bracket _ inner -> toEntryMap_ funcName res inner
+        Latex.Scope elem inner -> case elem.argument of
+            Nothing -> toEntryMap_ funcName res inner
+            Just arg -> toEntryString_ funcName inner
+                |> Result.andThen (\str -> if String.isEmpty str then Err "Argument is blank"
+                    else Ok (Dict.insert arg str res)
+                )
+        _ -> Ok res
+    ) resDict model
 
 {- ## Suggestion -}
 

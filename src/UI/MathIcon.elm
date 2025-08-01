@@ -153,13 +153,13 @@ iteratorToPart_ it =
     case it.remaining of
         [] -> (it, Nothing)
         (current::next) -> case current of
-            Latex.Fraction (s, seen) top botS bot -> if seen
+            Latex.Fraction (s, seen) top bot -> if seen
                 then if List.isEmpty bot then result next s " )"
                     else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top botS innerIt.remaining :: next}, part)
-                else if List.isEmpty top then result (Latex.Fraction (s, True) top botS bot :: next) s " /"
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
+                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) s " /"
                     else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining botS bot :: next}, part)
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
             Latex.Text (s, _) text -> result next s text
             Latex.SymbolPart (s, _) symbol -> result next s (" " ++ Latex.symbolToStr symbol)
             Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
@@ -178,6 +178,9 @@ iteratorToPart_ it =
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
                 else result (Latex.Sqrt (s, True) inner :: next) s " sqrt"
+            Latex.Scope s inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Scope s innerIt.remaining :: next} , part)
             Latex.Argument (s, _) num -> result next s (" " ++ String.fromInt num)
             Latex.Param (s, _) num -> result next s (" " ++ String.fromInt num)
 
@@ -312,7 +315,7 @@ latexToFramesWithCursor_ cursorPosition model = if List.isEmpty model
 
 symbolsToFrames_: List Int -> Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ cursor ref elem = case elem of
-    Latex.Fraction s top _ bottom ->
+    Latex.Fraction s top bottom ->
         let
             innerCursor num = case cursor of
                 (now::next) -> if now == num then next else []
@@ -362,10 +365,7 @@ symbolsToFrames_ cursor ref elem = case elem of
             )
     Latex.Text s str -> wordStrokes_ (List.head cursor) s str
         |> \new ->
-            (   {   data = Position [{frame = new, origin = (0,0), scale = 1}]
-                ,   topLeft = new.topLeft
-                ,   botRight = new.botRight
-                }
+            (   new
             ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
                 {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
@@ -438,6 +438,17 @@ symbolsToFrames_ cursor ref elem = case elem of
         ,   let offsetX = (max ref.topX ref.botX) + 1 in
             {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
+    Latex.Scope s inner -> if List.isEmpty inner
+        then (  {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (0.4,0.5)}
+            ,   let offsetX = (max ref.topX ref.botX) + 0.4 in
+                {topX = offsetX, botX = offsetX, topY = -0.5, botY = 0.5}
+            )
+        else latexToFramesWithCursor_ cursor inner
+            |> \new ->
+                (   new
+                ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
+                    {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
+                )
 
 processFrame_: (Maybe state -> List Stroke -> Vector2 -> Float -> Bool -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of
@@ -474,10 +485,8 @@ symbolStrokes_ s str = case str of
     Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
 
 wordStrokes_: Maybe Int -> state -> String -> Frame state
-wordStrokes_ cursorPos s str = if String.isEmpty str
-    -- This is for inputs, where we're waiting for something to be written
-    then {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.2, 0.2), Line (0.3,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (0.4,0.5)}
-    else String.foldl (\c res -> case res of
+wordStrokes_ cursorPos s str =
+    String.foldl (\c res -> case res of
             Err err -> Err err
             Ok ((list, cursorX), ((_, top), (right, bot)), countdown) -> charStrokes_ c
                 |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) -> case countdown of

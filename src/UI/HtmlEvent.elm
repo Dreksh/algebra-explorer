@@ -1,5 +1,5 @@
 module UI.HtmlEvent exposing (
-    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onBlur, onSubmitField, onSubmitForm,
+    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onBlur, onSubmitForm,
     onPointerCapture, onPointerMove, onKeyChange, onKeyDown)
 
 -- Event is needed to block the js events from propagating upwards
@@ -30,14 +30,6 @@ onFocus = Html.Events.onFocus
 onBlur: msg -> Html.Attribute msg
 onBlur = Html.Events.onBlur
 
-onSubmitField: String -> (String -> msg) -> Html.Attribute msg
-onSubmitField target event = preventDefaultOn "submit"
-    (   map (\input -> (event input, True))
-        <| field "target"
-        <| field target
-        <|  field "value" string
-    )
-
 onSubmitForm: Decoder msg -> Html.Attribute msg
 onSubmitForm target = preventDefaultOn "submit"
     (   map (\input -> (input, True))
@@ -63,7 +55,7 @@ onPointerMove converter move cancel = let pointerId = field "pointerId" value in
     ]
 
 propagatableEvents_: Set.Set String
-propagatableEvents_ = Set.fromList ["Tab", "Escape"]
+propagatableEvents_ = Set.fromList ["Tab", "Escape", "Enter"]
 
 onKeyDown: ((String, Bool, Bool) -> msg) -> Html.Attribute msg
 onKeyDown event = custom "keydown"

@@ -47,27 +47,32 @@ type Event =
 
 defaultOptions_: List Selection
 defaultOptions_ =
-    [   Default {latex =[Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "x+4=5"], funcName = Dict.empty, nextFunc = 1}
+    [   Default {latex = [Latex.Text Input.baseState "x+4=5"], funcName = Dict.empty, nextFunc = 1}
     ,   Default
         {   latex =
-            [   Latex.Text {immutable = False, scope = {function = 1, argument = Nothing, fixedArgs = False}} "f"
-            ,   Latex.Bracket {immutable = False, scope = {function = 1, argument = Nothing, fixedArgs = False}} [Latex.Text {immutable = False, scope = {function = 1, argument = Just 1, fixedArgs = False}} "x"]
-            ,   Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "=x+3"
+            [   Latex.Scope {function = 1, argument = Nothing, fixedArgs = False}
+                [   Latex.Text {function = 1, argument = Nothing, fixedArgs = False} "f"
+                ,   Latex.Bracket {function = 1, argument = Nothing, fixedArgs = False}
+                    [   Latex.Scope {function = 1, argument = Just 1, fixedArgs = False}
+                        [Latex.Text {function = 1, argument = Just 1, fixedArgs = False} "x"]
+                    ]
+                ]
+            ,   Latex.Text Input.baseState "=x+3"
             ]
         ,   funcName = Dict.singleton 1 "f"
         ,   nextFunc = 2
         }
     ,   Default
         {   latex =
-            [   Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "x"
-            ,   Latex.Bracket {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "x+2"]
-            ,   Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "=-1"
+            [   Latex.Text Input.baseState "x"
+            ,   Latex.Bracket Input.baseState [Latex.Text Input.baseState "x+2"]
+            ,   Latex.Text Input.baseState "=-1"
             ]
         ,   funcName = Dict.empty
         ,   nextFunc = 1
         }
-    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
-    ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
+    ,   Default {latex = [Latex.Text Input.baseState "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
+    ,   Default {latex = [Latex.Text Input.baseState "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
     ]
 
 init: Bool -> ((Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
@@ -125,20 +130,21 @@ close tracker model = case model.current of
 
 update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
 update convert tracker funcDict event model = case event of
-    Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "textInput")
-    Submit -> case Input.toTree funcDict model.input of
-        Err err -> ((model, tracker), Err err, Cmd.none)
-        Ok tree -> let (newModel, newT) = close tracker model in
-            (   (   {   newModel
-                    |   options = if List.isEmpty model.input.entry.latex
-                            then newModel.options
-                            else Previous model.input.entry :: newModel.options
-                    }
-                ,   newT
+    Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "mainInput-input")
+    Submit -> if List.isEmpty model.input.entry.latex then (close tracker model, Ok Nothing, Cmd.none)
+        else case Input.toTree funcDict model.input of
+            Err err -> ((model, tracker), Err err, Cmd.none)
+            Ok tree -> let (newModel, newT) = close tracker model in
+                (   (   {   newModel
+                        |   options = if List.isEmpty model.input.entry.latex
+                                then newModel.options
+                                else Previous model.input.entry :: newModel.options
+                        }
+                    ,   newT
+                    )
+                ,   Ok (Just tree)
+                ,   Cmd.none
                 )
-            ,   Ok (Just tree)
-            ,   Cmd.none
-            )
     InputEvent e -> let (inModel, errStr, inCmd) = Input.update e model.input in
         if String.isEmpty errStr |> not
         then ((model, tracker), Err errStr, Cmd.none)
@@ -165,7 +171,7 @@ createView_ converter funcDict model inputNum width height =
         ]
         [   Html.form
             [   class "textbar"
-            ,   HtmlEvent.onSubmitField "equation" (\_ -> converter Submit)
+            ,   HtmlEvent.onSubmit (converter Submit)
             ]
             [   Icon.equation []
             ,   Input.view (InputEvent >> converter) funcDict [] model.input

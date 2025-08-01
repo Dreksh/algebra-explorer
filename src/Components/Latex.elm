@@ -14,13 +14,14 @@ import Helper
 type alias Model elem = List (Part elem)
 
 type Part elem =
-    Fraction elem (Model elem) elem (Model elem)
+    Fraction elem (Model elem) (Model elem)
     | Text elem String
     | SymbolPart elem Symbol
     | Superscript elem (Model elem)
     | Subscript elem (Model elem)
     | Bracket elem (Model elem) -- Round brackets that wrap around some content
     | Sqrt elem (Model elem)
+    | Scope elem (Model elem) -- Specificly for input, this is simply a wrapper
     | Argument elem Int -- Our custom insertion, for adding
     | Param elem Int
 
@@ -41,25 +42,27 @@ type alias CaretPosition = List Int
 -- note that fraction doesn't reveal the other state of the bottom fraction
 getState: Part a -> a
 getState p = case p of
-    Fraction e _ _ _ -> e
+    Fraction e _ _ -> e
     Text e _ -> e
     SymbolPart e _ -> e
     Superscript e _ -> e
     Subscript e _ -> e
     Bracket e _ -> e
     Sqrt e _ -> e
+    Scope e _ -> e
     Argument e _ -> e
     Param e _ -> e
 
 map: (a -> b) -> Model a -> Model b
 map convert = List.map (\root -> case root of
-        Fraction e top e2 bot -> Fraction (convert e) (map convert top) (convert e2) (map convert bot)
+        Fraction e top bot -> Fraction (convert e) (map convert top) (map convert bot)
         Text e str -> Text (convert e) str
         SymbolPart e symbol -> SymbolPart (convert e) symbol
         Superscript e inner -> Superscript (convert e) (map convert inner)
         Subscript e inner -> Subscript (convert e) (map convert inner)
         Bracket e inner -> Bracket (convert e) (map convert inner)
         Sqrt e inner -> Sqrt (convert e) (map convert inner)
+        Scope e inner -> Scope (convert e) (map convert inner)
         Argument e int -> Argument (convert e) int
         Param e int -> Param (convert e) int
     )
@@ -69,9 +72,7 @@ map convert = List.map (\root -> case root of
 type IterationCase state =
     EOF
     | TextCase (state, String) (Model state) Int
-    | SymbolCase (state, Symbol) (Model state)
     | IntermediateCase (Model state) -- All the stuff following the current position
-    | FractionCase (state, Model state) (state, Model state) (Model state)
 type IterationResult state res =
     Complete (Model state, CaretPosition)
     | Processing res
@@ -79,26 +80,26 @@ type IterationError state res =
     BrokenCaret -- Allocated out of bounds for fractions
     | BrokenLatex -- Args / Params found
     -- Mid-Traversal, not exactly errors, but if unresolved at the end, they are errors
-    | SameLevelTraversal (Part state) state (IterationProcessing_ state res)
+    | SameLevelTraversal (Part state) (IterationProcessing_ state res)
     | NextLevelTraversal (List Int) (state -> Model state -> Part state) state (Model state) (IterationProcessing_ state res)
 
 type alias IterationProcessing_ state res = Result (IterationError state res) (IterationResult state res)
 
 modifyCaret: (state -> IterationCase state -> IterationResult state res)
     -> (Part state -> state -> res -> IterationResult state res)
-    -> ((state -> Model state -> Part state) -> state -> Model state -> res -> IterationResult state res)
+    -> ((state -> Model state -> Part state) -> state -> Model state -> state -> res -> IterationResult state res)
     -> state -> Model state -> CaretPosition -> IterationProcessing_ state res
 modifyCaret preprocess stepProcess jumpProcess initialState latex caret =
     let
         process error = case error of
-            SameLevelTraversal prev s res -> Result.andThen (\success -> case success of
+            SameLevelTraversal prev res -> Result.andThen (\success -> case success of
                     Complete (l, (c0::c1)) -> Complete (prev::l, (c0 + 1::c1)) |> Ok
-                    Processing r -> stepProcess prev s r |> Ok
+                    Processing r -> stepProcess prev initialState r |> Ok
                     Complete (_, []) -> Err BrokenCaret
                 ) res
             NextLevelTraversal prepend combine s others res -> Result.map (\success -> case success of
                     Complete (l, c) -> Complete (combine s l :: others, prepend ++ c)
-                    Processing r -> jumpProcess combine s others r
+                    Processing r -> jumpProcess combine s others initialState r
                 ) res
             _ -> Err error
     in
@@ -106,13 +107,12 @@ modifyCaret preprocess stepProcess jumpProcess initialState latex caret =
         ([], _) -> EOF |> preprocess initialState |> Ok
         (others, []) -> Err BrokenCaret
         ((first::others), [x]) -> if x > 0
-            then modifyCaret preprocess stepProcess jumpProcess initialState others [x-1] |> SameLevelTraversal first initialState |> process
+            then modifyCaret preprocess stepProcess jumpProcess initialState others [x-1] |> SameLevelTraversal first |> process
             else IntermediateCase latex |> preprocess initialState |> Ok
         ((first::others),(x::y::children)) -> if x > 0
-            then modifyCaret preprocess stepProcess jumpProcess initialState others (x-1::y::children) |> SameLevelTraversal first initialState |> process
+            then modifyCaret preprocess stepProcess jumpProcess initialState others (x-1::y::children) |> SameLevelTraversal first |> process
             else case first of
                 Text s text -> TextCase (s, text) others y |> preprocess initialState |> Ok
-                SymbolPart s symb -> SymbolCase (s, symb) others |> preprocess initialState |> Ok
                 Superscript s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
                     |> NextLevelTraversal [0] Superscript s others |> process
                 Subscript s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
@@ -121,29 +121,34 @@ modifyCaret preprocess stepProcess jumpProcess initialState latex caret =
                     |> NextLevelTraversal [0] Bracket s others |> process
                 Sqrt s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
                     |> NextLevelTraversal [0] Sqrt s others |> process
-                Fraction topState top botState bot -> if y /= 0 && y/=1 then Err BrokenCaret
-                    else if List.isEmpty children
-                    then FractionCase (topState, top) (botState, bot) others |> preprocess initialState |> Ok
+                Scope s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
+                    |> NextLevelTraversal [0] Scope s others |> process
+                Fraction state top bot -> if y /= 0 && y/=1 then Err BrokenCaret
+                    else if List.isEmpty children then Err BrokenCaret
                     else if y == 0
-                    then modifyCaret preprocess stepProcess jumpProcess topState top children
-                        |> NextLevelTraversal [0,0] (\newS newTop -> Fraction newS newTop botState bot) topState [] |> process
-                    else modifyCaret preprocess stepProcess jumpProcess botState bot children
-                        |> NextLevelTraversal [0,1] (\newS newBot -> Fraction topState top newS newBot) topState [] |> process
+                    then modifyCaret preprocess stepProcess jumpProcess state top children
+                        |> NextLevelTraversal [0,0] (\newS newTop -> Fraction newS newTop bot) state others |> process
+                    else modifyCaret preprocess stepProcess jumpProcess state bot children
+                        |> NextLevelTraversal [0,1] (\newS newBot -> Fraction newS top newBot) state others |> process
                 _ -> Err BrokenLatex
 
-modifyCaretSimple: (state -> IterationCase state -> (Model state, CaretPosition))
-    -> state -> Model state -> CaretPosition -> IterationProcessing_ state res
-modifyCaretSimple process = modifyCaret (\s -> process s >> Complete) (\_ _ -> Processing) (\_ _ _ -> Processing)
+modifyCaretSimple: (state -> IterationCase state -> Result String (Model state, CaretPosition))
+    -> state -> Model state -> CaretPosition -> IterationProcessing_ state String
+modifyCaretSimple process = modifyCaret
+    (\s it -> case process s it of
+        Ok res -> Complete res
+        Err str -> Processing str
+    )
+    (\_ _ -> Processing) (\_ _ _ _ -> Processing)
 
 {- ## Encoding, Decoding: to and from the written form of the tree structure -}
 
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
 decoder inner = Decode.field "type" Decode.string
     |> Decode.andThen (\str -> case str of
-        "fraction" -> Decode.map4 Fraction
-            (Decode.field "topState" inner)
+        "fraction" -> Decode.map3 Fraction
+            (Decode.field "state" inner)
             (Decode.field "top" (Decode.lazy (\_ -> decoder inner)))
-            (Decode.field "botState" inner)
             (Decode.field "bot" (Decode.lazy (\_ -> decoder inner)))
         "text" -> Decode.map2 Text (Decode.field "state" inner) (Decode.field "text" Decode.string)
         "symbol" -> Decode.map2 SymbolPart (Decode.field "state" inner) (Decode.field "symbol" symbolDecoder_)
@@ -158,15 +163,15 @@ decoder inner = Decode.field "type" Decode.string
 
 encode: (s -> Encode.Value) -> Model s -> Encode.Value
 encode convert = Encode.list (\n -> case n of
-        Fraction e top e2 bot -> Encode.object
-            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot)
-            ,("topState",convert e),("botState", convert e2)]
+        Fraction e top bot -> Encode.object
+            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot),("state",convert e)]
         Text e str -> Encode.object [("type",Encode.string "text"),("state", convert e),("text",Encode.string str)]
         SymbolPart e symbol -> Encode.object [("type",Encode.string "symbol"),("state", convert e),("symbol",encodeSymbol_ symbol)]
         Superscript e inner -> Encode.object [("type",Encode.string "sup"),("state", convert e),("inner",encode convert inner)]
         Subscript e inner -> Encode.object [("type",Encode.string "sub"),("state", convert e),("inner",encode convert inner)]
         Bracket e inner -> Encode.object [("type",Encode.string "bracket"),("state", convert e),("inner",encode convert inner)]
         Sqrt e inner -> Encode.object [("type",Encode.string "sqrt"),("state", convert e),("inner",encode convert inner)]
+        Scope e inner -> Encode.object [("type",Encode.string "scope"),("state", convert e),("inner",encode convert inner)]
         Argument e int -> Encode.object [("type",Encode.string "arg"),("state", convert e),("num", Encode.int int)]
         Param e int -> Encode.object [("type",Encode.string "param"),("state", convert e),("num", Encode.int int)]
     )
@@ -207,13 +212,14 @@ encodeSymbol_ = symbolToStr >> Encode.string
 
 unparse: Model s -> String
 unparse = List.map (\token -> case token of
-    Fraction _ up _ down -> "\\frac{" ++ unparse up ++ "}{" ++ unparse down ++ "}"
+    Fraction _ up down -> "\\frac{" ++ unparse up ++ "}{" ++ unparse down ++ "}"
     Text _ t -> t ++ " "
     SymbolPart _ s -> "\\" ++ symbolToStr s ++ " "
     Superscript _ inner -> "_{" ++ unparse inner ++ "}"
     Subscript _ inner -> "^{" ++ unparse inner ++ "}"
     Bracket _ inner -> "(" ++ unparse inner ++ ")"
     Sqrt _ inner -> "{" ++ unparse inner ++ "}"
+    Scope _ inner -> unparse inner
     Argument _ num -> "\\arg{" ++ String.fromInt num ++ "}"
     Param _ num -> "\\param{" ++ String.fromInt num ++ "}"
     )
@@ -231,7 +237,7 @@ parse str = case Parser.run (modelParser_ |. Parser.end) str of
 
 extractArgs_: (Set.Set Int, Int) -> Model () -> Result String (Set.Set Int, Int)
 extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
-        Fraction _ top _ bot -> extractArgs_ (found, m) top
+        Fraction _ top bot -> extractArgs_ (found, m) top
             |> Result.andThen (\b -> extractArgs_ b bot)
         Text _ _ -> Ok (found, m)
         SymbolPart _ _ -> Ok (found, m)
@@ -239,6 +245,7 @@ extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
         Subscript _ n -> extractArgs_ (found, m) n
         Bracket _ _ -> Ok (found, m)
         Sqrt _ n -> extractArgs_ (found, m) n
+        Scope _ n -> extractArgs_ (found, m) n
         Argument _ arg -> if Set.member arg found
             then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
             else Ok (Set.insert arg found, max m arg)
@@ -276,7 +283,7 @@ valueParser_ = Parser.oneOf
     [   Parser.succeed identity
         |. Parser.token "\\"
         |= Parser.oneOf
-            [   Parser.succeed (\top -> Fraction () top ()) |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
+            [   Parser.succeed (Fraction ())  |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
             ,   Parser.succeed (Sqrt ()) |. Parser.keyword "sqrt" |= bracketParser_
             ,   Parser.succeed (Argument ()) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
             ,   Parser.succeed (Param ()) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"
