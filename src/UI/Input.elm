@@ -51,7 +51,7 @@ type Event =
     | HideCursor
     | MouseDown (Float, Float)
     | Shift SvgDrag.Event
-    | FunctionChoice String (Latex.Model ())
+    | FunctionChoice String Bool (Latex.Model ()) -- The bool is for whether the args are fixed
     | SymbolChoice Latex.Symbol
     | HelperInput String
     | HelperClear
@@ -152,7 +152,7 @@ update event model = case event of
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
-    FunctionChoice name latex -> case insertLatex_ name (rewriteLatex_ model.entry.nextFunc latex) model of
+    FunctionChoice name fixed latex -> case insertLatex_ name (rewriteLatex_ model.entry.nextFunc fixed latex) model of
         Err str -> (model, str, Cmd.none)
         Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
     SymbolChoice symb -> case insertSymbol_ symb model of
@@ -328,9 +328,9 @@ insertLatex_ name (latex, caret) model = Latex.modifyCaretSimple
                 }
         _ -> Err "Something went wrong"
 
-rewriteLatex_: Int -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
-rewriteLatex_ scopeNum =
-    rewriteLatexRecursive_ {function = scopeNum, argument = Nothing, fixedArgs = True}
+rewriteLatex_: Int -> Bool -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
+rewriteLatex_ scopeNum fixed =
+    rewriteLatexRecursive_ {function = scopeNum, argument = Nothing, fixedArgs = fixed}
     >> \(a,b,_) -> (a,b)
 
 rewriteLatexRecursive_: Scope_ -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition, Bool)
@@ -476,25 +476,36 @@ displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules
 displaySuggestions_ functions input =
     let
         inputOrder = letterOrder_ input
-        greekSymbols = Dict.toList Latex.greekLetters
-            |> List.map (\(name, s) ->
-                (   cosineCorrelation_ inputOrder (letterOrder_ name)
-                ,   (   name
-                    ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> SymbolChoice s)] -- don't use onClick, because some onBlurs get triggered first
-                        [MathIcon.static [] [Latex.SymbolPart () s]]
-                    )
+        createEntry key event latex = Just
+            (   cosineCorrelation_ inputOrder (letterOrder_ key)
+            ,   (   key
+                ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> event)] -- don't use onClick, because some onBlurs get triggered first
+                    [MathIcon.static [] latex]
                 )
             )
+        createLatex name args =
+            [   Latex.Text () name
+            ,   Latex.Bracket ()
+                (List.range 1 args |> List.map (Latex.Argument ()) |> List.intersperse (Latex.Text () ","))
+            ]
+        greekSymbols = Dict.toList Latex.greekLetters
+            |> List.filterMap (\(name, s) -> createEntry name (SymbolChoice s) [Latex.SymbolPart () s])
         functionSymbols = Dict.toList functions
-            |> List.filterMap (\(key, value) -> value.property |> Math.getState |> .latex
-                |> Maybe.map (\func ->
-                    (   cosineCorrelation_ inputOrder (letterOrder_ key)
-                    ,   (   key
-                        ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> FunctionChoice key func)] -- don't use onClick, because some onBlurs get triggered first
-                            [MathIcon.static [] func]
-                        )
-                    )
-                )
+            |> List.filterMap (\(key, value) ->
+                case value.property of
+                    Math.VariableNode n -> let latex = [Latex.Text () key] in createEntry key (FunctionChoice key True latex) latex
+                    Math.UnaryNode n -> case n.state.latex of
+                        Just l -> createEntry key (FunctionChoice key True l) l
+                        Nothing -> let l = createLatex key 1 in createEntry key (FunctionChoice key True l) l
+                    Math.BinaryNode n -> case n.state.latex of
+                        Just l -> createEntry key (FunctionChoice key (not n.associative) l) l
+                        Nothing -> if n.associative
+                            then let l = createLatex key 1 in createEntry key (FunctionChoice key False l) l
+                            else let l = createLatex key 2 in createEntry key (FunctionChoice key True l) l
+                    Math.GenericNode n -> case n.state.latex of
+                        Just l -> createEntry key (FunctionChoice key True l) l
+                        Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in createEntry key (FunctionChoice key True l) l
+                    _ -> Nothing
             )
     in
         List.sortBy (\(corr, _) -> -corr) (functionSymbols ++ greekSymbols)
