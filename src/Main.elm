@@ -54,14 +54,14 @@ port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
-port svgMouseBegin: {id: String, x: Float, y: Float} -> Cmd msg
+port svgMouseBegin: {id: String, x: Float, y: Float, pointerID: Encode.Value} -> Cmd msg
 port svgMouseEvent: (SvgDrag.Raw -> msg) -> Sub msg
 
 setCapture: Bool -> String -> Encode.Value -> Cmd msg
 setCapture s e p = capture {set = s, eId = e, pId = p}
 
-displayMouseCmd: Int -> (Float, Float) -> Cmd msg
-displayMouseCmd id (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y}
+displayMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd msg
+displayMouseCmd id pId (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y, pointerID = pId}
 
 -- Types
 

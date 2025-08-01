@@ -1,6 +1,6 @@
 module UI.HtmlEvent exposing (
     onClick, onSubmit, onFocus, onSubmitField, onSubmitForm,
-    onPointerCapture, onPointerMove, onMouseDown)
+    onPointerCapture, onPointerMove)
 
 -- Event is needed to block the js events from propagating upwards
 
@@ -49,6 +49,3 @@ onPointerMove converter move cancel = let pointerId = field "pointerId" value in
     ,   custom "pointerup" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ]
-
-onMouseDown: ((Float, Float) -> msg) -> Html.Attribute msg
-onMouseDown event = Html.Events.on "mousedown" (map event clientPos_)

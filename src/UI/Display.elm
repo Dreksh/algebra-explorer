@@ -39,7 +39,7 @@ type alias Model =
     ,   createModeForEquation: Maybe Int
     -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
-    ,   svgMouseCmd: Int -> (Float, Float) -> Cmd Event
+    ,   svgMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd Event
     ,   updateQuery: List FullEquation -> Cmd Event
     }
 
@@ -64,7 +64,7 @@ type Event =
     | ToggleHistory Int
     | HistoryEvent Int History.Event
     | DraggableEvent Int Draggable.Event
-    | MouseDown Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
+    | PointerDown Int Int Int (List Float) Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
     | Commute Int SvgDrag.Event
 
 type alias SelectedNode =
@@ -95,8 +95,9 @@ newEntry_ tracker size index eq =
 anyVisible: Model -> Bool
 anyVisible model = Dict.foldl (\_ value -> (||) value.show) False model.equations
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> (Float, Float) -> Cmd Event) ->
-    Animation.Tracker -> List FullEquation -> (Model, Animation.Tracker)
+init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event)
+    -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event)
+    -> Animation.Tracker -> List FullEquation -> (Model, Animation.Tracker)
 init setCapture updateQuery svgMouseCmd tracker l =
     let
         size = List.length l
@@ -386,7 +387,7 @@ update size tracker event model = case event of
                     ) action
                     |> Maybe.withDefault Cmd.none
                 )
-    MouseDown eq root index midpoints point -> case Dict.get eq model.equations of
+    PointerDown eq root index midpoints pid point -> case Dict.get eq model.equations of
         Nothing -> (model, tracker, Cmd.none)
         Just entry ->
             (   {   model
@@ -397,7 +398,7 @@ update size tracker event model = case event of
                     model.equations
                 }
             ,   tracker
-            ,   model.svgMouseCmd eq point
+            ,   model.svgMouseCmd eq pid point
             )
     Commute eqNum dragEvent -> case dragEvent of
         SvgDrag.Start _ -> (model, tracker, Cmd.none) -- Handled in MouseDown
@@ -549,11 +550,11 @@ brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.A
 brickAttr_ highlight eqNum id draggable =
     (   case draggable of
             Nothing ->
-                [   HtmlEvent.onMouseDown (MouseDown eqNum id -1 [])
+                [   HtmlEvent.onPointerCapture identity (PointerDown eqNum id -1 [])
                 ]
             Just (originalIndex, midpoints) ->
                 [   Svg.Attributes.class "commutable"
-                ,   HtmlEvent.onMouseDown (MouseDown eqNum id originalIndex midpoints)
+                ,   HtmlEvent.onPointerCapture identity (PointerDown eqNum id originalIndex midpoints)
                 ]
     )
     |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
@@ -593,7 +594,7 @@ encodeHistoryState_ (eq, l) = Encode.object
     ,   ("latex", Latex.encode (Matcher.encodeState Animation.encodeState) l)
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> (Float, Float) -> Cmd Event) ->
+decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
 decoder setCapture updateQuery svgMouseCmd = Decode.map4 (\(eq, t) next sel create -> (Model eq next sel create setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
