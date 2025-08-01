@@ -4,6 +4,7 @@ import Array
 import Dict
 import Html
 import Html.Attributes exposing (class, id, name, style, type_)
+import Html.Keyed
 -- Ours
 import Helper
 import Algo.Matcher as Matcher
@@ -25,23 +26,24 @@ type alias Scope_ =
     ,   fixedArgs: Bool
     }
 type alias EntryState_ = {immutable: Bool, scope: Scope_}
+baseState_: EntryState_
+baseState_ = {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}}
+
 type alias Entry =
     -- All Latex.Model has the first entry as either the model's scope, or a constant
     {   latex: Latex.Model EntryState_
     ,   funcName: Dict.Dict Int String
     ,   nextFunc: Int
     }
--- The leaf-node determines the position before the nth child
--- The intermediate-nodes (ones before the leaf) is the nth child of that layer
--- leaf-node cannot address the position after the last child (i.e. for list with l elements, the position cannot be l)
-type alias CursorPosition = List Int
 
-type alias Model =
+type alias Model msg =
     {   entry: Entry
     ,   functionInput: Maybe String
-    ,   cursor: CursorPosition
+    ,   cursor: Latex.CaretPosition
     ,   showCursor: Bool
-    ,   mouseCmd: (Float, Float) -> Cmd Event
+    ,   holderID: String
+    ,   mouseCmd: (Float, Float) -> Cmd msg
+    ,   focusCmd: String -> Cmd msg
     }
 type Event =
     Key (String, Bool, Bool)
@@ -54,16 +56,18 @@ type Event =
     | HelperInput String
     | HelperClear
 
-init: ((Float, Float) -> Cmd Event) -> Model
-init mouseCmd =
+init: ((Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
+init mouseCmd focusCmd holderID =
     {   entry = {latex = [], funcName = Dict.empty, nextFunc = 1}
     ,   functionInput = Nothing
     ,   cursor = [0]
+    ,   holderID = holderID
     ,   showCursor = False
     ,   mouseCmd = mouseCmd
+    ,   focusCmd = focusCmd
     }
 
-set: Entry -> Model -> Model
+set: Entry -> Model msg -> Model msg
 set entry model =
     {   model
     |   entry = entry
@@ -71,7 +75,7 @@ set entry model =
     ,   cursor = [List.length entry.latex]
     ,   showCursor = False
     }
-clear: Model -> Model
+clear: Model msg -> Model msg
 clear model =
     {   model
     |   entry = {latex = [], funcName = Dict.empty, nextFunc = 1}
@@ -80,11 +84,12 @@ clear model =
     ,   showCursor = False
     }
 
-view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (Html.Attribute msg) -> Model -> Html.Html msg
-view convert functions holderID attr model =
-    Html.div [id holderID, class "mathInput"]
+view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> List (Html.Attribute msg) -> Model msg -> Html.Html msg
+view convert functions attr model =
+    Html.div [id model.holderID, class "mathInput"]
     (   [   Html.input
             (   [   type_ "textarea"
+                ,   id (model.holderID ++ "-input")
                 ,   HtmlEvent.onKeyDown (Key >> convert)
                 ,   HtmlEvent.onFocus (convert ShowCursor)
                 ,   HtmlEvent.onBlur (convert HideCursor)
@@ -97,11 +102,12 @@ view convert functions holderID attr model =
             (if model.showCursor then model.cursor else []) model.entry.latex
         ]
     |> Helper.maybeAppend (model.functionInput
+            -- Has to be maybe, so that only one input will be on screen at any point
             |> Maybe.map (\str -> displaySuggestions_ functions str
                 |> \selectable -> Html.div
                     [class "popup"]
-                    [   Html.input [type_ "text", HtmlEvent.onKeyChange HelperInput, HtmlEvent.onBlur HelperClear] []
-                    ,   Html.div [] selectable
+                    [   Html.input [type_ "text", id "inputHelper", HtmlEvent.onKeyChange HelperInput, HtmlEvent.onBlur HelperClear] []
+                    ,   Html.Keyed.node "div" [] selectable
                     ]
                 |> Html.map convert
             )
@@ -110,198 +116,269 @@ view convert functions holderID attr model =
 
 {- ## Updates -}
 
-update: Event -> Model -> (Model, Cmd Event)
+update: Event -> Model msg -> (Model msg, String, Cmd msg)
 update event model = case event of
     Key e -> let entry = model.entry in
         case e of
-        ("z", False, True) -> (model, Cmd.none) -- Undo
-        ("Z", True, True) -> (model, Cmd.none) -- Redo
-        ("Backspace", _, _) -> (model, Cmd.none)
-        ("Delete", _, _) -> (model, Cmd.none)
-        ("ArrowUp", _, _) -> ({model | cursor = model.cursor}, Cmd.none)
-        ("ArrowDown", _, _) -> ({model | cursor = model.cursor}, Cmd.none)
-        ("ArrowLeft", _, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor}, Cmd.none)
-        ("ArrowRight", _, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor}, Cmd.none)
+        ("z", False, True) -> (model, "", Cmd.none) -- Undo
+        ("Z", True, True) -> (model, "", Cmd.none) -- Redo
+        ("Backspace", _, _) -> (model, "", Cmd.none)
+        ("Delete", _, _) -> (model, "", Cmd.none)
+        ("ArrowUp", _, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
+        ("ArrowDown", _, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
+        ("ArrowLeft", _, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor |> Debug.log "left"}, "", Cmd.none)
+        ("ArrowRight", _, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor |> Debug.log "right"}, "", Cmd.none)
         (c, _, False) -> if String.length c == 1
             then case String.uncons c of
-                Nothing -> (model, Cmd.none)
-                Just (char, _) -> if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
-                    then ({model | entry = {entry | latex = appendString_ c entry.latex} }, Cmd.none)
-                    else if String.contains c "0123456789 ."
-                    then ({model | entry = {entry | latex = appendString_ c entry.latex} }, Cmd.none)
+                Nothing -> (model, "", Cmd.none)
+                Just (char, _) -> if Char.isAlphaNum char || char == ' ' || char == '.'
+                    then case insertChar_ char model of
+                        Err str -> (model, str, Cmd.none)
+                        Ok (newModel) -> (newModel, "", Cmd.none)
                     else case char of
-                        '(' -> (model, Cmd.none)
-                        '+' -> (model, Cmd.none)
-                        '*' -> (model, Cmd.none)
-                        '/' -> (model, Cmd.none)
-                        '=' -> (model, Cmd.none)
-                        ',' -> (model, Cmd.none)
-                        '\\' -> ({model | functionInput = Just ""}, Cmd.none)
-                        _ -> (model, Cmd.none)
-            else (model, Cmd.none)
-        _ -> (model, Cmd.none)
-    ShowCursor -> ({model | showCursor = True}, Cmd.none)
-    HideCursor -> ({model | showCursor = False}, Cmd.none)
-    MouseDown point -> (model, model.mouseCmd point)
+                        '(' -> (model, "", Cmd.none)
+                        '+' -> (model, "", Cmd.none)
+                        '*' -> (model, "", Cmd.none)
+                        '/' -> (model, "", Cmd.none)
+                        '=' -> (model, "", Cmd.none)
+                        ',' -> (model, "", Cmd.none)
+                        '\\' -> ({model | functionInput = Just ""}, "", model.focusCmd "inputHelper")
+                        _ -> (model, "'" ++ c ++ "' is not an allowed input", Cmd.none)
+            else (model, "", Cmd.none)
+        _ -> (model, "", Cmd.none)
+    ShowCursor -> ({model | showCursor = True}, "", Cmd.none)
+    HideCursor -> ({model | showCursor = False}, "", Cmd.none)
+    MouseDown point -> (model, "", model.mouseCmd point)
     Shift e -> case e of
-        SvgDrag.End _ _ -> (model, Cmd.none)
-        _ -> (model, Cmd.none) -- TODO: Start & Move for selecting text
-    FunctionChoice name latex -> ({model | functionInput = Nothing}, Cmd.none)
-    SymbolChoice symb -> ({model | functionInput = Nothing}, Cmd.none)
-    HelperInput str -> ({model | functionInput = Just str}, Cmd.none)
-    HelperClear -> ({model | functionInput = Nothing}, Cmd.none)
+        SvgDrag.End _ _ -> (model, "", Cmd.none)
+        _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
+    FunctionChoice name latex -> case insertLatex_ name (rewriteLatex_ model.entry.nextFunc latex) model of
+        Err str -> (model, str, Cmd.none)
+        Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
+    SymbolChoice symb -> case insertSymbol_ symb model of
+        Err str -> (model, str, Cmd.none)
+        Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
+    HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
+    HelperClear -> ({model | functionInput = Nothing}, "", Cmd.none)
 
 {- ## Cursor Movement -}
 
-type TreeIterationDecision =
-    GetNext -- I want to get the next value (i.e. [1,0,5] to [1,1])
-    | GetPrevious -- I want to get the previous value (i.e. [1,1] to [1,0,5])
-    | RemoveChild -- I want to get the previous value (i.e. [1,0] to [1])
-    | NewCursor (List Int) -- Result
-    | None -- Error
+type CaretShiftResult =
+    GetNext (Latex.Model EntryState_) -- I want to get the next value (i.e. [1,0,5] to [1,1])
+    | GetPrevious (Latex.Model EntryState_) -- I want to get the previous value (i.e. [1,1] to [1,0,5], or [1,0] to [1])
 
--- Always takes the 'high road', i.e. top of fractions, superscripts (unless top is immutable, then bot will do)
--- for access to the others, use the down & up keys
 cursorNext_: Bool -> Latex.Model EntryState_ -> List Int -> List Int
-cursorNext_ forwards latex current = modifySelection_ (\res -> case res of
-        Text text num -> let newNum = if forwards then num + 1 else num - 1 in
-                if newNum < 0 then Exact RemoveChild
-                else if newNum >= String.length text
-                then Exact GetNext
-                else Exact (NewCursor [newNum])
-        IntermediateLevel children -> if not forwards then Exact GetPrevious
-            else case cursorFirstOf_ children of
-                NewCursor list -> Exact (NewCursor (0::list))
-                r -> Exact r
-        EOF -> Exact (if forwards then GetNext else GetPrevious)
-        SameLevelTraversal head innerRes -> case innerRes of
-            Exact GetPrevious -> case cursorLastOf_ head of
-                NewCursor list -> Exact (NewCursor (0::list))
-                other -> Exact other
-            Exact (NewCursor (index::body)) -> Exact (NewCursor (index+1::body))
-            _ -> innerRes
-        NextLevelTraversal others innerRes -> case innerRes of
-            Exact GetNext -> Exact (NewCursor [1])
-            Exact GetPrevious -> Exact (NewCursor [0]) -- Behaves like RemoveChild if no more before this point
-            Exact RemoveChild -> Exact (NewCursor [0])
-            Exact (NewCursor list) -> Exact (NewCursor (0::list))
-            _ -> innerRes
-        InsertLevel level innerRes -> case innerRes of
-            Exact (NewCursor list) -> Exact (NewCursor (level::list))
-            _ -> innerRes
-        _ -> res
+cursorNext_ forwards latex current = Latex.modifyCaret
+    (\_ input -> case input of
+        Latex.EOF -> Latex.Processing (if forwards then GetNext [] else GetPrevious [])
+        Latex.TextCase (state, str) others num -> let newNum = if forwards then num + 1 else num - 1 in
+            if newNum < 0 then Latex.Complete (Latex.Text state str :: others, [0])
+            else if newNum >= String.length str
+            then Latex.Complete (Latex.Text state str :: others, [1])  |> Debug.log "test"
+            else Latex.Complete (Latex.Text state str :: others, [0,newNum]) |> Debug.log "blah"
+        Latex.SymbolCase (state, symb) others -> if forwards
+            then Latex.Complete (Latex.SymbolPart state symb :: others, [1])
+            else Latex.Processing (GetPrevious (Latex.SymbolPart state symb :: others))
+        Latex.IntermediateCase next -> if not forwards then Latex.Processing (GetPrevious next)
+            else Latex.Complete (next, cursorFirstOf_ next)
+        Latex.FractionCase (topState, top) (botState, bot) others -> let fulllist = Latex.Fraction topState top botState bot::others in
+            if not forwards
+            then Latex.Complete (fulllist, [0])
+            else case (topState.immutable, botState.immutable) of
+                (False, _) -> Latex.Complete (fulllist, [0,0] ++ cursorFirstOf_ top) |> Debug.log "blah"
+                (True, False) -> Latex.Complete (fulllist, [0,1] ++ cursorFirstOf_ bot)
+                (True, True) -> Latex.Complete (fulllist, cursorFirstOf_ fulllist)
     )
-    (latex, current)
+    (\part _ res -> case res of
+        GetNext remaining -> Latex.Processing (GetNext (part::remaining))
+        GetPrevious remaining -> case cursorLastOf_ part of
+            Just c -> Latex.Complete (part::remaining, c)
+            Nothing -> Latex.Processing (GetPrevious (part::remaining))
+    )
+    (\combine s next res -> case res of
+        GetNext children -> Latex.Complete (combine s children::next, [1])
+        GetPrevious children -> Latex.Complete (combine s children::next, [0])
+    )
+    baseState_ latex current
     |> \res -> case res of
-        Exact (NewCursor c) -> c
-        Exact GetPrevious -> [0]
-        Exact RemoveChild -> [0]
+        Ok (Latex.Complete (_,c)) -> c
+        Ok (Latex.Processing (GetPrevious _)) -> [0]
         _ -> [List.length latex]
 
-cursorFirstOf_: Latex.Model EntryState_ -> TreeIterationDecision
-cursorFirstOf_ = List.foldl (\part result -> case result of
-    GetNext -> case part of
-        Latex.Fraction topState top botState bot -> case (topState.immutable, botState.immutable) of -- Prefer top over bottom
-            (False, _) -> case cursorFirstOf_ top of
-                NewCursor list -> NewCursor (0::list)
-                other -> other
-            (True, False) -> case cursorFirstOf_ bot of
-                NewCursor list -> NewCursor (1::list)
-                other -> other
-            (True, True) -> GetNext
-        Latex.SymbolPart s _ -> if s.immutable then GetNext else NewCursor []
-        Latex.Text s _ -> if s.immutable then GetNext else NewCursor [0]
-        Latex.Superscript s inner -> if s.immutable then GetNext else NewCursor [0]
-        Latex.Subscript s inner -> if s.immutable then GetNext else NewCursor [0]
-        Latex.Bracket s inner -> if s.immutable then GetNext else NewCursor [0]
-        Latex.Sqrt s inner -> if s.immutable then GetNext else NewCursor [0]
-        _ -> GetNext
-    _ -> result
-    ) GetNext
+cursorFirstOf_: Latex.Model EntryState_ -> List Int
+cursorFirstOf_ = List.foldl (\part (result, childNum) ->
+        (   case result of
+                Nothing -> case part of
+                    Latex.Fraction topState top botState bot -> case (topState.immutable, botState.immutable) of -- Prefer top over bottom
+                        (False, _) -> Just ([childNum,0] ++ cursorFirstOf_ top)
+                        (True, False) -> Just ([childNum,1] ++ cursorFirstOf_ bot)
+                        (True, True) -> Nothing
+                    Latex.SymbolPart s _ -> if s.immutable then Nothing else Just [childNum+1]
+                    Latex.Text s t -> if s.immutable then Nothing else
+                        if String.isEmpty t then Just [childNum+1] else Just [childNum, 0]
+                    Latex.Superscript s inner -> if s.immutable then Nothing else Just [childNum, 0]
+                    Latex.Subscript s inner -> if s.immutable then Nothing else Just [childNum, 0]
+                    Latex.Bracket s inner -> if s.immutable then Nothing else Just [childNum, 0]
+                    Latex.Sqrt s inner -> if s.immutable then Nothing else Just [childNum, 0]
+                    _ -> Nothing
+                _ -> result
+        ,   childNum + 1
+        )
+    ) (Nothing, 0)
+    >> \(res, count) -> case res of
+        Nothing -> [count]
+        Just c -> c
 
-cursorLastOf_: Latex.Part EntryState_ -> TreeIterationDecision
+cursorLastOf_: Latex.Part EntryState_ -> Maybe (List Int)
 cursorLastOf_ part = case part of
     Latex.Fraction topState top botState bot -> case (topState.immutable, botState.immutable) of
-        (False, _) -> NewCursor [0,List.length top]
-        (True, False) -> NewCursor [1,List.length bot]
-        (True, True) -> GetPrevious
-    Latex.SymbolPart s _ -> if s.immutable then GetPrevious else NewCursor [] -- No internal positions
-    Latex.Text s text -> if s.immutable then GetPrevious else let newIndex = String.length text - 1 in
-        if newIndex < 0 then GetPrevious else NewCursor [newIndex]
-    Latex.Superscript s inner -> if s.immutable then GetPrevious else NewCursor [List.length inner]
-    Latex.Subscript s inner -> if s.immutable then GetPrevious else NewCursor [List.length inner]
-    Latex.Bracket s inner -> if s.immutable then GetPrevious else NewCursor [List.length inner]
-    Latex.Sqrt s inner -> if s.immutable then GetPrevious else NewCursor [List.length inner]
-    _ -> GetPrevious
+        (False, _) -> Just [0,0,List.length top]
+        (True, False) -> Just [0,1,List.length bot]
+        (True, True) -> Nothing
+    Latex.SymbolPart s _ -> if s.immutable then Nothing else Just [0]
+    Latex.Text s text -> if s.immutable then Nothing else let newIndex = String.length text - 1 in
+        if newIndex < 0 then Nothing else Just [0,newIndex]
+    Latex.Superscript s inner -> if s.immutable then Nothing else Just [0,List.length inner]
+    Latex.Subscript s inner -> if s.immutable then Nothing else Just [0,List.length inner]
+    Latex.Bracket s inner -> if s.immutable then Nothing else Just [0,List.length inner]
+    Latex.Sqrt s inner -> if s.immutable then Nothing else Just [0,List.length inner]
+    _ -> Nothing
 
 {- ## Insertion -}
 
-type IterationResult res =
-    EOF -- End of row
-    | BrokenCursor
-    | BrokenLatex
-    | SameLevelTraversal (Latex.Part EntryState_) (IterationResult res)
-    | NextLevelTraversal (Latex.Model EntryState_) (IterationResult res)
-    | InsertLevel Int (IterationResult res)
-    | IntermediateLevel (Latex.Model EntryState_)
-    | Exact res
-    | Text String Int
+type InsertionResult =
+    AppendOrCreate (Latex.Model EntryState_)
 
-exactMap_: (res -> res) -> IterationResult res -> IterationResult res
-exactMap_ convert original = case original of
-    Exact r -> Exact (convert r)
-    _ -> original
-
-modifySelection_: (IterationResult res -> IterationResult res) -> (Latex.Model EntryState_, CursorPosition) -> IterationResult res
-modifySelection_ process initial =
-    let
-        scopeProcessor others inner children = if List.isEmpty children
-            then IntermediateLevel inner |> process
-            else modifySelection_ process (inner, children) |> NextLevelTraversal others |> process
-    in
-    (
-    case initial of
-        ([], _) -> EOF |> process
-        (others, []) -> IntermediateLevel others |> process
-        ((first::others),(x::children)) -> if x > 0
-            then modifySelection_ process (others,(x-1::children)) |> SameLevelTraversal first |> process
-            else (  case first of
-                Latex.Fraction _ top _ bot -> case List.head children of
-                    Just 0 -> modifySelection_ process (top, List.drop 1 children) |> InsertLevel 0 |> NextLevelTraversal others |> process
-                    Just 1 -> modifySelection_ process (bot, List.drop 1 children) |> InsertLevel 1 |> NextLevelTraversal others |> process
-                    Nothing -> IntermediateLevel top |> process |> InsertLevel 0 |> NextLevelTraversal others |> process
-                    _ -> BrokenCursor
-                Latex.Text _ text -> case List.head children of
-                    Nothing -> IntermediateLevel [first] |> process
-                    Just index -> Text text index |> process |> NextLevelTraversal others |> process
-                Latex.SymbolPart _ _ -> IntermediateLevel [] |> process |> NextLevelTraversal others |> process
-                Latex.Superscript _ inner -> scopeProcessor others inner children
-                Latex.Subscript _ inner -> scopeProcessor others inner children
-                Latex.Bracket _ inner -> scopeProcessor others inner children
-                Latex.Sqrt _ inner -> scopeProcessor others inner children
-                _ -> BrokenLatex
-            )
+insertChar_: Char -> Model msg -> Result String (Model msg)
+insertChar_ char model = Latex.modifyCaret
+    (\_ input -> case input of
+        Latex.EOF -> Latex.Processing (AppendOrCreate [])
+        Latex.TextCase (state, str) others num ->
+            let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
+            Latex.Complete (Latex.Text state newStr :: others, [0, num+1])
+        Latex.SymbolCase (state, symb) others -> Latex.Processing (AppendOrCreate others)
+        Latex.IntermediateCase next -> case next of
+            (Latex.Text state str :: others) ->
+                Latex.Complete (Latex.Text state (String.cons char str)::others,[0,1])
+            _ -> Latex.Processing (AppendOrCreate next)
+        Latex.FractionCase (topState, top) (botState, bot) others ->
+            Latex.Processing (AppendOrCreate (Latex.Fraction topState top botState bot::others))
     )
+    (\part parentState res -> case res of
+        AppendOrCreate others -> case part of
+            Latex.Text s str -> if s.immutable
+                then Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
+                else Latex.Complete (Latex.Text s (str ++ String.fromChar char) :: others, [1])
+            _ -> Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
+    )
+    (\combine s next res -> case res of
+        AppendOrCreate others -> let newEntry = Latex.Text s (String.fromChar char) in
+            Latex.Complete (combine s (newEntry::others)::next, [0,1])
+    )
+    baseState_ model.entry.latex model.cursor
+    |> \res -> let entry = model.entry in case res of
+        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
+        Ok (Latex.Processing (AppendOrCreate _)) -> let newEntry = Latex.Text baseState_ (String.fromChar char) in
+            Ok {model | entry = {entry | latex = newEntry::model.entry.latex}, cursor = [0,1]}
+        _ -> Err "Something went wrong"
 
-insertChar_: Char -> Model -> Model
-insertChar_ char model = model
+insertSymbol_: Latex.Symbol -> Model msg -> Result String (Model msg)
+insertSymbol_ symb model = Latex.modifyCaretSimple
+    (\parentState input -> let symPart = Latex.SymbolPart parentState symb in
+        case input of
+        Latex.EOF -> ([symPart],[1])
+        Latex.TextCase (state, str) others num ->
+            if num == 0 then (symPart :: Latex.Text state str :: others, [1])
+            else (Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others,[2])
+        Latex.SymbolCase (state, symb2) others -> (symPart::Latex.SymbolPart state symb2::others, [1])
+        Latex.IntermediateCase next -> (symPart :: next, [1])
+        Latex.FractionCase (topState, top) (botState, bot) others ->
+            (symPart:: Latex.Fraction topState top botState bot :: others, [1])
+    ) baseState_ model.entry.latex model.cursor
+    |> \res -> let entry = model.entry in case res of
+        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
+        _ -> Err "Something went wrong"
 
+insertLatex_: String -> (Latex.Model EntryState_, Latex.CaretPosition) -> Model msg -> Result String (Model msg)
+insertLatex_ name (latex, caret) model = Latex.modifyCaretSimple
+    (\_ input -> case input of
+        Latex.EOF -> (latex, caret)
+        Latex.TextCase (state, str) others num ->
+            if num == 0 then (latex ++ (Latex.Text state str :: others), caret)
+            else (  (Latex.Text state (String.left num str):: latex) ++ (Latex.Text state (String.dropLeft num str)::others)
+                ,   case caret of
+                    (x::next) -> (x+1::next)
+                    [] -> []
+                )
+        Latex.SymbolCase (state, symb) others -> (latex++(Latex.SymbolPart state symb::others), caret)
+        Latex.IntermediateCase next -> (latex ++ next, caret)
+        Latex.FractionCase (topState, top) (botState, bot) others ->
+            (latex ++ (Latex.Fraction topState top botState bot :: others), caret)
+    ) baseState_ model.entry.latex model.cursor
+    |> \res -> let entry = model.entry in case res of
+        Ok (Latex.Complete (l,c)) ->
+            Ok  {   model
+                |   entry =
+                    {   entry
+                    |   latex = l
+                    ,   funcName = Dict.insert entry.nextFunc name entry.funcName
+                    ,   nextFunc = entry.nextFunc + 1
+                    }
+                ,   cursor = c
+                }
+        _ -> Err "Something went wrong"
 
-appendString_: String -> Latex.Model {immutable: Bool, scope: Scope_} -> Latex.Model {immutable: Bool, scope: Scope_}
-appendString_ str latex =
+rewriteLatex_: Int -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
+rewriteLatex_ scopeNum =
+    rewriteLatexRecursive_ {function = scopeNum, argument = Nothing, fixedArgs = True}
+    >> \(a,b,_) -> (a,b)
+
+rewriteLatexRecursive_: Scope_ -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition, Bool)
+rewriteLatexRecursive_ scope =
     let
-        lastIndex = List.length latex - 1
-        (front,last) = (List.take lastIndex latex, List.drop lastIndex latex)
+        createState arg immutable = case arg of
+            Just _ -> {immutable = False, scope = {scope | argument = arg}}
+            Nothing -> {immutable = immutable, scope = scope}
     in
-        case last of
-            [] -> front ++ [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} str]
-            (x::_) -> case x of
-                Latex.Text e prev -> front ++ [Latex.Text e (prev ++ str)]
-                _ -> latex ++ [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} str]
+    List.foldl (\part (newModel, caret, (index, immutable)) -> case part of
+        Latex.Fraction _ top _ bot ->
+            let
+                (newTop, topCar, topImm) = rewriteLatexRecursive_ scope top
+                (newBot, botCar, botImm) = rewriteLatexRecursive_ scope bot
+            in
+                (   Latex.Fraction (createState Nothing topImm) newTop (createState Nothing topImm) newBot :: newModel
+                ,   if List.isEmpty topCar
+                    then if List.isEmpty botCar then caret
+                        else (index::1::botCar)
+                    else (index::0::topCar)
+                ,   (index + 1, topImm && botImm)
+                )
+        Latex.Text _ str -> (Latex.Text (createState Nothing True) str::newModel, caret, (index+1, True))
+        Latex.SymbolPart _ symb -> (Latex.SymbolPart (createState Nothing True) symb::newModel, caret, (index+1, True))
+        Latex.Superscript _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
+            (Latex.Superscript (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
+        Latex.Subscript _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
+            (Latex.Subscript (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
+        Latex.Bracket _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
+            (Latex.Bracket (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
+        Latex.Sqrt _ inner -> let (newL, car, imm) = rewriteLatexRecursive_ scope inner in
+            (Latex.Sqrt (createState Nothing imm) newL :: newModel, if List.isEmpty car then caret else index :: car, (index + 1, imm))
+        Latex.Argument _ num ->
+            (   Latex.Text (createState (Just num) False) "" :: newModel
+            ,   if num == 1 then [index+1] else caret
+            ,   (index + 1, False)
+            )
+        Latex.Param _ num ->
+            (   Latex.Text (createState (Just num) False) "" :: newModel
+            ,   if num == 1 then [index+1] else caret
+            ,   (index + 1, False)
+            )
+    ) ([], [], (0,True))
+    >> \(a,b,(_,c)) -> (List.reverse a, b, c)
 
 {- ## Extraction -}
 
-toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model -> Result String Display.FullEquation
+toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String Display.FullEquation
 toTree dict model = toStringDict_ model.entry.funcName 0 model.entry.latex
     |> Result.andThen (Dict.get 1 >> Result.fromMaybe "Unable to convert to a string")
     |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
@@ -395,28 +472,32 @@ toStringDict_ funcName function model =
 
 {- ## Suggestion -}
 
-displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (Html.Html Event)
+displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (String, Html.Html Event)
 displaySuggestions_ functions input =
     let
         inputOrder = letterOrder_ input
         greekSymbols = Dict.toList Latex.greekLetters
             |> List.map (\(name, s) ->
                 (   cosineCorrelation_ inputOrder (letterOrder_ name)
-                ,   Html.a [class "clickable", HtmlEvent.onClick (SymbolChoice s)]
-                    [MathIcon.static [] [Latex.SymbolPart () s]]
+                ,   (   name
+                    ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> SymbolChoice s)] -- don't use onClick, because some onBlurs get triggered first
+                        [MathIcon.static [] [Latex.SymbolPart () s]]
+                    )
                 )
             )
         functionSymbols = Dict.toList functions
             |> List.filterMap (\(key, value) -> value.property |> Math.getState |> .latex
                 |> Maybe.map (\func ->
                     (   cosineCorrelation_ inputOrder (letterOrder_ key)
-                    ,   Html.a [class "clickable", HtmlEvent.onClick (FunctionChoice key func)]
-                        [MathIcon.static [] func]
+                    ,   (   key
+                        ,   Html.a [class "clickable", HtmlEvent.onMouseDown (\_ -> FunctionChoice key func)] -- don't use onClick, because some onBlurs get triggered first
+                            [MathIcon.static [] func]
+                        )
                     )
                 )
             )
     in
-        List.sortBy (\(corr, _) -> -corr) (greekSymbols ++ functionSymbols)
+        List.sortBy (\(corr, _) -> -corr) (functionSymbols ++ greekSymbols)
         |> List.map Tuple.second
 
 -- 36 of them, a-z + 0-9

@@ -272,7 +272,7 @@ update event core = let model = core.swappable in
                 ,   input = inputModel
                 ,   animation = newT
                 }
-            ,   focusTextBar_ "textInput"
+            ,   focusTextBar_ "mainInput-input"
             )
         ToggleMenu -> if not model.showMenu
             then (updateCore {model | showMenu = True}, Cmd.none)

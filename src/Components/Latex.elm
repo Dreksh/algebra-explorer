@@ -1,4 +1,7 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, greekLetters, decoder, encode)
+module Components.Latex exposing (
+    Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, greekLetters, decoder, encode,
+    CaretPosition, IterationCase(..), IterationResult(..), IterationError(..), modifyCaret, modifyCaretSimple
+    )
 
 import Dict
 import Json.Decode as Decode
@@ -28,6 +31,13 @@ type Symbol =
     | Division
     | Integration
 
+-- The leaf-node determines the position before the nth child
+-- The intermediate-nodes (ones before the leaf) is the nth child of that layer
+-- leaf-node cannot address the position after the last child (i.e. for list with l elements, the position cannot be l)
+type alias CaretPosition = List Int
+
+{- ## General processing of Latex.Model -}
+
 -- note that fraction doesn't reveal the other state of the bottom fraction
 getState: Part a -> a
 getState p = case p of
@@ -53,6 +63,79 @@ map convert = List.map (\root -> case root of
         Argument e int -> Argument (convert e) int
         Param e int -> Param (convert e) int
     )
+
+{- ## Processing with Caret -}
+
+type IterationCase state =
+    EOF
+    | TextCase (state, String) (Model state) Int
+    | SymbolCase (state, Symbol) (Model state)
+    | IntermediateCase (Model state) -- All the stuff following the current position
+    | FractionCase (state, Model state) (state, Model state) (Model state)
+type IterationResult state res =
+    Complete (Model state, CaretPosition)
+    | Processing res
+type IterationError state res =
+    BrokenCaret -- Allocated out of bounds for fractions
+    | BrokenLatex -- Args / Params found
+    -- Mid-Traversal, not exactly errors, but if unresolved at the end, they are errors
+    | SameLevelTraversal (Part state) state (IterationProcessing_ state res)
+    | NextLevelTraversal (List Int) (state -> Model state -> Part state) state (Model state) (IterationProcessing_ state res)
+
+type alias IterationProcessing_ state res = Result (IterationError state res) (IterationResult state res)
+
+modifyCaret: (state -> IterationCase state -> IterationResult state res)
+    -> (Part state -> state -> res -> IterationResult state res)
+    -> ((state -> Model state -> Part state) -> state -> Model state -> res -> IterationResult state res)
+    -> state -> Model state -> CaretPosition -> IterationProcessing_ state res
+modifyCaret preprocess stepProcess jumpProcess initialState latex caret =
+    let
+        process error = case error of
+            SameLevelTraversal prev s res -> Result.andThen (\success -> case success of
+                    Complete (l, (c0::c1)) -> Complete (prev::l, (c0 + 1::c1)) |> Ok
+                    Processing r -> stepProcess prev s r |> Ok
+                    Complete (_, []) -> Err BrokenCaret
+                ) res
+            NextLevelTraversal prepend combine s others res -> Result.map (\success -> case success of
+                    Complete (l, c) -> Complete (combine s l :: others, prepend ++ c)
+                    Processing r -> jumpProcess combine s others r
+                ) res
+            _ -> Err error
+    in
+    case (latex, caret) of
+        ([], _) -> EOF |> preprocess initialState |> Ok
+        (others, []) -> Err BrokenCaret
+        ((first::others), [x]) -> if x > 0
+            then modifyCaret preprocess stepProcess jumpProcess initialState others [x-1] |> SameLevelTraversal first initialState |> process
+            else IntermediateCase latex |> preprocess initialState |> Ok
+        ((first::others),(x::y::children)) -> if x > 0
+            then modifyCaret preprocess stepProcess jumpProcess initialState others (x-1::y::children) |> SameLevelTraversal first initialState |> process
+            else case first of
+                Text s text -> TextCase (s, text) others y |> preprocess initialState |> Ok
+                SymbolPart s symb -> SymbolCase (s, symb) others |> preprocess initialState |> Ok
+                Superscript s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
+                    |> NextLevelTraversal [0] Superscript s others |> process
+                Subscript s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
+                    |> NextLevelTraversal [0] Subscript s others |> process
+                Bracket s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
+                    |> NextLevelTraversal [0] Bracket s others |> process
+                Sqrt s inner -> modifyCaret preprocess stepProcess jumpProcess s inner (y::children)
+                    |> NextLevelTraversal [0] Sqrt s others |> process
+                Fraction topState top botState bot -> if y /= 0 && y/=1 then Err BrokenCaret
+                    else if List.isEmpty children
+                    then FractionCase (topState, top) (botState, bot) others |> preprocess initialState |> Ok
+                    else if y == 0
+                    then modifyCaret preprocess stepProcess jumpProcess topState top children
+                        |> NextLevelTraversal [0,0] (\newS newTop -> Fraction newS newTop botState bot) topState [] |> process
+                    else modifyCaret preprocess stepProcess jumpProcess botState bot children
+                        |> NextLevelTraversal [0,1] (\newS newBot -> Fraction topState top newS newBot) topState [] |> process
+                _ -> Err BrokenLatex
+
+modifyCaretSimple: (state -> IterationCase state -> (Model state, CaretPosition))
+    -> state -> Model state -> CaretPosition -> IterationProcessing_ state res
+modifyCaretSimple process = modifyCaret (\s -> process s >> Complete) (\_ _ -> Processing) (\_ _ _ -> Processing)
+
+{- ## Encoding, Decoding: to and from the written form of the tree structure -}
 
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
 decoder inner = Decode.field "type" Decode.string
@@ -119,6 +202,8 @@ greekLetters =
 
 encodeSymbol_: Symbol -> Encode.Value
 encodeSymbol_ = symbolToStr >> Encode.string
+
+{- Parsing and Unparsing: To and from the written latex script (partial implementaiton) -}
 
 unparse: Model s -> String
 unparse = List.map (\token -> case token of

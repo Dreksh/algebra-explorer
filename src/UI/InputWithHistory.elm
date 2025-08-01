@@ -30,7 +30,7 @@ animationDuration_ = 750
 type alias Model msg =
     {   options: List Selection
     ,   openCount: Int
-    ,   input: Input.Model
+    ,   input: Input.Model msg
     ,   current: Maybe (Int, Animation.EaseState Float, Animation.EaseState Float)
     ,   closing: Dict.Dict Int (Animation.EaseState Float, Animation.EaseState Float)
     ,   focusCmd: String -> Cmd msg
@@ -70,11 +70,11 @@ defaultOptions_ =
     ,   Default {latex = [Latex.Text {immutable = False, scope = {function = 0, argument = Just 1, fixedArgs = True}} "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
     ]
 
-init: Bool -> ((Float, Float) -> Cmd Input.Event) -> (String -> Cmd msg) -> Model msg
+init: Bool -> ((Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
 init show mouseCmd focusCmd =
     {   options = defaultOptions_
     ,   openCount = if show then 1 else 0
-    ,   input = Input.init mouseCmd
+    ,   input = Input.init mouseCmd focusCmd  "mainInput"
     ,   current = if show
             then Just
                 (   0
@@ -139,12 +139,14 @@ update convert tracker funcDict event model = case event of
             ,   Ok (Just tree)
             ,   Cmd.none
             )
-    InputEvent e -> let (inModel, inCmd) = Input.update e model.input in
-        case (e, model.current) of
+    InputEvent e -> let (inModel, errStr, inCmd) = Input.update e model.input in
+        if String.isEmpty errStr |> not
+        then ((model, tracker), Err errStr, Cmd.none)
+        else case (e, model.current) of
             (Input.ShowCursor, Just (id, width, height)) ->
                 let (newH, newT) = Animation.setEase tracker maxHeight_ height in
-                (({model | current = Just (id, width, newH), input = inModel}, newT), Ok Nothing, Cmd.map (InputEvent >> convert) inCmd)
-            _ -> (({model | input = inModel}, tracker), Ok Nothing, Cmd.map (InputEvent >> convert) inCmd)
+                (({model | current = Just (id, width, newH), input = inModel}, newT), Ok Nothing, inCmd)
+            _ -> (({model | input = inModel}, tracker), Ok Nothing, inCmd)
 
 view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> List (String, Html.Html msg)
 view converter funcDict model =
@@ -163,14 +165,10 @@ createView_ converter funcDict model inputNum width height =
         ]
         [   Html.form
             [   class "textbar"
-            ,   HtmlEvent.onSubmitField "equation" (\_ -> Submit)
+            ,   HtmlEvent.onSubmitField "equation" (\_ -> converter Submit)
             ]
             [   Icon.equation []
-            ,   Input.view InputEvent funcDict "mainInput"
-                [ name "equation"
-                , id "textInput"
-                ]
-                model.input
+            ,   Input.view (InputEvent >> converter) funcDict [] model.input
             ]
         ,   Html.ul
             [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
@@ -187,6 +185,6 @@ createView_ converter funcDict model inputNum width height =
                 )
                 model.options
             )
+            |> Html.map converter
         ]
-        |> Html.map converter
     )
