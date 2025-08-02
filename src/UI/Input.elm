@@ -184,7 +184,7 @@ cursorNext_ forwards latex current = Latex.modifyCaret
     (\part scope res -> case res of
         ShiftNext remaining -> Latex.Processing (ShiftNext (part::remaining)) -- already checked in preprocess
         ShiftPrevious remaining -> case cursorLastOf_ part of
-            Just c -> Latex.Complete (part::remaining, 0::c)
+            Just c -> Latex.Complete (part::remaining, c)
             Nothing -> case scope.argument of
                 Nothing -> Latex.Processing (ShiftPrevious (part::remaining))
                 Just _ -> Latex.Complete (part::remaining, [0])
@@ -197,7 +197,7 @@ cursorNext_ forwards latex current = Latex.modifyCaret
                     Just (c::other) -> Latex.Complete (newl children, c+1::other)
                     _ -> Latex.Processing (ShiftNext (newl children))
             ShiftPrevious children -> case parent.argument of
-                Just _ -> Latex.Complete (newl children, [1]) -- Allow to prepend random stuff
+                Just _ -> Latex.Complete (newl children, [0]) -- Allow to prepend random stuff
                 Nothing -> Latex.Processing (ShiftPrevious (newl children))
     )
     baseState latex current
@@ -206,53 +206,69 @@ cursorNext_ forwards latex current = Latex.modifyCaret
         _ -> current
 
 cursorFirstOf_: Latex.Model EntryState_ -> Maybe (List Int)
-cursorFirstOf_ = List.foldl (\part (result, childNum) ->
-        (   case result of
+cursorFirstOf_ =
+    let
+        check isSameGap = List.foldl (\part (result, childNum, isSame) -> (   case result of
                 Nothing -> case part of
                     Latex.Fraction _ top bot ->
-                        case  cursorFirstOf_ top of
+                        case  check False top of
                             Just r -> Just ([childNum, 0] ++ r)
-                            Nothing -> cursorFirstOf_ bot |> Maybe.map ((++) [childNum, 1])
+                            Nothing -> check False bot |> Maybe.map ((++) [childNum, 1])
                     Latex.SymbolPart s _ -> s.argument |> Maybe.map (\_ -> [childNum+1])
-                    Latex.Text s t -> s.argument |> Maybe.map (\_ -> if String.isEmpty t then [childNum+1] else [childNum, 0])
-                    Latex.Superscript _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
-                    Latex.Subscript _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
-                    Latex.Bracket _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
-                    Latex.Sqrt _ inner -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
-                    Latex.Scope s inner -> case s.argument of
-                        Nothing -> cursorFirstOf_ inner |> Maybe.map ((::) childNum)
-                        Just _ -> Just [childNum]
+                    Latex.Text s t -> s.argument |> Maybe.map (\_ -> if String.length t <= 1 then [childNum+1] else [childNum, 1])
+                    Latex.Superscript _ inner -> check False inner |> Maybe.map ((::) childNum)
+                    Latex.Subscript _ inner -> check False inner |> Maybe.map ((::) childNum)
+                    Latex.Bracket _ inner -> check False inner |> Maybe.map ((::) childNum)
+                    Latex.Sqrt _ inner -> check False inner |> Maybe.map ((::) childNum)
+                    Latex.Scope s inner -> case (s.argument, isSame) of
+                        (Nothing, _) -> check isSame inner |> Maybe.map ((::) childNum)
+                        (Just _, False) -> Just [childNum]
+                        (Just _, True) -> case check True inner of
+                            Nothing -> Just [childNum+1]
+                            Just c -> case List.head c of
+                                Nothing -> Just [childNum]
+                                Just num -> if num == List.length inner then Just [childNum+1] else Just (childNum :: c)
                     _ -> Nothing
                 _ -> result
-        ,   childNum + 1
-        )
-    ) (Nothing, 0)
-    >> Tuple.first
+            ,   childNum + 1
+            ,   False
+            )
+            ) (Nothing, 0, isSameGap)
+            >> \(a,_,_) -> a
+    in
+        check True
 
 cursorLastOf_: Latex.Part EntryState_ -> Maybe (List Int)
-cursorLastOf_ part =
+cursorLastOf_ =
     let
-        recursive model = List.foldr (\p (res,postIndex) -> case res of
-                Just _ -> (res, postIndex)
-                Nothing -> case cursorLastOf_ p of
-                    Nothing -> (Nothing, postIndex - 1)
-                    Just c -> (Just (postIndex::c), postIndex)
-            ) (Nothing,List.length model-1) model
-            |> Tuple.first
+        recursive isSameGap model = List.foldr (\p (res,postIndex,isSame) -> case res of
+                Just _ -> (res, postIndex, isSame)
+                Nothing -> case checkPart isSame p of
+                    Just (head::c) -> (Just (postIndex+head::c), postIndex, isSame)
+                    Just [] -> (Just [], postIndex, isSame)
+                    _ -> (Nothing, postIndex - 1, False)
+            ) (Nothing,List.length model-1,isSameGap) model
+            |> \(a,_,_) -> a
+        checkPart isSameGap part =
+            case part of
+                Latex.Fraction _ top bot -> case recursive False top of
+                    Just c -> Just (0 :: 0 :: c)
+                    Nothing -> recursive False bot |> Maybe.map (\c -> 0 :: 1 :: c)
+                Latex.SymbolPart _ _ -> Nothing
+                Latex.Text s text -> s.argument |> Maybe.andThen (\_ -> let strLen = String.length text in
+                    if strLen == 0 then Nothing
+                    else if strLen == 1 then Just []
+                    else Just [0,String.length text - 1])
+                Latex.Superscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
+                Latex.Subscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
+                Latex.Bracket _ inner -> recursive False inner |> Maybe.map ((::) 0)
+                Latex.Sqrt _ inner -> recursive False inner |> Maybe.map ((::) 0)
+                Latex.Scope s inner -> case (isSameGap, s.argument) of
+                    (False, Just _) -> Just [1]
+                    _ -> recursive isSameGap inner |> Maybe.map ((::) 0)
+                _ -> Nothing
     in
-    case part of
-        Latex.Fraction _ top bot -> case recursive top of
-            Just c -> Just (0 :: c)
-            Nothing -> recursive bot |> Maybe.map (\c -> 1 :: c)
-        Latex.SymbolPart s _ -> Nothing
-        Latex.Text s text -> s.argument
-            |> Maybe.andThen (\_ -> if String.length text == 0 then Nothing else Just [String.length text - 1])
-        Latex.Superscript s inner -> recursive inner
-        Latex.Subscript s inner -> recursive inner
-        Latex.Bracket s inner -> recursive inner
-        Latex.Sqrt s inner -> recursive inner
-        Latex.Scope s inner -> recursive inner
-        _ -> Nothing
+        checkPart True
 
 {- ## Insertion -}
 
