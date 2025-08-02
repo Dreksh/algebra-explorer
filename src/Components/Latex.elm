@@ -1,6 +1,6 @@
 module Components.Latex exposing (
     Model, Part(..), Symbol(..), getState, map, parse, unparse, symbolToStr, greekLetters, decoder, encode,
-    CaretPosition, IterationCase(..), IterationResult(..), IterationError(..), modifyCaret, modifyCaretSimple
+    CaretPosition, IterationCase(..), IterationResult(..), IterationError(..), modifyCaret
     )
 
 import Dict
@@ -131,15 +131,6 @@ modifyCaret preprocess stepProcess jumpProcess initialState latex caret =
                     else modifyCaret preprocess stepProcess jumpProcess state bot children
                         |> NextLevelTraversal [0,1] (\newS newBot -> Fraction newS top newBot) state others |> process
                 _ -> Err BrokenLatex
-
-modifyCaretSimple: (state -> IterationCase state -> Result String (Model state, CaretPosition))
-    -> state -> Model state -> CaretPosition -> IterationProcessing_ state String
-modifyCaretSimple process = modifyCaret
-    (\s it -> case process s it of
-        Ok res -> Complete res
-        Err str -> Processing str
-    )
-    (\_ _ -> Processing) (\_ _ _ _ -> Processing)
 
 {- ## Encoding, Decoding: to and from the written form of the tree structure -}
 

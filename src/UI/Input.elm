@@ -126,7 +126,7 @@ update event model = case event of
         ("Delete", _, _) -> (model, "", Cmd.none)
         ("ArrowUp", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
         ("ArrowDown", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor |> Debug.log "left"}, "", Cmd.none)
+        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor}, "", Cmd.none)
         ("ArrowRight", False, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor |> Debug.log "right"}, "", Cmd.none)
         (c, _, False) -> if String.length c == 1
             then case String.uncons c of
@@ -152,10 +152,20 @@ update event model = case event of
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
-    FunctionChoice name fixed latex -> case insertLatex_ name (rewriteLatex_ model.entry.nextFunc fixed latex) model of
+    FunctionChoice name fixed latex -> case insertLatex_ (\_ -> rewriteLatex_ model.entry.nextFunc fixed latex) model of
         Err str -> (model, str, Cmd.none)
-        Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
-    SymbolChoice symb -> case insertSymbol_ symb model of
+        Ok (newModel) -> let entry = newModel.entry in
+            (   {   newModel
+                |   functionInput = Nothing
+                ,   entry =
+                    {   entry
+                    |   funcName = Dict.insert model.entry.nextFunc name entry.funcName
+                    ,   nextFunc = model.entry.nextFunc + 1
+                    }
+                }
+            , "", model.focusCmd (model.holderID ++ "-input")
+            )
+    SymbolChoice symb -> case insertLatex_ (\s -> (Latex.SymbolPart s symb, [])) model of
         Err str -> (model, str, Cmd.none)
         Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
     HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
@@ -257,7 +267,7 @@ cursorLastOf_ =
                 Latex.SymbolPart _ _ -> Nothing
                 Latex.Text s text -> s.argument |> Maybe.andThen (\_ -> let strLen = String.length text in
                     if strLen == 0 then Nothing
-                    else if strLen == 1 then Just []
+                    else if strLen == 1 then Just [0]
                     else Just [0,String.length text - 1])
                 Latex.Superscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
                 Latex.Subscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
@@ -287,21 +297,30 @@ insertChar_ char model = Latex.modifyCaret
             (Latex.Text state str :: others) -> case state.argument of
                 Just _ -> Latex.Complete (Latex.Text state (String.cons char str)::others,[0,1])
                 Nothing -> Latex.Processing (AppendOrCreate (Latex.Text state str :: others))
+            (Latex.Scope state inner :: others) -> case state.argument of
+                Just _ -> Latex.Complete (appendChar_ state inner next char , [1])
+                Nothing -> Latex.Processing (AppendOrCreate next)
             _ -> Latex.Processing (AppendOrCreate next)
     )
     (\part parentState res -> case res of
         AppendOrCreate others -> case part of
             Latex.Text s str -> case s.argument of
-                Nothing -> Latex.Processing AppendError
+                Nothing -> Latex.Processing AppendError |> Debug.log "test3"
                 Just _ -> Latex.Complete (Latex.Text s (str ++ String.fromChar char) :: others, [1])
+            Latex.Scope s inner -> case s.argument of
+                Nothing -> case parentState.argument of
+                    Nothing -> Latex.Processing AppendError
+                    Just _ -> Latex.Complete
+                        ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
+                Just _ -> Latex.Complete (appendChar_ s inner others char, [1])
             _ -> case parentState.argument of
-                Nothing -> Latex.Processing AppendError
+                Nothing -> Latex.Processing AppendError |> Debug.log "test"
                 Just _ -> Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
         AppendError -> Latex.Processing AppendError
     )
     (\combine s next _ res -> case res of
         AppendOrCreate others -> case s.argument of
-            Nothing -> Latex.Processing AppendError
+            Nothing -> Latex.Processing AppendError |> Debug.log "test4"
             Just _ -> let newEntry = Latex.Text s (String.fromChar char) in
                 Latex.Complete (combine s (newEntry::others)::next, [0,1])
         AppendError -> Latex.Processing AppendError
@@ -314,47 +333,66 @@ insertChar_ char model = Latex.modifyCaret
         Ok (Latex.Processing AppendError) -> Err "Shouldn't be allowed to insert text here"
         _ -> Err "Something went wrong"
 
-insertSymbol_: Latex.Symbol -> Model msg -> Result String (Model msg)
-insertSymbol_ symb model = Latex.modifyCaretSimple
-    (\parentState input -> case parentState.argument of
-        Nothing -> Err "Shouldn't be allowed to insert symbols here"
-        Just _ -> let symPart = Latex.SymbolPart parentState symb in
-            case input of
-            Latex.EOF -> Ok ([symPart],[1])
-            Latex.TextCase (state, str) others num ->
-                if num == 0 then Ok (symPart :: Latex.Text state str :: others, [1])
-                else Ok (Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others,[2])
-            Latex.IntermediateCase next -> Ok (symPart :: next, [1])
-    ) baseState model.entry.latex model.cursor
-    |> \res -> let entry = model.entry in case res of
-        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
-        _ -> Err "Something went wrong"
+appendChar_: EntryState_ -> Latex.Model EntryState_ -> Latex.Model EntryState_ -> Char -> Latex.Model EntryState_
+appendChar_ s inner others char = let finalIndex = List.length inner - 1 in
+    (   case List.drop finalIndex inner of
+            [Latex.Text tState str] -> List.take finalIndex inner
+                ++ [Latex.Text tState (str ++ String.fromChar char)]
+            _ -> inner ++ [Latex.Text s (String.fromChar char)]
+    )
+    |> \newInner -> Latex.Scope s newInner :: others
 
-insertLatex_: String -> (Latex.Part EntryState_, Latex.CaretPosition) -> Model msg -> Result String (Model msg)
-insertLatex_ name (latex, caret) model = Latex.modifyCaretSimple
-    (\parent input -> case parent.argument of
-        Nothing -> Err "Shouldn't be allowed to insert functions here"
-        Just _ -> case input of
-            Latex.EOF -> Ok ([latex], 0::caret)
-            Latex.TextCase (state, str) others num ->
-                if num == 0 then Ok (latex :: Latex.Text state str :: others, 0::caret)
-                else Ok
-                    (  Latex.Text state (String.left num str):: latex :: Latex.Text state (String.dropLeft num str)::others
-                    ,   1::caret
+updateCaretPosition_: Int -> Latex.CaretPosition -> Latex.CaretPosition
+updateCaretPosition_ by list = case list of
+    [] -> [by + 1]
+    c -> by :: c
+
+insertLatex_: (EntryState_ -> (Latex.Part EntryState_, Latex.CaretPosition)) -> Model msg -> Result String (Model msg)
+insertLatex_ creator model = Latex.modifyCaret
+    (\parentState input -> let (symPart, newCaret) = creator parentState in
+        case input of
+        Latex.EOF -> case parentState.argument of
+            Nothing -> Latex.Processing (AppendOrCreate [])
+            Just _ -> Latex.Complete ([symPart], updateCaretPosition_ 0 newCaret)
+        Latex.TextCase (state, str) others num -> case parentState.argument of
+            Nothing -> Latex.Processing AppendError
+            Just _ -> if num == 0 then Latex.Complete (symPart :: Latex.Text state str :: others, updateCaretPosition_ 0 newCaret)
+                else Latex.Complete
+                    (   Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others
+                    ,   updateCaretPosition_ 1 newCaret
                     )
-            Latex.IntermediateCase next -> Ok (latex :: next, 0::caret)
-    ) baseState model.entry.latex model.cursor
+        Latex.IntermediateCase next -> case next of
+            (Latex.Scope state inner :: others) -> case state.argument of
+                Nothing -> Latex.Processing (AppendOrCreate next)
+                Just _ -> Latex.Complete (Latex.Scope state (symPart::inner) :: others, 0 :: updateCaretPosition_ 0 newCaret)
+            _ -> case parentState.argument of
+                Nothing -> Latex.Processing (AppendOrCreate next)
+                Just _ -> Latex.Complete (symPart :: next, updateCaretPosition_ 0 newCaret)
+    )
+    (\part parent res -> case res of
+        AppendOrCreate others -> case parent.argument of
+            Just _ -> let (symPart, newCaret) = creator parent in
+                Latex.Complete (part :: symPart :: others, updateCaretPosition_ 1 newCaret)
+            Nothing -> case part of
+                Latex.Scope s inner -> case s.argument of
+                    Nothing -> Latex.Processing AppendError
+                    Just _ -> let (symPart, newCaret) = creator s in
+                        Latex.Complete (Latex.Scope s (inner ++ [symPart])::others, 0 :: updateCaretPosition_ (List.length inner) newCaret)
+                _ -> Latex.Processing AppendError
+        AppendError -> Latex.Processing AppendError
+    )
+    (\combine s next _ res -> case res of
+        AppendOrCreate others -> case s.argument of
+            Nothing -> Latex.Processing AppendError
+            Just _ -> let (newEntry, newCaret) = creator s in
+                Latex.Complete (combine s (newEntry::others)::next, 0 :: updateCaretPosition_ 0 newCaret)
+        AppendError -> Latex.Processing AppendError
+    )
+    baseState model.entry.latex model.cursor
     |> \res -> let entry = model.entry in case res of
-        Ok (Latex.Complete (l,c)) ->
-            Ok  {   model
-                |   entry =
-                    {   entry
-                    |   latex = l
-                    ,   funcName = Dict.insert entry.nextFunc name entry.funcName
-                    ,   nextFunc = entry.nextFunc + 1
-                    }
-                ,   cursor = c
-                }
+        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l |> Debug.log "latex"}, cursor = c}
+        Ok (Latex.Processing (AppendOrCreate _)) -> let (newEntry, newCaret) = creator baseState in
+            Ok {model | entry = {entry | latex = newEntry::model.entry.latex}, cursor = 0 :: updateCaretPosition_ 0 newCaret}
         _ -> Err "Something went wrong"
 
 rewriteLatex_: Int -> Bool -> Latex.Model () -> (Latex.Part EntryState_, Latex.CaretPosition)
