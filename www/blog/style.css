@@ -34,6 +34,7 @@ h2:hover {
 h2 > a {
     height: 3rem;
     vertical-align: middle;
+    font-family: monospace;
     margin-left: 1rem;
 }
 .anchor {
