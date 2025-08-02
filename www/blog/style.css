@@ -12,25 +12,48 @@ body {
 #title {
     text-align: center;
 }
+a {
+    color: blue;
+    text-decoration: none;
+}
+a:hover {
+    color: lightblue;
+}
 h2 {
-    height: 2rem;
+    width: 100%;
+    display: block;
     position: sticky;
-    top: calc(var(--n)*2rem); /* --n to be defined from script*/
+    padding: 1rem 0 1.5rem 0;
+    background-color: rgb(240,240,240);
+    top: calc(var(--n)*4rem); /* --n to be defined from script*/
     z-index: 0;
+}
+h2:hover {
+    z-index: 2;
+}
+h2 > a {
+    height: 3rem;
+    vertical-align: middle;
+    margin-left: 1rem;
 }
 .anchor {
     position:relative;
     display: block;
     height: 0;
-    top: calc(var(--n)*-2rem); /* --n to be defined from script*/
+    top: calc(var(--n)*-4rem); /* --n to be defined from script*/
 }
 main {
     display: block;
+    position: relative;
 }
 section {
     display: block;
     position: relative;
     margin-left: 10dvw;
+    padding: 2rem;
+    transform: translate3d(0,0,0); /* Needed for safari's rendering: https://stackoverflow.com/a/51039910 */
+    z-index: 1;
+    background-color: white;
 }
 .explanation {
     display: flex;
