@@ -16,6 +16,10 @@
         "Logarithm": {
             "url": "topics/logarithm.json",
             "description": "Covers logarithms, which is an inverse for powers. This needs the 'Power' topic for completeness."
+        },
+        "Build": {
+            "url": "topics/build.json",
+            "description": "Allows editing existing expressions in a sandbox manner (does not respect actual algebraic rules)"
         }
     }
 }

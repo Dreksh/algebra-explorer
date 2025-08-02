@@ -1,4 +1,4 @@
-module Components.Rules exposing (Model, Event(..), Parameters, Topic, Rule, Source, init,
+module Components.Rules exposing (Model, Event(..), Parameter, Topic, Rule, Source, init,
     FunctionProp, negateProp, functionProperties, toLatex, toSymbol, process,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
     evaluateStr, menuTopics, encode, decoder, sourceDecoder,
@@ -64,12 +64,6 @@ type alias Topic =
     ,   rules: List Rule
     }
 
-type alias Parameters state =
-    {   title: String
-    ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: Matcher.MatchResult FunctionProp state, replacements: List {name: String, root: Matcher.Replacement FunctionProp}}
-    }
-
 {-
 ## Elm-y bits
 -}
@@ -89,14 +83,8 @@ type LoadState_ obj =
     NotInstalled_ Source
     | Installed_ (Maybe Source) obj
 
-type Event treeState =
-    Apply (Parameters treeState)
-    | Group Int (Set.Set Int) -- root children
-    | Ungroup Int -- root
-    | NumericalSubstitution Int Float -- root matching value
-    | Substitute
-    | Evaluate Int String -- root evalString
-    | Download String
+type Event =
+    Download String
     | Delete String
 
 coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
@@ -413,7 +401,7 @@ evaluateStr model root = (
 ## UI
 -}
 
-menuTopics: (Event state -> msg) -> Model -> List (Menu.Part msg)
+menuTopics: (Event -> msg) -> Model -> List (Menu.Part msg)
 menuTopics converter model = Dict.foldl (\k t -> (::)
         (case t of
             NotInstalled_ source -> Menu.Section

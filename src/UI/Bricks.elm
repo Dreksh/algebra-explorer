@@ -98,7 +98,7 @@ calculateTree_ animation root rects =
         (declID, items) = distributeDeclarative grid
 
         -- don't tween if they aren't visible
-        oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
+        oldRects = rects |> Dict.filter (\_ rect -> Animation.current rect.opacity /= 0)
 
         -- if we are doing an undo then we can try to reverse-engineer where it came from
         -- note that this can be a one-to-many mapping and this current logic just chooses a random last one

@@ -1,13 +1,14 @@
 module UI.Display exposing (
-    Model, Event(..), FullEquation, SelectedNode, init, update, views, menu,
+    Model, Event(..), FullEquation, init, update, views, menu,
     anyVisible, undo, redo, updateQueryCmd, refresh,
     add, advanceTime, transform, substitute, getSelected,
     groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
+    historyCommit, historyReset,
     encode, decoder
     )
 
 import Dict
-import Html exposing (Html, a, div, p, span, text)
+import Html exposing (Html, a, div, span, text)
 import Html.Attributes exposing (class)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -20,6 +21,7 @@ import Algo.Math as Math
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import Components.Rules as Rules
+import Components.Actions as Actions
 import UI.Animation as Animation
 import UI.Bricks as Bricks
 import UI.Draggable as Draggable
@@ -67,14 +69,6 @@ type Event =
     | DraggableEvent Int Draggable.Event
     | MouseDown Int Int Int (List Float) (Float, Float) -- eqNum root currentIndex midpoints position
     | Commute Int SvgDrag.Event
-
-type alias SelectedNode =
-    {   eq: Int
-    ,   root: Int
-    ,   tree: FullEquation
-    ,   selected: Set.Set Int
-    ,   nodes: Set.Set Int
-    }
 
 newEntry_: Animation.Tracker -> Int -> Int -> FullEquation -> (Entry, Animation.Tracker)
 newEntry_ tracker size index eq =
@@ -146,12 +140,12 @@ updatePositions_ model =
         )
         |> List.foldl (\(eqNum, entry) m -> {m | equations = Dict.insert eqNum entry m.equations}) model
 
-getSelected: Model -> Maybe SelectedNode
+getSelected: Model -> Maybe Actions.Selection
 getSelected model = model.selected
     |> Maybe.andThen (\(eqNum, ids) -> Dict.get eqNum model.equations
         |> Maybe.map (.history >> History.current >> Tuple.first)
         |> Maybe.andThen (\eq -> Matcher.selectedSubtree ids eq |> Result.toMaybe
-            |> Maybe.map (\(root, nodes) -> {eq = eqNum, root = root, nodes = nodes, selected = ids, tree = eq})
+            |> Maybe.map (\(root, nodes) -> {tree = eq, root = root, nodes = nodes})
         )
     )
 
@@ -232,7 +226,8 @@ groupChildren tracker root children model = selectedEquation_ model
             in
                 (   {   model
                     |   equations = Dict.insert eq newEntry model.equations
-                    ,   selected = Just (eq, Set.singleton newSelect)
+                    -- ,   selected = Just (eq, Set.singleton newSelect)
+                    -- TODO: save this selected somewhere because otherwise it is just thrown away
                     }
                 ,   newTracker
                 )
@@ -251,7 +246,7 @@ ungroupChildren tracker root model = selectedEquation_ model
             in
                 (   {   model
                     |   equations = Dict.insert eq newEntry model.equations
-                    ,   selected = Just (eq, Set.singleton newID)
+                    -- ,   selected = Just (eq, Set.singleton newID)
                     }
                 ,   newTracker
                 )
@@ -266,7 +261,7 @@ replaceNumber tracker root target replacement model = selectedEquation_ model
         |> Matcher.replaceRealNode root target replacement
         |> Result.map (\(newSelect, newEq) ->
             let
-                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history}
+                (newEntry, newTracker) = updateBricks tracker {entry | history = History.stage (newEq, Rules.toLatex newEq) entry.history |> History.commit}
             in
                 (   {   model
                     |   equations = Dict.insert eq newEntry model.equations
@@ -294,7 +289,7 @@ replaceNodeWithNumber tracker root number model = selectedEquation_ model
                 in
                     (   {   model
                         |   equations = Dict.insert eq newEntry model.equations
-                        ,   selected = Just (eq, Set.singleton newSelect)
+                        -- ,   selected = Just (eq, Set.singleton newSelect)
                         }
                     ,   newTracker
                     )
@@ -315,7 +310,7 @@ transform tracker replacement result model = selectedEquation_ model
             in
                 (   {   model
                     |   equations = Dict.insert eq newEntry model.equations
-                    ,   selected = Just (eq, Set.singleton newSelect)
+                    -- ,   selected = Just (eq, Set.singleton newSelect)
                     }
                 ,   newTracker
                 )
@@ -331,16 +326,30 @@ substitute tracker eqSub model = case Dict.get eqSub model.equations of
             in Matcher.replaceAllOccurrences selected (History.current subEntry.history |> Tuple.first) origEq
                 |> Result.map (\(newSelected, newEq) ->
                     let
-                        (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.stage (newEq, Rules.toLatex newEq) origEntry.history}
+                        (newEntry, newTracker) = updateBricks tracker {origEntry | history = History.stage (newEq, Rules.toLatex newEq) origEntry.history |> History.commit}
                     in
                         (   {   model
-                            |   selected = Just (origNum, newSelected)
-                            ,   equations = Dict.insert origNum newEntry model.equations
+                            |   equations = Dict.insert origNum newEntry model.equations
+                            ,   selected = Just (origNum, newSelected)
                             }
                         ,   newTracker
                         )
                     )
             )
+
+historyCommit: Model -> Result String Event
+historyCommit model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) -> case entry.history.staged of
+        Nothing -> Err "Nothing staged to commit"
+        _ -> Ok (HistoryEvent eq History.Commit)
+        )
+
+historyReset: Model -> Result String Event
+historyReset model = selectedEquation_ model
+    |> Result.andThen (\(eq, _, entry) -> case entry.history.staged of
+        Nothing -> Err "Nothing staged to reset"
+        _ -> Ok (HistoryEvent eq History.Reset)
+        )
 
 updateSelected_: Int -> Int -> Bool -> Model -> Model
 updateSelected_ eq node combine model = case (combine, model.selected) of
@@ -507,8 +516,8 @@ menu convert model = Dict.toList model.equations
 treeToString_: Math.Tree s -> String
 treeToString_ = Rules.process (\_ -> String.join "") identity
 
-views: (Event -> msg) -> Model -> List (String, Html msg)
-views converter model = Dict.toList model.equations
+views: (Event -> msg) -> List (Html msg) -> Model -> List (String, Html msg)
+views converter contextualActions model = Dict.toList model.equations
     |> List.filter (\(_,entry) -> entry.show)
     |> List.map (\(eqNum, entry) ->
         let
@@ -538,8 +547,8 @@ views converter model = Dict.toList model.equations
                             ,   div [class "history"]
                                 (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
                                     case List.drop middle children |> List.head of
-                                        Nothing ->[historyEntry_ current (HistoryEvent eqNum (History.Stage (History.Revert index)) |> converter) (MathIcon.static [] latex)]
-                                        Just after -> historyEntry_ current (HistoryEvent eqNum (History.Stage (History.Revert index)) |> converter) (MathIcon.static [] latex)
+                                        Nothing ->[historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
+                                        Just after -> historyEntry_ converter current eqNum index (MathIcon.static [] latex)
                                             ::  (
                                                 List.map (Html.div []) (List.take middle children)
                                                 ++ after
@@ -550,31 +559,47 @@ views converter model = Dict.toList model.equations
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
                 ,   div [class "contextualToolbar"]
-                    [   a
-                        [   class "clickable"  -- TODO: only show button as clickable if actually clickable
-                        ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
-                        ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
-                        ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
-                        -- TODO: make the blocks look see-through or something to show it being committed
-                        -- TODO: allow user to undo a bunch of times without another mouseEnter
-                        --   maybe just skip the preview and allow direct commit in that case
+                    ([  div [class "contextualTopic"]
+                        [   div
+                            ([ class "contextualAction" ] ++ (if History.canUndo entry.history then
+                                [   class "clickable"
+                                ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
+                                ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
+                                ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+                                -- TODO: allow user to undo a bunch of times without another mouseEnter
+                                --   maybe just skip the preview and allow direct commit in that case
+                                -- TODO: make the blocks look see-through or something to show it being committed
+                                ]
+                                else [class "contextualDisabled"]
+                            ))
+                            [text "Undo"]  -- TODO: make these icons instead
+                        ,   div
+                            ([ class "contextualAction" ] ++ (if History.canRedo entry.history then
+                                [   class "clickable"
+                                ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
+                                ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
+                                ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+                                ]
+                                else [class "contextualDisabled"]
+                            ))
+                            [text "Redo"]
                         ]
-                        [text "Undo"]  -- TODO: make these icons instead
-                    ,   a
-                        [   class "clickable"
-                        ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
-                        ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
-                        ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
-                        ]
-                        [text "Redo"]
-                    ]
+                    ] ++ if Set.isEmpty highlight then [] else contextualActions)
                 ]
             )
     )
 
-historyEntry_: Bool -> msg -> Html.Html msg -> Html.Html msg
-historyEntry_ current event inner = Html.a
-    (   if current then [class "selected"] else [ class "clickable", HtmlEvent.onClick event])
+historyEntry_: (Event -> msg) -> Bool -> Int -> Int -> Html.Html msg -> Html.Html msg
+historyEntry_ converter current eqNum index inner = Html.a
+    (   if current
+        then [class "selected"]
+        else
+            [   class "clickable"
+            ,   HtmlEvent.onMouseEnter (HistoryEvent eqNum (History.Stage (History.Revert index)) |> converter)
+            ,   HtmlEvent.onMouseLeave (HistoryEvent eqNum History.Reset |> converter)
+            ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+            ]
+    )
     [inner]
 
 brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.Attribute Event)

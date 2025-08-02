@@ -24,6 +24,7 @@ import Algo.Math as Math
 import Components.Evaluate as Evaluate
 import Components.Query as Query
 import Components.Rules as Rules
+import Components.Actions as Actions
 import Components.Tutorial as Tutorial
 import Helper
 import UI.ActionView as ActionView
@@ -37,6 +38,9 @@ import UI.Input as Input
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
+import Components.Actions as Actions
+import UI.Display as Display
+import Components.Actions as Actions
 
 -- Overall Structure of the app: it's a document
 
@@ -69,7 +73,7 @@ type alias Model =
     {   swappable: Swappable
     ,   query: Query.Model
     ,   size: Draggable.Size
-    ,   dialog: Maybe (Dialog.Model Event, Maybe (Rules.Parameters Animation.State))
+    ,   dialog: Maybe (Dialog.Model Event, Maybe Actions.Application)
     ,   animation: Animation.Tracker
     ,   svgDragMap: SvgDrag.Model Event
     }
@@ -91,11 +95,12 @@ type Event =
     EventUrlRequest Browser.UrlRequest
     | EventUrlChange Url.Url
     | DisplayEvent Display.Event
-    | RuleEvent (Rules.Event Animation.State)
+    | RuleEvent Rules.Event
+    | ActionEvent Actions.Event
     | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
-    | ActionEvent ActionView.Event
+    | ActionViewEvent ActionView.Event
     | InputEvent Input.Event
     | SvgDragEvent SvgDrag.Raw
     -- Event from the UI
@@ -214,7 +219,7 @@ update event core = let model = core.swappable in
         NotificationEvent e -> let (nModel, newT) = Notification.update core.animation e model.notification in
             ({core | animation = newT, swappable = {model | notification = nModel}}, Cmd.none)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        ActionEvent e -> let (newIn, newT) = Input.close core.animation model.input in
+        ActionViewEvent e -> let (newIn, newT) = Input.close core.animation model.input in
             ({core | animation = newT, swappable = {model | actionView = ActionView.update e model.actionView, input = newIn}}, Cmd.none)
         InputEvent e -> let (newIn, submitted, newT) = Input.update core.animation e model.input in
             case submitted of
@@ -330,24 +335,30 @@ update event core = let model = core.swappable in
                 }
             , Cmd.none
             )
-        RuleEvent e -> case e of
-            Rules.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
+        ActionEvent e -> case e of
+            Actions.Commit -> case Display.historyCommit model.display of
+                Err errStr -> submitNotification_ core errStr
+                Ok dEvent -> update (DisplayEvent dEvent) core
+            Actions.Reset -> case Display.historyReset model.display of
+                Err errStr -> submitNotification_ core errStr
+                Ok dEvent -> update (DisplayEvent dEvent) core
+            Actions.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
-            Rules.Group root children -> case Display.groupChildren core.animation root children model.display of
+            Actions.Group root children -> case Display.groupChildren core.animation root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
-            Rules.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
+            Actions.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
-            Rules.Substitute -> if Dict.size model.display.equations < 2 then submitNotification_ core "There are no equations to use for substitution"
-                else ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
-            Rules.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
-            Rules.Download url -> (core, downloadTopicCmd_ url)
-            Rules.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
+            Actions.Substitute -> ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
+            Actions.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
+            Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
+        RuleEvent e -> case e of
+            Rules.Download url -> (core, downloadTopicCmd_ url)
             Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ApplyParameters params -> case core.dialog of
             Just (_, Just existing) -> ( case Dict.get "_method" params of
@@ -437,10 +448,11 @@ downloadTopicCmd_ url = Http.get
 view: Model -> Browser.Document Event
 view core = let model = core.swappable in
     { title = "Maths"
-    , body = Html.Keyed.node "div" [id "body"]
-        (   Display.views DisplayEvent model.display
+    , body = let actions = Actions.rulesToActions model.rules (Dict.size model.display.equations) (Display.getSelected model.display) in
+        Html.Keyed.node "div" [id "body"]
+        (   Display.views DisplayEvent (ActionView.contextualActions ActionEvent actions) model.display
         ++  List.filterMap identity
-            [   ("actions", ActionView.view RuleEvent ActionEvent model.rules (Display.getSelected model.display) model.actionView) |> Just
+            [   ("actions", ActionView.view ActionViewEvent ActionEvent actions model.actionView) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
@@ -494,7 +506,7 @@ addTopicDialog_ =
     ,   focus = Just "url"
     }
 
-parameterDialog_: Rules.Parameters Animation.State -> Dialog.Model Event
+parameterDialog_: Actions.Application -> Dialog.Model Event
 parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
     ,   sections =

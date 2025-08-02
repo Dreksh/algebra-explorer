@@ -252,14 +252,24 @@ xxx|xxxx
     * Find Zeros
     * in this situation maybe we should just spawn a modal to make them pick one...
 
+* evaluateStr ensures that there are no variables in the subtree i.e. it can be evaluated
+* affectedSubtree_ traces up the tree for all selected nodes and finds the first node that all of them trace through
+
 * where should Rules.Event actually go?
   * ActionView is actually what calls `Matcher.matchSubtree`
   * but it doesn't actually store the `Display.SelectedNode`, only renders it via a view
-  * should SelectedNode be stored somewhere else? Because it is only really
+    * should `SelectedNode` also be somewhere else? Because it is only really used by ActionView, and therefore prevents Display from importing ActionView
+    * nah I think it is fine in Display because Display is what produces it
+    * but should we highlight all nodes in the selected subtree? (in a different colour to the ones actually clicked)
+  * it cannot go into Matcher because it requires Rules.Parameters as part of the action
 
+* where should the grouping check go? In ActionView is a bit weird so I think it should go into Matcher
 
-* Any file x higher in the tree than another file y can handle events from y via
+* Any file x higher in the tree than another file y can handle events from y via converter type
 * But y cannot ever handle an event from x because it cannot import x to avoid cyclic dependencies
+* However, y can kinda use x via type variables (e.g. the a in `List a`) but you would need to pass in a function
+  * e.g. the converters that get passed from `Main.view` allow the sub-views to use Main's types even though they are not imported
+  * e.g. Matcher.elm needs to be able to update the state of Animation.elm and Rules.elm, so `Matcher.parseEquation` requires functions as arguments
 
               Main
               /

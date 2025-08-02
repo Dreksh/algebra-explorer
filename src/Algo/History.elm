@@ -1,5 +1,6 @@
 module Algo.History exposing (Model, Staged(..), Event(..),
     init, update, stage, stageMany, current, next, commit,
+    canUndo, canRedo,
     serialize, encode, decoder
     )
 
@@ -50,9 +51,9 @@ update event model =
         Stage staged -> case staged of
             Undo -> { model | staged = Just Undo }
             Redo -> { model | staged = Just Redo }
-            Revert idx -> { model | staged = Just (Revert idx) } |> update Commit
-            Change c -> { model | staged = Just (Change c) } |> update Commit
-            Changes cs -> { model | staged = Just (Changes cs) } |> update Commit
+            Revert idx -> { model | staged = Just (Revert idx) }
+            Change c -> { model | staged = Just (Change c) }
+            Changes cs -> { model | staged = Just (Changes cs) }
         Reset -> { model | staged = Nothing }
         Commit -> commit model
 
@@ -61,6 +62,17 @@ stage c model = update (Stage (Change c)) model
 
 stageMany: List component -> Model component -> Model component
 stageMany cs model = update (Stage (Changes cs)) model
+
+canUndo: Model c -> Bool
+canUndo model = case model.visits of
+    [] -> False
+    [_] -> False
+    _ -> True
+
+canRedo: Model c -> Bool
+canRedo model = case model.undone of
+    [] -> False
+    _ -> True
 
 -- always shows current commit
 current: Model component -> component
