@@ -142,7 +142,7 @@ commitMany_ list model = let id = currentNode_ model in
     List.foldl (\c m ->
         {m | commits = Dict.insert ((Dict.size m.commits) + 1) { parent = id, component = c, children = [] } m.commits}
     ) model list
-    |> \newModel -> let m = { newModel | visits = Dict.size newModel.commits ::model.visits, undone = [] } in
+    |> \newModel -> let m = { newModel | visits = Dict.size newModel.commits :: model.visits, undone = [], staged = Nothing } in
         let end = Dict.size m.commits in
         if id == 0 then let p = model.root in { m | root = { p | children = List.range start end ++ p.children } }
         else case Dict.get id model.commits of

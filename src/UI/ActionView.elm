@@ -40,8 +40,6 @@ isOpen (Current _ open) = open
 
 -- UI-related
 
--- could I make this return both all the rules and the contextual toolbar?
--- or could I have a function that returns a list of Actions to feed into both
 view: (Event -> msg) -> (Actions.Event -> msg) -> Dict.Dict String (List (Actions.Action)) -> Model -> Html.Html msg
 view converter actionConvert actions vModel =
     let

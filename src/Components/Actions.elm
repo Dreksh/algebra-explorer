@@ -1,4 +1,6 @@
-module Components.Actions exposing (Event(..), Application, Action(..), Selection, rulesToActions)
+module Components.Actions exposing (
+    Event(..), MatchedRule, Action(..), Selection, matchRules
+    )
 
 import Dict
 import Set
@@ -10,14 +12,13 @@ import Components.Rules as Rules
 
 -- note that there is no Model in this file
 -- it is a helper to bridge the gap between matching Rules and Display
--- it could go into Rules.elm but it is nice to have it separated out
--- and it does not need a Model because it can be fully derived from upstream Models
+-- and it does not need a Model because it is stored in Display
 
 
 type Event =
     Commit
     | Reset
-    | Apply Application
+    | Apply MatchedRule
     | Group Int (Set.Set Int) -- root children
     | Ungroup Int -- root
     | NumericalSubstitution Int Float -- root matching value
@@ -29,7 +30,7 @@ type Action =
     | Disallowed String
     | Allowed Event String
 
-type alias Application =
+type alias MatchedRule =
     {   title: String
     ,   parameters: Dict.Dict String Rules.Parameter
     ,   matches: List {from: Matcher.MatchResult Rules.FunctionProp Animation.State, replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp}}
@@ -41,10 +42,10 @@ type alias Selection =
     ,   nodes: Set.Set Int
     }
 
-rulesToActions: Rules.Model -> Int -> Maybe Selection -> Dict.Dict String (List Action)
-rulesToActions rModel numEqs selected =
+matchRules: Rules.Model -> Int -> Maybe Selection -> Dict.Dict String (List Action)
+matchRules rules numEqs selected =
     let
-        loadedTopics = Rules.loadedTopics rModel
+        loadedTopics = Rules.loadedTopics rules
 
         -- group these together to reuse the result of getNode
         selectedNode = selected
@@ -52,7 +53,7 @@ rulesToActions rModel numEqs selected =
     in
         Dict.fromList
         (
-            ("Core", coreTopic_ rModel numEqs selectedNode |> coreToList_)
+            ("Core", coreTopic_ rules numEqs selectedNode |> coreToList_)
         ::  (List.map (\topic ->
                 (   topic.name
                 ,   List.map (matchRule_ selectedNode) topic.rules
@@ -81,11 +82,11 @@ coreToList_ actions =
     ]
 
 coreTopic_: Rules.Model -> Int -> Maybe (Selection, Math.Tree (Matcher.State Animation.State)) -> CoreTopicAction_
-coreTopic_ rModel numEqs selection = case selection of
+coreTopic_ rules numEqs selection = case selection of
     Nothing -> CoreTopicAction_ DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
     Just (selected, root) ->
         let
-            evaluateAction = case Rules.evaluateStr rModel root of
+            evaluateAction = case Rules.evaluateStr rules root of
                 Err _ -> Disallowed
                 Ok str -> Evaluate selected.root str |> Allowed
             substituteAction = if numEqs > 1
@@ -123,7 +124,7 @@ matchRule_ selected rule = rule.title |>
                 if List.isEmpty matches then Disallowed
                 else
                     (   Apply
-                        (   Application
+                        (   MatchedRule
                             rule.title
                             rule.parameters
                             matches

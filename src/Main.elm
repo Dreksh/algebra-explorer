@@ -38,9 +38,6 @@ import UI.Input as Input
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
-import Components.Actions as Actions
-import UI.Display as Display
-import Components.Actions as Actions
 
 -- Overall Structure of the app: it's a document
 
@@ -73,7 +70,7 @@ type alias Model =
     {   swappable: Swappable
     ,   query: Query.Model
     ,   size: Draggable.Size
-    ,   dialog: Maybe (Dialog.Model Event, Maybe Actions.Application)
+    ,   dialog: Maybe (Dialog.Model Event, Maybe Actions.MatchedRule)
     ,   animation: Animation.Tracker
     ,   svgDragMap: SvgDrag.Model Event
     }
@@ -212,7 +209,7 @@ update event core = let model = core.swappable in
             |> \str -> if str == "" then (core, Cmd.none)
                 else ({core | dialog = Just (leaveDialog_ str, Nothing)}, Cmd.none)
         EventUrlChange _ -> (core, Cmd.none)
-        DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation e model.display in
+        DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation model.rules e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.map DisplayEvent dCmd)
         TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
             (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
@@ -291,7 +288,7 @@ update event core = let model = core.swappable in
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok topic -> case Rules.addTopic (Just url) topic model.rules of
                 Err errStr -> submitNotification_ core errStr
-                Ok rModel -> let (dModel, t) = Display.refresh (Rules.functionProperties rModel) core.animation model.display in
+                Ok rModel -> let (dModel, t) = Display.refresh rModel core.animation model.display in
                     (   {   core
                         |   swappable = { model | rules = rModel, display = dModel }
                         ,   animation = t
@@ -335,6 +332,9 @@ update event core = let model = core.swappable in
                 }
             , Cmd.none
             )
+        RuleEvent e -> case e of
+            Rules.Download url -> (core, downloadTopicCmd_ url)
+            Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ActionEvent e -> case e of
             Actions.Commit -> case Display.historyCommit model.display of
                 Err errStr -> submitNotification_ core errStr
@@ -357,9 +357,6 @@ update event core = let model = core.swappable in
             Actions.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
-        RuleEvent e -> case e of
-            Rules.Download url -> (core, downloadTopicCmd_ url)
-            Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ApplyParameters params -> case core.dialog of
             Just (_, Just existing) -> ( case Dict.get "_method" params of
                     Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
@@ -448,11 +445,11 @@ downloadTopicCmd_ url = Http.get
 view: Model -> Browser.Document Event
 view core = let model = core.swappable in
     { title = "Maths"
-    , body = let actions = Actions.rulesToActions model.rules (Dict.size model.display.equations) (Display.getSelected model.display) in
+    , body =
         Html.Keyed.node "div" [id "body"]
-        (   Display.views DisplayEvent (ActionView.contextualActions ActionEvent actions) model.display
+        (   Display.views DisplayEvent ActionEvent model.display
         ++  List.filterMap identity
-            [   ("actions", ActionView.view ActionViewEvent ActionEvent actions model.actionView) |> Just
+            [   ("actions", ActionView.view ActionViewEvent ActionEvent model.display.actions model.actionView) |> Just
             ,   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
@@ -506,7 +503,7 @@ addTopicDialog_ =
     ,   focus = Just "url"
     }
 
-parameterDialog_: Actions.Application -> Dialog.Model Event
+parameterDialog_: Actions.MatchedRule -> Dialog.Model Event
 parameterDialog_ params =
     {   title = "Set parameters for " ++ params.title
     ,   sections =
