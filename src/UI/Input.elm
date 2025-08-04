@@ -5,6 +5,7 @@ import Dict
 import Html
 import Html.Attributes exposing (class, id, name, style, type_)
 import Html.Keyed
+import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
 -- Ours
@@ -53,8 +54,7 @@ type Event =
     | HideCursor
     | MouseDown Encode.Value (Float, Float)
     | Shift SvgDrag.Event
-    | FunctionChoice String Bool (Latex.Model ()) -- The bool is for whether the args are fixed
-    | SymbolChoice Latex.Symbol
+    | LatexChoice String Bool (Latex.Model ())
     | HelperInput String
     | HelperClear
 
@@ -106,15 +106,23 @@ view convert functions attr model =
     |> Helper.maybeAppend (model.functionInput
             -- Has to be maybe, so that only one input will be on screen at any point
             |> Maybe.map (\str -> displaySuggestions_ functions str
-                |> \selectable -> Html.div
+                |> \(selectable, eventCreator) -> Html.div
                     [class "popup"]
-                    [   Html.input [type_ "text", id "inputHelper", HtmlEvent.onKeyChange HelperInput, HtmlEvent.onBlur HelperClear] []
+                    [   Html.form [HtmlEvent.onSubmitForm (formDecoder_ eventCreator)]
+                        [   Html.input
+                            [type_ "text", id "inputHelper", name "input", HtmlEvent.onKeyChange HelperInput, HtmlEvent.onBlur HelperClear]
+                            []
+                        ]
                     ,   Html.Keyed.node "div" [] selectable
                     ]
                 |> Html.map convert
             )
         )
     )
+
+formDecoder_: (String -> (String, Bool, Latex.Model ())) -> Decode.Decoder Event
+formDecoder_ convert = Decode.field "input" (Decode.field "value" Decode.string)
+    |> Decode.map (convert >> \(name, fixed, latex) -> LatexChoice name fixed latex)
 
 toLatex: Bool -> CaretPosition -> Scope -> Latex.Model ()
 toLatex border pos (Scope _ children) =
@@ -191,25 +199,25 @@ update event model = case event of
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
-    FunctionChoice name fixed latex ->
+    LatexChoice name fixed latex ->
         latexArray_ fixed latex
-        |> Result.andThen (\params -> insertLatex_ (Just model.entry.nextFunc ,latex, params) model)
+        |> Result.andThen (\params ->
+            insertLatex_ (if String.isEmpty name then Nothing else Just model.entry.nextFunc ,latex, params) model
+        )
         |> \res -> case res of
             Err str -> (model, str, Cmd.none)
             Ok (newModel) -> let entry = newModel.entry in
                 (   {   newModel
                     |   functionInput = Nothing
-                    ,   entry =
-                        {   entry
-                        |   funcName = Dict.insert entry.nextFunc name entry.funcName
-                        ,   nextFunc = entry.nextFunc + 1
-                        }
+                    ,   entry = if String.isEmpty name then entry
+                            else
+                                {   entry
+                                |   funcName = Dict.insert entry.nextFunc name entry.funcName
+                                ,   nextFunc = entry.nextFunc + 1
+                                }
                     }
                 , "", model.focusCmd (model.holderID ++ "-input")
                 )
-    SymbolChoice symb -> case insertLatex_ (Nothing, [Latex.SymbolPart () symb], Array.empty) model of
-        Err str -> (model, str, Cmd.none)
-        Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
     HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
     HelperClear -> ({model | functionInput = Nothing}, "", Cmd.none)
 
@@ -377,44 +385,54 @@ toEntryString_ funcName (Scope _ children) = Helper.resultList (\child res -> ca
 
 {- ## Suggestion -}
 
-displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> List (String, Html.Html Event)
+defaultOps: Set.Set String
+defaultOps = Set.fromList ["+", "-", "*", "/", "="]
+
+displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (List (String, Html.Html Event), String -> (String, Bool, Latex.Model ()))
 displaySuggestions_ functions input =
     let
         inputOrder = letterOrder_ input
-        createEntry key event latex = Just
-            (   cosineCorrelation_ inputOrder (letterOrder_ key)
-            ,   (   key
-                ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> event)] -- don't use onClick, because some onBlurs get triggered first
-                    [MathIcon.static [] latex]
-                )
-            )
         createLatex name args =
             [   Latex.Text () name
             ,   Latex.Bracket ()
                 (List.range 1 args |> List.map (Latex.Argument ()) |> List.intersperse (Latex.Text () ","))
             ]
-        greekSymbols = Dict.toList Latex.greekLetters
-            |> List.filterMap (\(name, s) -> createEntry name (SymbolChoice s) [Latex.SymbolPart () s])
-        functionSymbols = Dict.toList functions
-            |> List.filterMap (\(key, value) ->
-                case value.property of
-                    Math.VariableNode n -> let latex = [Latex.Text () key] in createEntry key (FunctionChoice key True latex) latex
-                    Math.UnaryNode n -> case n.state.latex of
-                        Just l -> createEntry key (FunctionChoice key True l) l
-                        Nothing -> let l = createLatex key 1 in createEntry key (FunctionChoice key True l) l
-                    Math.BinaryNode n -> case n.state.latex of
-                        Just l -> createEntry key (FunctionChoice key (not n.associative) l) l
-                        Nothing -> if n.associative
-                            then let l = createLatex key 1 in createEntry key (FunctionChoice key False l) l
-                            else let l = createLatex key 2 in createEntry key (FunctionChoice key True l) l
-                    Math.GenericNode n -> case n.state.latex of
-                        Just l -> createEntry key (FunctionChoice key True l) l
-                        Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in createEntry key (FunctionChoice key True l) l
-                    _ -> Nothing
+        funcPropToLatex key value = case value.property of
+            Math.VariableNode n -> case n.state.latex of
+                Just l -> ("", True, l)
+                Nothing -> let l = createLatex key 1 in (key, False, l)
+            Math.UnaryNode n -> case n.state.latex of
+                Just l -> (key, True, l)
+                Nothing -> let l = createLatex key 1 in (key, True, l)
+            Math.BinaryNode n -> case n.state.latex of
+                Just l -> (key, (not n.associative), l)
+                Nothing -> if n.associative
+                    then let l = createLatex key 1 in (key, False, l)
+                    else let l = createLatex key 2 in (key, True, l)
+            Math.GenericNode n -> case n.state.latex of
+                Just l -> (key, True, l)
+                Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (key, True, l)
+            _ -> let l = createLatex key 1 in (key, False, l)
+        functionSymbols = functions
+            |> Dict.filter (\key _ -> Set.member key defaultOps |> not)
+            |> Dict.toList
+            |> List.map (\(key, value) -> let (functionName, fixed, latex) = funcPropToLatex key value in
+                (   cosineCorrelation_ inputOrder (letterOrder_ key)
+                ,   (   key
+                    -- don't use onClick, because some onBlurs get triggered first
+                    ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> LatexChoice functionName fixed latex)]
+                        [MathIcon.static [] latex]
+                    )
+                )
             )
     in
-        List.sortBy (\(corr, _) -> -corr) (functionSymbols ++ greekSymbols)
-        |> List.map Tuple.second
+        List.sortBy (\(corr, _) -> -corr) functionSymbols
+        |> \list ->
+            (   List.map Tuple.second list
+            ,   \str -> case Dict.get str functions of
+                    Nothing -> (str, False, [Latex.Text () str, Latex.Bracket () [Latex.Argument () 1]])
+                    Just value -> funcPropToLatex str value
+            )
 
 -- 36 of them, a-z + 0-9
 letterOrder_: String -> Array.Array Float

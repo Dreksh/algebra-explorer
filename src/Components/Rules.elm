@@ -104,10 +104,14 @@ init =
     }
 
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
-functionProperties model = Dict.foldl
-    (\k (_, count) d -> Math.createConstant {javascript = FuncOp k |> Just , latex = Just [Latex.Text () k] } k
-        |> \entry -> Dict.insert k {property = entry, count = count} d
-    ) model.functions model.constants
+functionProperties model = model.constants
+    |> Dict.foldl
+        (\k (javascript, count) d -> Math.createConstant {javascript = PrefixOp javascript |> Just , latex = Just [Latex.Text () k] } k
+            |> \entry -> Dict.insert k {property = entry, count = count} d
+        ) model.functions
+    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart () symbol]} name
+        |> \entry -> Dict.insert name {property = entry, count = 1} d
+        ) dict Latex.greekLetters
 
 {- Functions -}
 
