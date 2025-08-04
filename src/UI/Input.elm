@@ -169,8 +169,8 @@ update event model = case event of
         case e |> Debug.log "key" of
         ("z", False, True) -> (model, "", Cmd.none) -- Undo
         ("Z", True, True) -> (model, "", Cmd.none) -- Redo
-        ("Backspace", _, _) -> (model, "", Cmd.none)
-        ("Delete", _, _) -> (model, "", Cmd.none)
+        ("Backspace", _, _) -> (delete_ False model, "", Cmd.none)
+        ("Delete", _, _) -> (delete_ True model, "", Cmd.none)
         ("ArrowUp", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
         ("ArrowDown", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
         ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False entry.scope model.cursor |> Debug.log "left"}, "", Cmd.none)
@@ -362,6 +362,42 @@ latexArray_ fixed latex = Latex.extractArgs (Set.empty, 0) latex
         then Array.repeat count (Scope {fixed = True} [])
         else Array.fromList [Scope {fixed = False} []]
     )
+
+{- ## Deletion -}
+
+delete_: Bool -> Model msg -> Model msg
+delete_ forwards model = traverse
+    (\input -> case input of
+        TextCase prev str num next -> if forwards
+            then Done
+                (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
+                ,   if num + 1 == String.length str then [List.length prev + 1] else [List.length prev, num]
+                )
+            else Done
+                (   prev ++ (StrElement (String.left (num - 1) str ++ String.dropLeft num str) :: next)
+                ,   if num == 1 then [List.length prev] else [List.length prev, num - 1]
+                )
+        IntermediateCase prev next -> if forwards
+            then Done
+                (   case List.head next of
+                    Nothing -> prev
+                    Just (StrElement str) -> prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
+                    Just (Fixed _ _ _ ) -> prev ++ List.drop 1 next
+                ,   [List.length prev]
+                )
+            else let beforeLength = List.length prev - 1 in
+                case List.drop beforeLength prev of
+                    [StrElement str] -> Done
+                        (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
+                        ,   [List.length prev]
+                        )
+                    [Fixed _ _ _] -> Done (List.take beforeLength prev ++ next, [beforeLength])
+                    _ -> Done (next, [0])
+    ) model.entry.scope model.cursor
+    |> \res -> case res of
+        Ok (Done (children, c)) -> let entry = model.entry in
+            {model | entry = {entry | scope = Scope {fixed = True} children}, cursor = c}
+        _ -> model
 
 {- ## Extraction -}
 
