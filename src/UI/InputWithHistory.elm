@@ -1,5 +1,6 @@
 module UI.InputWithHistory exposing (Model, Event(..), init, update, view, advance, open, close)
 
+import Array
 import Dict
 import Html
 import Html.Attributes exposing (class, id, name, placeholder, type_, value)
@@ -47,32 +48,22 @@ type Event =
 
 defaultOptions_: List Selection
 defaultOptions_ =
-    [   Default {latex = [Latex.Text Input.baseState "x+4=5"], funcName = Dict.empty, nextFunc = 1}
+    [   Default {scope = Input.Scope {fixed = True} [Input.StrElement "x+4=5"], funcName = Dict.empty, nextFunc = 1}
     ,   Default
-        {   latex =
-            [   Latex.Scope {function = 1, argument = Nothing, fixedArgs = False}
-                [   Latex.Text {function = 1, argument = Nothing, fixedArgs = False} "f"
-                ,   Latex.Bracket {function = 1, argument = Nothing, fixedArgs = False}
-                    [   Latex.Scope {function = 1, argument = Just 1, fixedArgs = False}
-                        [Latex.Text {function = 1, argument = Just 1, fixedArgs = False} "x"]
-                    ]
+        {   scope = Input.Scope {fixed = True}
+            [   Input.Fixed (Just 1)
+                [   Latex.Text () "f"
+                ,   Latex.Bracket () [Latex.Argument () 1]
                 ]
-            ,   Latex.Text Input.baseState "=x+3"
+                (Array.fromList [Input.Scope {fixed = False} [Input.StrElement "x"] ])
+            ,   Input.StrElement "=x+3"
             ]
         ,   funcName = Dict.singleton 1 "f"
         ,   nextFunc = 2
         }
-    ,   Default
-        {   latex =
-            [   Latex.Text Input.baseState "x"
-            ,   Latex.Bracket Input.baseState [Latex.Text Input.baseState "x+2"]
-            ,   Latex.Text Input.baseState "=-1"
-            ]
-        ,   funcName = Dict.empty
-        ,   nextFunc = 1
-        }
-    ,   Default {latex = [Latex.Text Input.baseState "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
-    ,   Default {latex = [Latex.Text Input.baseState "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
+    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "x(x+2)=-1" ], funcName = Dict.empty, nextFunc = 1 }
+    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
+    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
     ]
 
 init: Bool -> (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
@@ -131,12 +122,13 @@ close tracker model = case model.current of
 update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
 update convert tracker funcDict event model = case event of
     Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "mainInput-input")
-    Submit -> if List.isEmpty model.input.entry.latex then (close tracker model, Ok Nothing, Cmd.none)
+    Submit -> let (Input.Scope _ children) = model.input.entry.scope in
+        if List.isEmpty children then (close tracker model, Ok Nothing, Cmd.none)
         else case Input.toTree funcDict model.input of
             Err err -> ((model, tracker), Err err, Cmd.none)
             Ok tree -> let (newModel, newT) = close tracker model in
                 (   (   {   newModel
-                        |   options = if List.isEmpty model.input.entry.latex
+                        |   options = if List.isEmpty children
                                 then newModel.options
                                 else Previous model.input.entry :: newModel.options
                         }
@@ -182,11 +174,11 @@ createView_ converter funcDict model inputNum width height =
                 (\entry -> case entry of
                     Default val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.default []
-                        , Html.a [class "clickable"] [MathIcon.static [] val.latex]
+                        , Html.a [class "clickable"] [Input.toLatex False [] val.scope |> MathIcon.static []]
                         ]
                     Previous val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.history []
-                        , Html.a [class "clickable"] [MathIcon.static [] val.latex]
+                        , Html.a [class "clickable"] [Input.toLatex False [] val.scope |> MathIcon.static []]
                         ]
                 )
                 model.options

@@ -252,7 +252,7 @@ substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem
     Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert complete state args inner)]
     Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert complete state args inner)]
     Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert complete state args inner)]
-    Latex.Scope _ inner -> [Latex.Scope state (substituteArgs_ convert complete state args inner)]
+    Latex.Border _ inner -> [Latex.Border state (substituteArgs_ convert complete state args inner)]
     Latex.Argument _ n -> if complete
         then (case getN_ (n-1) args of
                 Nothing -> [Latex.Argument state n] -- Display missing info
@@ -264,6 +264,7 @@ substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem
         Just t -> toLatex_ convert True t
     Latex.Text _ str ->  [Latex.Text state str]
     Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
+    Latex.Caret _  -> [Latex.Caret state]
     )
 
 getN_: Int -> List a -> Maybe a

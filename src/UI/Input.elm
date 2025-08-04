@@ -1,4 +1,4 @@
-module UI.Input exposing (Model, Event(..), Entry, baseState, init, update, clear, set, view, toTree)
+module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), Entry, init, update, clear, set, view, toLatex, toTree)
 
 import Array
 import Dict
@@ -6,6 +6,7 @@ import Html
 import Html.Attributes exposing (class, id, name, style, type_)
 import Html.Keyed
 import Json.Encode as Encode
+import Set
 -- Ours
 import Helper
 import Algo.Matcher as Matcher
@@ -18,28 +19,29 @@ import UI.HtmlEvent as HtmlEvent
 import UI.MathIcon as MathIcon
 import UI.SvgDrag as SvgDrag
 
--- a scope is which function + parameter number they belong to
--- root is always (0, Just 1)
--- a Nothing parameter means it's part of the function's written form
-type alias EntryState_ =
-    {   function: Int
-    ,   argument: Maybe Int
-    ,   fixedArgs: Bool
-    }
-baseState: EntryState_
-baseState = {function = 0, argument = Just 1, fixedArgs = True}
+-- Scope is always editable and capable of inserting & deleting. But the scope itself cannot be deleted.
+type Scope = Scope {fixed: Bool} (List ScopeElement)
+type ScopeElement =
+    StrElement String -- Must not be empty string, they should be handled by removing them
+    | Fixed (Maybe Int) (Latex.Model ()) (Array.Array Scope) -- numFields & Only allow empty Latex.Text parts contain scope
 
 type alias Entry =
-    -- All entries are implied as a `Latex.Scope baseState model`, but only the model is stored.
-    {   latex: Latex.Model EntryState_
+    {   scope: Scope
     ,   funcName: Dict.Dict Int String
     ,   nextFunc: Int
     }
 
+-- CaretPosition has 2 different meanings for leaf node vs intermediate node
+-- intermediate node represents the zero-indexed nth ScopeElement in Scope, or the nth Scope in Fixed
+-- lead node represents the position before the index in Scope & in StrElement.
+-- However, StrElement does not have the 0th position or the length-th position, as they will be the ones in Scope
+type alias CaretPosition = List Int
+
+
 type alias Model msg =
     {   entry: Entry
     ,   functionInput: Maybe String
-    ,   cursor: Latex.CaretPosition
+    ,   cursor: CaretPosition
     ,   showCursor: Bool
     ,   holderID: String
     ,   mouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
@@ -58,7 +60,7 @@ type Event =
 
 init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
-    {   entry = {latex = [], funcName = Dict.empty, nextFunc = 1}
+    {   entry = {scope = Scope {fixed = True} [], funcName = Dict.empty, nextFunc = 1}
     ,   functionInput = Nothing
     ,   cursor = [0]
     ,   holderID = holderID
@@ -68,17 +70,17 @@ init mouseCmd focusCmd holderID =
     }
 
 set: Entry -> Model msg -> Model msg
-set entry model =
+set entry model = let (Scope _ children) = entry.scope in
     {   model
     |   entry = entry
     ,   functionInput = Nothing
-    ,   cursor = [List.length entry.latex]
+    ,   cursor = [List.length children]
     ,   showCursor = False
     }
 clear: Model msg -> Model msg
 clear model =
     {   model
-    |   entry = {latex = [], funcName = Dict.empty, nextFunc = 1}
+    |   entry = {scope = Scope {fixed = True} [], funcName = Dict.empty, nextFunc = 1}
     ,   functionInput = Nothing
     ,   cursor = [0]
     ,   showCursor = False
@@ -99,7 +101,7 @@ view convert functions attr model =
             )
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
-            (if model.showCursor then model.cursor else []) model.entry.latex
+            (toLatex False (if model.showCursor then model.cursor else []) (model.entry.scope |> Debug.log "scope") |> Debug.log "latex")
         ]
     |> Helper.maybeAppend (model.functionInput
             -- Has to be maybe, so that only one input will be on screen at any point
@@ -114,6 +116,43 @@ view convert functions attr model =
         )
     )
 
+toLatex: Bool -> CaretPosition -> Scope -> Latex.Model ()
+toLatex border pos (Scope _ children) =
+    let
+        noCaret scopeElem = case scopeElem of
+            StrElement text -> [Latex.Text () text]
+            Fixed _ latex params -> Latex.replace (Array.map (toLatex True []) params) latex
+    in
+    List.foldl
+    (\elem (model, index) ->
+        (   model
+            ++ case pos of
+                [] -> noCaret elem
+                [x] -> if x /= index then noCaret elem
+                    else Latex.Caret () :: noCaret elem
+                (x::y::other) -> case elem of
+                    StrElement str -> if x /= index then noCaret elem
+                        else
+                            [   Latex.Text () (String.left y str)
+                            ,   Latex.Caret ()
+                            ,   Latex.Text () (String.dropLeft y str)
+                            ]
+                    Fixed _ latex params -> if x /= index then noCaret elem
+                        else Latex.replace
+                            (   Array.indexedMap
+                                (\i -> toLatex True (if i /= y then [] else other))
+                                params
+                            )
+                            latex
+        ,   index + 1
+        )
+    ) ([], 0) children
+    |> \(model, _) -> case (border, List.head pos |> Maybe.map ((==) (List.length children))) of
+        (False, Just True) -> model ++ [Latex.Caret ()]
+        (False, _) -> model
+        (True, Just True) -> [Latex.Border () (model ++ [Latex.Caret ()])]
+        (True, _) -> [Latex.Border () model]
+
 {- ## Updates -}
 
 update: Event -> Model msg -> (Model msg, String, Cmd msg)
@@ -126,8 +165,8 @@ update event model = case event of
         ("Delete", _, _) -> (model, "", Cmd.none)
         ("ArrowUp", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
         ("ArrowDown", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False model.entry.latex model.cursor}, "", Cmd.none)
-        ("ArrowRight", False, _) -> ({model | cursor = cursorNext_ True model.entry.latex model.cursor |> Debug.log "right"}, "", Cmd.none)
+        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False entry.scope model.cursor |> Debug.log "left"}, "", Cmd.none)
+        ("ArrowRight", False, _) -> ({model | cursor = cursorNext_ True entry.scope model.cursor |> Debug.log "right"}, "", Cmd.none)
         (c, _, False) -> if String.length c == 1
             then case String.uncons c of
                 Nothing -> (model, "", Cmd.none)
@@ -152,339 +191,189 @@ update event model = case event of
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
-    FunctionChoice name fixed latex -> case insertLatex_ (\_ -> rewriteLatex_ model.entry.nextFunc fixed latex) model of
-        Err str -> (model, str, Cmd.none)
-        Ok (newModel) -> let entry = newModel.entry in
-            (   {   newModel
-                |   functionInput = Nothing
-                ,   entry =
-                    {   entry
-                    |   funcName = Dict.insert model.entry.nextFunc name entry.funcName
-                    ,   nextFunc = model.entry.nextFunc + 1
+    FunctionChoice name fixed latex ->
+        latexArray_ fixed latex
+        |> Result.andThen (\params -> insertLatex_ (Just model.entry.nextFunc ,latex, params) model)
+        |> \res -> case res of
+            Err str -> (model, str, Cmd.none)
+            Ok (newModel) -> let entry = newModel.entry in
+                (   {   newModel
+                    |   functionInput = Nothing
+                    ,   entry =
+                        {   entry
+                        |   funcName = Dict.insert entry.nextFunc name entry.funcName
+                        ,   nextFunc = entry.nextFunc + 1
+                        }
                     }
-                }
-            , "", model.focusCmd (model.holderID ++ "-input")
-            )
-    SymbolChoice symb -> case insertLatex_ (\s -> (Latex.SymbolPart s symb, [])) model of
+                , "", model.focusCmd (model.holderID ++ "-input")
+                )
+    SymbolChoice symb -> case insertLatex_ (Nothing, [Latex.SymbolPart () symb], Array.empty) model of
         Err str -> (model, str, Cmd.none)
         Ok (newModel) -> ({newModel | functionInput = Nothing}, "", model.focusCmd (model.holderID ++ "-input"))
     HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
     HelperClear -> ({model | functionInput = Nothing}, "", Cmd.none)
 
+{- ## Scope traversal -}
+
+type TraversalCase_ =
+    TextCase (List ScopeElement) String Int (List ScopeElement)
+    | IntermediateCase (List ScopeElement) (List ScopeElement)
+type TraversalResult_ =
+    Done (List ScopeElement, CaretPosition)
+    -- Next and Previous are specifically for moving the caret, inside Fixed ScopeElements
+    | NextScope
+    | PreviousScope
+type TraversalError_  =
+    BrokenCaret -- For when the position cannot be found
+
+traverse: (TraversalCase_ -> TraversalResult_) -> Scope -> CaretPosition -> Result TraversalError_ TraversalResult_
+traverse process (Scope _ children) caret = case caret of
+    [] -> Err BrokenCaret
+    [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process |> Ok
+    (x::y::others) -> let (prev, next) = (List.take x children, List.drop x children) in
+        case next of
+            (StrElement str :: after) -> TextCase prev str y after |> process |> Ok
+            (Fixed funcNum latex params :: after) -> case Array.get y params of
+                Nothing -> Err BrokenCaret
+                Just (Scope detail inChildren) -> traverse process (Scope detail inChildren) others
+                    |> Result.andThen (\res -> case res of
+                            Done (newChildren, pos) ->
+                                let newParams = Array.set y (Scope detail newChildren) params in
+                                Ok (Done (prev ++ (Fixed funcNum latex newParams :: after), x::y::pos))
+                            NextScope -> if y + 1 == Array.length params then Ok (Done (children, [x + 1]))
+                                else Ok (Done (children, [x, y + 1, 0]))
+                            PreviousScope -> if y == 0 then Ok (Done (children, [x]))
+                                else case Array.get (y - 1) params of
+                                    Nothing -> Err BrokenCaret
+                                    Just (Scope _ prevChildren) -> Ok (Done (children, [x, y - 1, List.length prevChildren]))
+                    )
+            _ -> Err BrokenCaret
+
 {- ## Cursor Movement -}
 
-type CaretShiftResult =
-    ShiftNext (Latex.Model EntryState_) -- I want to get the next value (i.e. [1,0,5] to [1,1])
-    | ShiftPrevious (Latex.Model EntryState_) -- I want to get the previous value (i.e. [1,1] to [1,0,5]) (i.e. [1,0] to [1])
-
-cursorNext_: Bool -> Latex.Model EntryState_ -> List Int -> List Int
-cursorNext_ forwards latex current = Latex.modifyCaret
-    (\_ input -> case input of
-        Latex.EOF -> Latex.Processing (if forwards then ShiftNext [] else ShiftPrevious [])
-        Latex.TextCase (state, str) others num -> let newNum = if forwards then num + 1 else num - 1 in
-            if newNum <= 0 then Latex.Complete (Latex.Text state str :: others, [0])
-            else if newNum >= String.length str
-            then Latex.Complete (Latex.Text state str :: others, [1])
-            else Latex.Complete (Latex.Text state str :: others, [0,newNum])
-        Latex.IntermediateCase next -> if not forwards then Latex.Processing (ShiftPrevious next)
-            else case cursorFirstOf_ next of
-                Just c -> Latex.Complete (next, c)
-                Nothing -> Latex.Processing (ShiftNext next)
-    )
-    (\part scope res -> case res of
-        ShiftNext remaining -> Latex.Processing (ShiftNext (part::remaining)) -- already checked in preprocess
-        ShiftPrevious remaining -> case cursorLastOf_ part of
-            Just c -> Latex.Complete (part::remaining, c)
-            Nothing -> case scope.argument of
-                Nothing -> Latex.Processing (ShiftPrevious (part::remaining))
-                Just _ -> Latex.Complete (part::remaining, [0])
-    )
-    (\combine s next parent res -> let newl children = combine s children::next in
-        case res of
-            ShiftNext children -> case parent.argument of
-                Just _ -> Latex.Complete (newl children, [1]) -- Allow to append random stuff
-                Nothing -> case cursorFirstOf_ next of
-                    Just (c::other) -> Latex.Complete (newl children, c+1::other)
-                    _ -> Latex.Processing (ShiftNext (newl children))
-            ShiftPrevious children -> case parent.argument of
-                Just _ -> Latex.Complete (newl children, [0]) -- Allow to prepend random stuff
-                Nothing -> Latex.Processing (ShiftPrevious (newl children))
-    )
-    baseState latex current
-    |> \res -> case res of
-        Ok (Latex.Complete (_,c)) -> c
-        _ -> current
-
-cursorFirstOf_: Latex.Model EntryState_ -> Maybe (List Int)
-cursorFirstOf_ =
-    let
-        check isSameGap = List.foldl (\part (result, childNum, isSame) -> (   case result of
-                Nothing -> case part of
-                    Latex.Fraction _ top bot ->
-                        case  check False top of
-                            Just r -> Just ([childNum, 0] ++ r)
-                            Nothing -> check False bot |> Maybe.map ((++) [childNum, 1])
-                    Latex.SymbolPart s _ -> s.argument |> Maybe.map (\_ -> [childNum+1])
-                    Latex.Text s t -> s.argument |> Maybe.map (\_ -> if String.length t <= 1 then [childNum+1] else [childNum, 1])
-                    Latex.Superscript _ inner -> check False inner |> Maybe.map ((::) childNum)
-                    Latex.Subscript _ inner -> check False inner |> Maybe.map ((::) childNum)
-                    Latex.Bracket _ inner -> check False inner |> Maybe.map ((::) childNum)
-                    Latex.Sqrt _ inner -> check False inner |> Maybe.map ((::) childNum)
-                    Latex.Scope s inner -> case (s.argument, isSame) of
-                        (Nothing, _) -> check isSame inner |> Maybe.map ((::) childNum)
-                        (Just _, False) -> Just [childNum]
-                        (Just _, True) -> case check True inner of
-                            Nothing -> Just [childNum+1]
-                            Just c -> case List.head c of
-                                Nothing -> Just [childNum]
-                                Just num -> if num == List.length inner then Just [childNum+1] else Just (childNum :: c)
-                    _ -> Nothing
-                _ -> result
-            ,   childNum + 1
-            ,   False
+cursorNext_: Bool -> Scope -> List Int -> List Int
+cursorNext_ forwards scope current = traverse
+    (\input -> case input of
+        TextCase prev str num next -> Done
+            (   prev ++ (StrElement str :: next)
+            ,   let newNum = if forwards then num + 1 else num - 1 in
+                if newNum <= 0 then [List.length prev]
+                else if newNum >= String.length str then [List.length prev + 1]
+                else [List.length prev,newNum]
             )
-            ) (Nothing, 0, isSameGap)
-            >> \(a,_,_) -> a
-    in
-        check True
-
-cursorLastOf_: Latex.Part EntryState_ -> Maybe (List Int)
-cursorLastOf_ =
-    let
-        recursive isSameGap model = List.foldr (\p (res,postIndex,isSame) -> case res of
-                Just _ -> (res, postIndex, isSame)
-                Nothing -> case checkPart isSame p of
-                    Just (head::c) -> (Just (postIndex+head::c), postIndex, isSame)
-                    Just [] -> (Just [], postIndex, isSame)
-                    _ -> (Nothing, postIndex - 1, False)
-            ) (Nothing,List.length model-1,isSameGap) model
-            |> \(a,_,_) -> a
-        checkPart isSameGap part =
-            case part of
-                Latex.Fraction _ top bot -> case recursive False top of
-                    Just c -> Just (0 :: 0 :: c)
-                    Nothing -> recursive False bot |> Maybe.map (\c -> 0 :: 1 :: c)
-                Latex.SymbolPart _ _ -> Nothing
-                Latex.Text s text -> s.argument |> Maybe.andThen (\_ -> let strLen = String.length text in
-                    if strLen == 0 then Nothing
-                    else if strLen == 1 then Just [0]
-                    else Just [0,String.length text - 1])
-                Latex.Superscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
-                Latex.Subscript _ inner -> recursive False inner |> Maybe.map ((::) 0)
-                Latex.Bracket _ inner -> recursive False inner |> Maybe.map ((::) 0)
-                Latex.Sqrt _ inner -> recursive False inner |> Maybe.map ((::) 0)
-                Latex.Scope s inner -> case (isSameGap, s.argument) of
-                    (False, Just _) -> Just [1]
-                    _ -> recursive isSameGap inner |> Maybe.map ((::) 0)
-                _ -> Nothing
-    in
-        checkPart True
+        IntermediateCase prev next ->
+            if forwards then case next of
+                (head::after) -> Done
+                    (   prev ++ next
+                    ,   case head of
+                        StrElement str -> if String.length str <= 1
+                            then [List.length prev + 1]
+                            else [List.length prev, 1]
+                        Fixed _ _ params -> if Array.isEmpty params
+                            then [List.length prev + 1]
+                            else [List.length prev, 0, 0]
+                    )
+                _ -> NextScope
+            else let beforeLength = List.length prev - 1 in
+                case List.drop beforeLength prev of
+                    [head] -> Done
+                        (   prev ++ next
+                        ,   case head of
+                            StrElement str -> if String.length str <= 1
+                                then [List.length prev - 1]
+                                else [List.length prev - 1, String.length str - 1]
+                            Fixed _ _ params -> if Array.isEmpty params
+                                then [List.length prev - 1]
+                                else let finalIndex = Array.length params - 1 in
+                                    case Array.get finalIndex params of
+                                        Nothing -> [List.length prev - 1, finalIndex, 0]
+                                        Just (Scope _ p) ->
+                                            [List.length prev - 1, finalIndex, List.length p]
+                        )
+                    _ -> PreviousScope
+    )
+    scope current
+    |> \res -> case res of
+        Ok (Done (_,c)) -> c
+        _ -> current -- Either we have reached the ends, or something broke
 
 {- ## Insertion -}
 
-type InsertionResult =
-    AppendOrCreate (Latex.Model EntryState_)
-    | AppendError
-
 insertChar_: Char -> Model msg -> Result String (Model msg)
-insertChar_ char model = Latex.modifyCaret
-    (\_ input -> case input of
-        Latex.EOF -> Latex.Processing (AppendOrCreate [])
-        Latex.TextCase (state, str) others num ->
+insertChar_ char model = traverse
+    (\input -> case input of
+        TextCase prev str num next ->
             let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
-            Latex.Complete (Latex.Text state newStr :: others, [0, num+1])
-        Latex.IntermediateCase next -> case next of
-            (Latex.Text state str :: others) -> case state.argument of
-                Just _ -> Latex.Complete (Latex.Text state (String.cons char str)::others,[0,1])
-                Nothing -> Latex.Processing (AppendOrCreate (Latex.Text state str :: others))
-            (Latex.Scope state inner :: others) -> case state.argument of
-                Just _ -> Latex.Complete (appendChar_ state inner next char , [1])
-                Nothing -> Latex.Processing (AppendOrCreate next)
-            _ -> Latex.Processing (AppendOrCreate next)
+            Done (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
+        IntermediateCase prev next -> case next of
+            (StrElement str::after) ->
+                Done (prev ++ (StrElement (String.cons char str) :: after), [List.length prev, 1])
+            _ -> let beforeLength = List.length prev - 1 in
+                case List.drop beforeLength prev of
+                    [StrElement str] -> Done
+                        (   List.take beforeLength prev ++ (StrElement (str ++ String.fromChar char) :: next)
+                        ,   [List.length prev]
+                        )
+                    _ -> Done
+                        (   prev ++ (StrElement (String.fromChar char) :: next)
+                        ,   [List.length prev + 1]
+                        )
     )
-    (\part parentState res -> case res of
-        AppendOrCreate others -> case part of
-            Latex.Text s str -> case s.argument of
-                Nothing -> Latex.Processing AppendError |> Debug.log "test3"
-                Just _ -> Latex.Complete (Latex.Text s (str ++ String.fromChar char) :: others, [1])
-            Latex.Scope s inner -> case s.argument of
-                Nothing -> case parentState.argument of
-                    Nothing -> Latex.Processing AppendError
-                    Just _ -> Latex.Complete
-                        ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
-                Just _ -> Latex.Complete (appendChar_ s inner others char, [1])
-            _ -> case parentState.argument of
-                Nothing -> Latex.Processing AppendError |> Debug.log "test"
-                Just _ -> Latex.Complete ([part, Latex.Text parentState (String.fromChar char)] ++ others, [2])
-        AppendError -> Latex.Processing AppendError
-    )
-    (\combine s next _ res -> case res of
-        AppendOrCreate others -> case s.argument of
-            Nothing -> Latex.Processing AppendError |> Debug.log "test4"
-            Just _ -> let newEntry = Latex.Text s (String.fromChar char) in
-                Latex.Complete (combine s (newEntry::others)::next, [0,1])
-        AppendError -> Latex.Processing AppendError
-    )
-    baseState model.entry.latex model.cursor
+    model.entry.scope model.cursor
     |> \res -> let entry = model.entry in case res of
-        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l}, cursor = c}
-        Ok (Latex.Processing (AppendOrCreate _)) -> let newEntry = Latex.Text baseState (String.fromChar char) in
-            Ok {model | entry = {entry | latex = newEntry::model.entry.latex}, cursor = [0,1]}
-        Ok (Latex.Processing AppendError) -> Err "Shouldn't be allowed to insert text here"
+        Ok (Done (l,c)) -> Ok {model | entry = {entry | scope = Scope {fixed = True} l}, cursor = c}
         _ -> Err "Something went wrong"
 
-appendChar_: EntryState_ -> Latex.Model EntryState_ -> Latex.Model EntryState_ -> Char -> Latex.Model EntryState_
-appendChar_ s inner others char = let finalIndex = List.length inner - 1 in
-    (   case List.drop finalIndex inner of
-            [Latex.Text tState str] -> List.take finalIndex inner
-                ++ [Latex.Text tState (str ++ String.fromChar char)]
-            _ -> inner ++ [Latex.Text s (String.fromChar char)]
-    )
-    |> \newInner -> Latex.Scope s newInner :: others
-
-updateCaretPosition_: Int -> Latex.CaretPosition -> Latex.CaretPosition
-updateCaretPosition_ by list = case list of
-    [] -> [by + 1]
-    c -> by :: c
-
-insertLatex_: (EntryState_ -> (Latex.Part EntryState_, Latex.CaretPosition)) -> Model msg -> Result String (Model msg)
-insertLatex_ creator model = Latex.modifyCaret
-    (\parentState input -> let (symPart, newCaret) = creator parentState in
-        case input of
-        Latex.EOF -> case parentState.argument of
-            Nothing -> Latex.Processing (AppendOrCreate [])
-            Just _ -> Latex.Complete ([symPart], updateCaretPosition_ 0 newCaret)
-        Latex.TextCase (state, str) others num -> case parentState.argument of
-            Nothing -> Latex.Processing AppendError
-            Just _ -> if num == 0 then Latex.Complete (symPart :: Latex.Text state str :: others, updateCaretPosition_ 0 newCaret)
-                else Latex.Complete
-                    (   Latex.Text state (String.left num str):: symPart::Latex.Text state (String.dropLeft num str)::others
-                    ,   updateCaretPosition_ 1 newCaret
+insertLatex_: (Maybe Int, Latex.Model (), Array.Array Scope) -> Model msg -> Result String (Model msg)
+insertLatex_ (funcNum, latex, arr) model = traverse
+    (\input -> case input of
+        TextCase prev str num next -> Done
+            (   prev
+                ++  ( StrElement (String.left num str) :: Fixed funcNum latex arr
+                    :: StrElement (String.dropLeft num str) :: next
                     )
-        Latex.IntermediateCase next -> case next of
-            (Latex.Scope state inner :: others) -> case state.argument of
-                Nothing -> Latex.Processing (AppendOrCreate next)
-                Just _ -> Latex.Complete (Latex.Scope state (symPart::inner) :: others, 0 :: updateCaretPosition_ 0 newCaret)
-            _ -> case parentState.argument of
-                Nothing -> Latex.Processing (AppendOrCreate next)
-                Just _ -> Latex.Complete (symPart :: next, updateCaretPosition_ 0 newCaret)
+            ,   if Array.isEmpty arr
+                then [List.length prev + 2]
+                else [List.length prev + 1, 0, 0]
+            )
+        IntermediateCase prev next -> Done
+            (   prev ++ (Fixed funcNum latex arr :: next) |> Debug.log "insert"
+            ,   if Array.isEmpty arr
+                then [List.length prev + 1]
+                else [List.length prev, 0, 0]
+            )
     )
-    (\part parent res -> case res of
-        AppendOrCreate others -> case parent.argument of
-            Just _ -> let (symPart, newCaret) = creator parent in
-                Latex.Complete (part :: symPart :: others, updateCaretPosition_ 1 newCaret)
-            Nothing -> case part of
-                Latex.Scope s inner -> case s.argument of
-                    Nothing -> Latex.Processing AppendError
-                    Just _ -> let (symPart, newCaret) = creator s in
-                        Latex.Complete (Latex.Scope s (inner ++ [symPart])::others, 0 :: updateCaretPosition_ (List.length inner) newCaret)
-                _ -> Latex.Processing AppendError
-        AppendError -> Latex.Processing AppendError
-    )
-    (\combine s next _ res -> case res of
-        AppendOrCreate others -> case s.argument of
-            Nothing -> Latex.Processing AppendError
-            Just _ -> let (newEntry, newCaret) = creator s in
-                Latex.Complete (combine s (newEntry::others)::next, 0 :: updateCaretPosition_ 0 newCaret)
-        AppendError -> Latex.Processing AppendError
-    )
-    baseState model.entry.latex model.cursor
+    model.entry.scope model.cursor
     |> \res -> let entry = model.entry in case res of
-        Ok (Latex.Complete (l,c)) -> Ok {model | entry = {entry | latex = l |> Debug.log "latex"}, cursor = c}
-        Ok (Latex.Processing (AppendOrCreate _)) -> let (newEntry, newCaret) = creator baseState in
-            Ok {model | entry = {entry | latex = newEntry::model.entry.latex}, cursor = 0 :: updateCaretPosition_ 0 newCaret}
+        Ok (Done (l,c)) -> Ok {model | entry = {entry | scope = Scope {fixed = True} l}, cursor = c}
         _ -> Err "Something went wrong"
 
-rewriteLatex_: Int -> Bool -> Latex.Model () -> (Latex.Part EntryState_, Latex.CaretPosition)
-rewriteLatex_ scopeNum fixed latex = let newState = {function = scopeNum, argument = Nothing, fixedArgs = fixed} in
-    rewriteLatexRecursive_ newState latex
-    |> \(model, caret) -> (Latex.Scope newState model, caret)
-
-rewriteLatexRecursive_: EntryState_ -> Latex.Model () -> (Latex.Model EntryState_, Latex.CaretPosition)
-rewriteLatexRecursive_ newState latex = List.foldr (\part (newModel, caret, index) -> case part of
-        Latex.Fraction _ top bot ->
-            let
-                (newTop, topCar) = rewriteLatexRecursive_ newState top
-                (newBot, botCar) = rewriteLatexRecursive_ newState bot
-            in
-                (   Latex.Fraction newState newTop newBot :: newModel
-                ,   if List.isEmpty topCar
-                    then if List.isEmpty botCar then caret
-                        else (index::1::botCar)
-                    else (index::0::topCar)
-                ,   index - 1
-                )
-        Latex.Text _ str -> (Latex.Text newState str::newModel, caret, index - 1)
-        Latex.SymbolPart _ symb -> (Latex.SymbolPart newState symb::newModel, caret, index - 1)
-        Latex.Superscript _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
-            (Latex.Superscript newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
-        Latex.Subscript _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
-            (Latex.Subscript newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
-        Latex.Bracket _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
-            (Latex.Bracket newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
-        Latex.Sqrt _ inner -> let (newL, car) = rewriteLatexRecursive_ newState inner in
-            (Latex.Sqrt newState newL :: newModel, if List.isEmpty car then caret else index :: car, index - 1)
-        Latex.Argument _ num ->
-            (   Latex.Scope {newState | argument = (Just num)} [] :: newModel
-            ,   if num == 1 then [index+1] else caret
-            ,   index - 1
-            )
-        Latex.Param _ num ->
-            (   Latex.Scope {newState | argument = (Just num)} [] :: newModel
-            ,   if num == 1 then [index+1] else caret
-            ,   index-1
-            )
-        Latex.Scope _ inner -> rewriteLatexRecursive_ newState inner
-            |> \(a,b) -> (a,b,index - 1)
-    ) ([], [], List.length latex - 1 ) latex
-    |> \(a,b, _) -> (a, b)
+latexArray_: Bool -> Latex.Model () -> Result String (Array.Array Scope)
+latexArray_ fixed latex = Latex.extractArgs (Set.empty, 0) latex
+    |> Result.map (\(_, count) -> if fixed
+        then Array.repeat count (Scope {fixed = True} [])
+        else Array.fromList [Scope {fixed = False} []]
+    )
 
 {- ## Extraction -}
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String Display.FullEquation
-toTree dict model = toEntryString_ model.entry.funcName model.entry.latex
+toTree dict model = toEntryString_ model.entry.funcName model.entry.scope
     |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
 
--- Argument scope
-toEntryString_: Dict.Dict Int String -> Latex.Model EntryState_ ->  Result String String
-toEntryString_ funcName model = Helper.resultList (\symbol prev -> case symbol of
-        Latex.Text elem text -> Ok (prev++text)
-        Latex.SymbolPart elem symb -> Ok (prev++"\\" ++ Latex.symbolToStr symb)
-        Latex.Bracket _ inner -> toEntryString_ funcName inner
-            |> Result.map (\str -> prev++ "(" ++ str ++ ")")
-        Latex.Scope elem inner -> case Dict.get elem.function funcName of
-            Nothing -> Err "Function not found"
-            Just name -> toEntryMap_ funcName Dict.empty inner
-                |> Result.andThen (\dict -> Helper.resultDict (\key value (str, index) ->
-                    if key /= index then Err "Missing an argument"
-                    else if value == "" then Err "An input is empty"
-                    else Ok
-                        (   if String.isEmpty str then value else str++","++value
-                        ,   index + 1
-                        )
-                    ) ("", 1) dict
-                    |> Result.map (\(res,_) -> prev ++ "\\" ++ name ++ "(" ++ res ++ ")")
-                )
-        _ -> Err "Unable to stringify the latex parts"
-    ) "" model
-
--- Non-argument scope
-toEntryMap_: Dict.Dict Int String -> Dict.Dict Int String -> Latex.Model EntryState_ ->  Result String (Dict.Dict Int String)
-toEntryMap_ funcName resDict model = Helper.resultList (\part res -> case part of
-        Latex.Fraction _ top bot -> toEntryMap_ funcName res top
-            |> Result.andThen (\newRes -> toEntryMap_ funcName newRes bot)
-        Latex.Superscript _ inner -> toEntryMap_ funcName res inner
-        Latex.Subscript _ inner -> toEntryMap_ funcName res inner
-        Latex.Sqrt _ inner -> toEntryMap_ funcName res inner
-        Latex.Bracket _ inner -> toEntryMap_ funcName res inner
-        Latex.Scope elem inner -> case elem.argument of
-            Nothing -> toEntryMap_ funcName res inner
-            Just arg -> toEntryString_ funcName inner
-                |> Result.andThen (\str -> if String.isEmpty str then Err "Argument is blank"
-                    else Ok (Dict.insert arg str res)
-                )
-        _ -> Ok res
-    ) resDict model
+toEntryString_: Dict.Dict Int String -> Scope -> Result String String
+toEntryString_ funcName (Scope _ children) = Helper.resultList (\child res -> case child of
+        StrElement str -> Ok (res ++ str)
+        Fixed funcNum latex params -> case funcNum of
+            Nothing -> Ok (res ++ Latex.unparse latex) -- mainly symbols
+            Just num -> case Dict.get num funcName of
+                Nothing -> Err "Missing function name"
+                Just name -> Helper.resultArray (\index innerScope innerRes ->
+                        toEntryString_ funcName innerScope
+                        |> Result.map (\str -> Array.set index str innerRes)
+                    ) (Array.repeat (Array.length params) "") params
+                    |> Result.map (\arr -> "\\" ++ name ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
+    ) "" children
 
 {- ## Suggestion -}
 
