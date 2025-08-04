@@ -343,6 +343,9 @@ dialog svg {
     text-align: center;
     overflow: scroll;
 }
+.historyHolder > div {
+    height: 100%;
+}
 .contextualToolbar {
     grid-column: 1/3;
     grid-row: 3;
@@ -433,7 +436,6 @@ div.history {
     padding: 0 0.5rem;
     display: flex;
     flex-direction: column;
-    height: 100%;
     position: relative;
     overflow: scroll;
 }

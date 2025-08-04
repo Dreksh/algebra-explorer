@@ -24,9 +24,9 @@ import Algo.Math as Math
 import Components.Evaluate as Evaluate
 import Components.Query as Query
 import Components.Rules as Rules
-import Components.Actions as Actions
 import Components.Tutorial as Tutorial
 import Helper
+import UI.Actions as Actions
 import UI.ActionView as ActionView
 import UI.Animation as Animation
 import UI.Dialog as Dialog
@@ -336,23 +336,19 @@ update event core = let model = core.swappable in
             Rules.Download url -> (core, downloadTopicCmd_ url)
             Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ActionEvent e -> case e of
-            Actions.Commit -> case Display.historyCommit model.display of
-                Err errStr -> submitNotification_ core errStr
-                Ok dEvent -> update (DisplayEvent dEvent) core
-            Actions.Reset -> case Display.historyReset model.display of
-                Err errStr -> submitNotification_ core errStr
-                Ok dEvent -> update (DisplayEvent dEvent) core
+            Actions.Commit -> commitChange_ core
+            Actions.Reset -> resetChange_ core
             Actions.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
-                    Just m -> applyChange_ m core
+                    Just m -> applyChange_ m False core
                 else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
             Actions.Group root children -> case Display.groupChildren core.animation root children model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
+                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
             Actions.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, updateQuery_ dModel)
+                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
             Actions.Substitute -> ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
             Actions.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
@@ -380,12 +376,12 @@ update event core = let model = core.swappable in
                 )
                 |> (\result -> case result of
                     Err errStr -> submitNotification_ core errStr
-                    Ok newParams -> applyChange_ newParams core
+                    Ok newParams -> applyChange_ newParams True core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
         ApplySubstitution eqNum -> case Display.substitute core.animation eqNum model.display of
             Err errStr -> submitNotification_ core errStr
-            Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}, updateQuery_ dModel)
+            Ok (dModel, animation) -> commitChange_ {core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}
         ConvertSubString root target str -> case Math.parse (Rules.functionProperties model.rules) str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
@@ -400,17 +396,30 @@ update event core = let model = core.swappable in
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
                     else case Display.replaceNumber core.animation root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
-                        Ok (dModel, animation) -> ({core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
+                        Ok (dModel, animation) -> commitChange_ {core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}
                 Just (EvalType_ id) -> case Display.replaceNodeWithNumber core.animation id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
-                    Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, updateQuery_ dModel)
+                    Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, Cmd.none)
 
 
-applyChange_: {from: Matcher.MatchResult Rules.FunctionProp Animation.State, replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp}} -> Model -> (Model, Cmd Event)
-applyChange_ params model = let swappable = model.swappable in
+applyChange_: {from: Matcher.MatchResult Rules.FunctionProp Animation.State, replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp}} -> Bool -> Model -> (Model, Cmd Event)
+applyChange_ params commit model = let swappable = model.swappable in
     case Display.transform model.animation params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
-        Ok (newDisplay, animation) -> ({model | dialog = Nothing, swappable = {swappable | display = newDisplay}, animation = animation}, updateQuery_ newDisplay)
+        Ok (newDisplay, newAnim) -> {model | dialog = Nothing, swappable = {swappable | display = newDisplay}, animation = newAnim}
+            |> if commit then commitChange_ else \m -> (m, Cmd.none)
+
+commitChange_: Model -> (Model, Cmd Event)
+commitChange_ model = let swappable = model.swappable in
+    case Display.commit swappable.rules swappable.display of
+        Err errStr -> submitNotification_ model errStr
+        Ok newDisplay -> ({model | swappable = {swappable | display = newDisplay}}, updateQuery_ newDisplay)
+
+resetChange_: Model -> (Model, Cmd Event)
+resetChange_ model = let swappable = model.swappable in
+    case Display.reset model.animation swappable.display of
+        Err errStr -> submitNotification_ model errStr
+        Ok (newDisplay, newAnim) -> ({model | swappable = {swappable | display = newDisplay}, animation = newAnim}, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
 submitNotification_ model str = let swappable = model.swappable in

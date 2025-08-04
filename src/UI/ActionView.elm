@@ -10,7 +10,7 @@ import Html.Keyed exposing (node)
 import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
-import Components.Actions as Actions
+import UI.Actions as Actions
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 

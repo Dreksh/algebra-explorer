@@ -1,4 +1,4 @@
-module Components.Actions exposing (
+module UI.Actions exposing (
     Event(..), MatchedRule, Action(..), Selection, matchRules
     )
 
