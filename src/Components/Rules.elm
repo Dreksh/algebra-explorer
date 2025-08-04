@@ -383,17 +383,23 @@ toJavascriptString_ model name children = case Dict.get name model.functions of
         Just (FuncOp jsName) -> Ok (jsName ++ "(" ++ String.join "," children ++ ")")
 
 evaluateStr: Model -> Math.Tree s -> Result String String
-evaluateStr model root = (
+evaluateStr model root = case root of
+    Math.RealNode _ -> Err "Evaluating a Real would just return itself"
+    -- TODO: do not evaluate anything that would just become itself e.g. -x or 1/x
+    _ -> evaluateStr_ model root
+
+evaluateStr_: Model -> Math.Tree s -> Result String String
+evaluateStr_ model root = (
     case root of
         Math.RealNode s -> Ok (String.fromFloat s.value)
         Math.VariableNode s -> case Dict.get s.name model.constants of
             Nothing -> Err "Unable to evaluate an unknown variable"
             Just (str, _) -> Ok str
-        Math.UnaryNode s -> evaluateStr model s.child |> Result.andThen (\child -> toJavascriptString_ model s.name [child])
-        Math.BinaryNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+        Math.UnaryNode s -> evaluateStr_ model s.child |> Result.andThen (\child -> toJavascriptString_ model s.name [child])
+        Math.BinaryNode s -> Helper.resultList (\child list -> evaluateStr_ model child |> Result.map (\c -> c::list)) [] s.children
             |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
         Math.DeclarativeNode _ -> Err "Cannot evaluate a declaration"
-        Math.GenericNode s -> Helper.resultList (\child list -> evaluateStr model child |> Result.map (\c -> c::list)) [] s.children
+        Math.GenericNode s -> Helper.resultList (\child list -> evaluateStr_ model child |> Result.map (\c -> c::list)) [] s.children
             |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
     ) |> Result.map (\str -> "(" ++ str ++ ")" )
 

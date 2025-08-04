@@ -254,10 +254,10 @@ update event core = let model = core.swappable in
                             ({core | animation = newT, swappable = {model | input = newIn, showMenu = True}}, Cmd.none)
             (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
+                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
             (True, True, "z") -> case Display.redo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> ({core | swappable = {model | display = display}, animation = animation}, Cmd.none)
+                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
             _ -> (core, Cmd.none)
         EnterCreateMode -> let (inputModel, newT) = Input.open core.animation model.input in
             (   {   core
@@ -418,7 +418,7 @@ commitChange_ model = let swappable = model.swappable in
 resetChange_: Model -> (Model, Cmd Event)
 resetChange_ model = let swappable = model.swappable in
     case Display.reset model.animation swappable.display of
-        Err errStr -> submitNotification_ model errStr
+        Err _ -> (model, Cmd.none)  -- TODO: use a timer to handle case of resetting a committed Action
         Ok (newDisplay, newAnim) -> ({model | swappable = {swappable | display = newDisplay}, animation = newAnim}, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
@@ -538,7 +538,7 @@ parameterDialog_ params =
     }
 
 substitutionDialog_: Swappable -> Dialog.Model Event
-substitutionDialog_ model = let eqNum = model.display.selected |> Maybe.map (\(eq, _) -> eq) |> Maybe.withDefault -1 in
+substitutionDialog_ model = let eqNum = model.display.selected |> Maybe.map (\(eq, _, _) -> eq) |> Maybe.withDefault -1 in
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"

@@ -1,6 +1,5 @@
 module Algo.History exposing (Model, Staged(..), Event(..),
-    init, update, stage, stageMany, current, next, commit,
-    canUndo, canRedo,
+    init, update, current, next, canUndo, canRedo,
     serialize, encode, decoder
     )
 
@@ -56,12 +55,6 @@ update event model =
         Reset -> { model | staged = Nothing }
         Commit -> commit model
         Revert idx -> { model | visits = idx::model.visits, undone = [] }
-
-stage: component -> Model component -> Model component
-stage c model = update (Stage (Change c)) model
-
-stageMany: List component -> Model component -> Model component
-stageMany cs model = update (Stage (Changes cs)) model
 
 canUndo: Model c -> Bool
 canUndo model = case model.visits of
