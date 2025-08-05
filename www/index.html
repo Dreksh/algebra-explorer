@@ -61,9 +61,9 @@
                 svgTarget.removeEventListener("pointercancel", onFinish);
                 svgTarget.releasePointerCapture(val["pointerID"]);
             }
-            svgTarget.addEventListener("pointermove", onMove, true);
-            svgTarget.addEventListener("pointerup", onFinish, true);
-            svgTarget.addEventListener("pointercancel", onFinish, true);
+            svgTarget.addEventListener("pointermove", onMove);
+            svgTarget.addEventListener("pointerup", onFinish);
+            svgTarget.addEventListener("pointercancel", onFinish);
             svgTarget.setPointerCapture(val["pointerID"]);
             // Send the start version
             app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});
