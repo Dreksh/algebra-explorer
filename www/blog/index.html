@@ -1,0 +1,168 @@
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css" />
+    <script src="script.js"></script>
+  </head>
+  <body onLoad="run()">
+    <div id="title">
+      <h1>Algexplore</h1>
+      <p>A tool that allows people to explore both steps and rules of algebra</p>
+      <p>The source code can be found on <a href="https://github.com/jxz12/math">https://github.com/jxz12/math</a></p>
+    </div>
+    <main>
+      <h2>Introduction</h2>
+      <section>
+      </section>
+
+      <h2>To do</a></h2>
+      <section>
+      <p>
+      This is only the first version which we were able to complete by
+      the SoME 2025 deadline. There are many features which we would love to
+      do. For example:
+      </p>
+      <ul>
+        <li><p>Tutorials</p></li>
+        <li><p>Input Conditions for parameters</p></li>
+        <li><p>Mobile-friendly webpage</p></li>
+        <li><p>Accessibility Improvements</p></li>
+      </ul>
+      <p>
+      If you have any feature requests, or any issues with the tool, do create
+      an issue using the link: <br />
+      <a href=""https://github.com/jxz12/math/issues">https://github.com/jxz12/math/issues</a> <br />
+      This includes asking to fill the gaps of our latex parser
+      </p>
+      </section>
+
+      <h2>Associative and Commutative</h2>
+      <section>
+      <p>
+      The first idea we want to represent natively in our tool is the associative and commutative properties
+      of basic arithmetic (addition and multiplication).
+      We did this in a way where we represent maths expressions as a stack of blocks,
+      where the blocks on top are treated as the input to the blocks below.
+      To find the value of a block, you would need to resolve the blocks above it before using the value in the
+      current block.
+      </p>
+      <h3>Associative</h3>
+      <div class="explanation">
+        <img />
+        <div>
+          <p>
+          Associative means that, within the same operation being performed, you can group the inputs in any
+          configuration, as long as the order of the inputs are the same.
+          </p>
+          <math>
+            <mo>(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo>)</mo><mo>+</mo><mi>c</mi><mo>=</mo>
+            <mi>a</mi><mo>+</mo><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo>
+          </math>
+          <p>
+          We represented this in our visualisation as the ability to have multiple blocks above addition
+          or multiplication. As well as the actions "Group" and "Ungroup" to add/remove brackets,
+          which are represented as adding/removing layers in the blocks.
+          </p>
+        </div>
+      </div>
+      <h3>Commutative</h3>
+      <div class="explanation">
+        <img />
+        <div>
+          <p>
+          Commutative means that the operations can operate in a different order.
+          </p>
+          <math>
+            <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
+          </math>
+          <p>
+          We represented this in our visualisation as the ability to drag elements across
+          the top of commutative blocks.
+          </p>
+        </div>
+      </div>
+      <h3>Combined</h3>
+      <p>
+      The effect of this combined is to be able to do both, but also to be able to group
+      non-adjacent blocks by selecting them (long press), and then applying the group action.
+      </p>
+      <div class="try-it-out" data-target='["1+2+3+4+5"]'>
+        <p>
+        Play around with this example to see if you can get the following expressions:
+        </p>
+        <ul>
+            <li><math><mn>1</mn><mo>+</mo><mn>2</mn></math></li>
+        </ul>
+      </div>
+      </section>
+
+      <h2>BODMAS/BIDMAS</h2>
+      <section>
+      <p>
+      BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
+      order that the operations should happen. But there is a subtle difference in which we
+      treat the Brackets and Orders/Indices vs Addition and Subtraction. The difference is
+      due to inverses.
+      </p>
+      <h3>Inverses</h3>
+      <p>
+      Let's first define what Addition and Multiplication can mean in simple terms: <br />
+      Addition: Let's get <math><mi>n</mi></math> more things <br />
+      Multiplication: Let's make <math><mi>n</mi></math> copies
+      </p>
+      <p>
+      Inverses can be roughly thought of as "the same operation, but in the other direction".
+      These would be the definitions in simple terms: <br '>'
+      Subtraction: Let's remove <math><mi>n</mi></math> things <br />
+      Division: Let's split this into <math><mi>n</mi></math> copies
+      </p>
+      <p>
+      To represent the "the same operation, but in the other direction", it's useful to simply
+      mark the ones that are inverted. This is where the "unary minus" operation comes in, where
+      we simply add <math><mo>-</mo></math> in front of anything, and we understand that it's
+      to be taken away. This is exactly how we got negative numbers, by using this in front of
+      positive numbers.
+      </p>
+      <p>
+      To represent the unary inverse, or simply 'marking' which inputs go the other direction,
+      we add a block just below the input.
+      </p>
+      <p>
+      Multiplication, on the other hand, does not have a "unary division". But to illustrate
+      its similarities to Addition and Subtraction, we have opted to represent the block as
+      a unary inverse. The text view of this will add an additional <math><mn>1</mn></math>
+      (the multiplicative identity) in front, so it appears like a binary operation
+      (which it is, but not how we're using it).
+      </p>
+      <div class="try-it-out" data-target='["2+3-(4+5)","2*3/(4*5)"]'>
+        <p>
+        Play around with this example to see the inverses working with the original operation.
+        </p>
+      </div>
+      </section>
+
+      <h2>Exploration of Patterns</h2>
+      <section>
+      <p>
+        Maths has a lot of rules.
+      </p>
+      <p>
+      Extensible, define your own rules! Or get someone else to!
+      </p>
+      </section>
+
+      <h2>Extensions</h2>
+      <section>
+      <p>
+      We've covered the basics of this tool, but we've also added a bit more topics for you to play around with.
+      You can try:
+      </p>
+      <ul>
+        <li>Solving Quadratic Equations, with "Find Zeros"</li>
+        <li>Solving Simultaneous Equations, with "Substitution"</li>
+      </ul>
+      <iframe src="../index.html"></iframe>
+      </section>
+    </main>
+  </body>
+</html>

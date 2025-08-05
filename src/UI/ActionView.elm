@@ -86,8 +86,8 @@ actionToHtml_ actionConvert attrs action = case action of
             hoverable = Html.div
                 ( attrs ++
                 [   class "clickable"
-                ,   HtmlEvent.onMouseEnter (actionConvert event)
-                ,   HtmlEvent.onMouseLeave (actionConvert Actions.Reset)
+                ,   HtmlEvent.onPointerEnter (actionConvert event)
+                ,   HtmlEvent.onPointerLeave (actionConvert Actions.Reset)
                 ,   HtmlEvent.onClick (actionConvert Actions.Commit)
                 ])
                 [Html.text name]

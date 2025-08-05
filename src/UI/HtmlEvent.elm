@@ -1,6 +1,6 @@
 module UI.HtmlEvent exposing (
-    onClick, onMouseEnter, onMouseLeave, onSubmit, onFocus, onSubmitField, onSubmitForm,
-    onPointerCapture, onPointerMove, onMouseDown)
+    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onSubmitField, onSubmitForm,
+    onPointerCapture, onPointerMove)
 
 -- Event is needed to block the js events from propagating upwards
 
@@ -11,11 +11,11 @@ import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, stri
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
 
-onMouseEnter: msg -> Html.Attribute msg
-onMouseEnter event = stopPropagationOn "mouseenter" (succeed (event, True))
+onPointerEnter: msg -> Html.Attribute msg
+onPointerEnter event = stopPropagationOn "pointerenter" (succeed (event, True))
 
-onMouseLeave: msg -> Html.Attribute msg
-onMouseLeave event = stopPropagationOn "mouseleave" (succeed (event, True))
+onPointerLeave: msg -> Html.Attribute msg
+onPointerLeave event = stopPropagationOn "pointerleave" (succeed (event, True))
 
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit
@@ -55,6 +55,3 @@ onPointerMove converter move cancel = let pointerId = field "pointerId" value in
     ,   custom "pointerup" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
     ]
-
-onMouseDown: ((Float, Float) -> msg) -> Html.Attribute msg
-onMouseDown event = Html.Events.on "mousedown" (map event clientPos_)
