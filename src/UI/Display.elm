@@ -2,7 +2,7 @@ module UI.Display exposing (
     Model, Event(..), FullEquation, init, update, views, menu,
     anyVisible, undo, redo, updateQueryCmd, refresh,
     add, advanceTime, transform, substitute, commit, reset,
-    groupChildren, ungroupChildren, replaceNumber, replaceNodeWithNumber,
+    groupChildren, ungroupChildren, partitionNumber, evaluateToNumber,
     encode, decoder
     )
 
@@ -167,10 +167,11 @@ selectedEquation_ model = case model.selected of
         Nothing -> Err "Equation is not found"
         Just entry -> Ok (eq, ids, entry)
 
-stageChange: Animation.Tracker -> Int -> History.Model (FullEquation, Latex.Model State) -> Maybe (Int, Set.Set Int, Set.Set Int) -> Entry -> Model -> (Model, Animation.Tracker)
-stageChange tracker eq newHistory newSelected entry model =
+stageChange: Animation.Tracker -> Int -> Set.Set Int -> History.Model (FullEquation, Latex.Model State) -> Entry -> Model -> (Model, Animation.Tracker)
+stageChange tracker eq ids newHistory entry model =
     let
         (newEntry, newT) = updateBricks tracker {entry | history = newHistory}
+        newSelected = Just (eq, ids, matchPrevIDs ids (History.next newHistory |> Tuple.first))
     in
         (   {   model
             |   equations = Dict.insert eq newEntry model.equations
@@ -182,21 +183,15 @@ stageChange tracker eq newHistory newSelected entry model =
 undo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
 undo tracker model = selectedEquation_ model
     |> Result.map (\(eq, ids, entry) ->
-        let
-            newHis = History.update (History.Stage History.Undo) entry.history
-            newSel = Just (eq, ids, matchPrevIDs ids (History.next newHis |> Tuple.first))
-        in
-            stageChange tracker eq newHis newSel entry model
+        let newHis = History.update (History.Stage History.Undo) entry.history
+        in stageChange tracker eq ids newHis entry model
         )
 
 redo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
 redo tracker model = selectedEquation_ model
     |> Result.map (\(eq, ids, entry) ->
-        let
-            newHis = History.update (History.Stage History.Redo) entry.history
-            newSel = Just (eq, ids, matchPrevIDs ids (History.next newHis |> Tuple.first))
-        in
-            stageChange tracker eq newHis newSel entry model
+        let newHis = History.update (History.Stage History.Redo) entry.history
+        in stageChange tracker eq ids newHis entry model
         )
 
 updateQueryCmd: Animation.Tracker -> Model -> (Model, Animation.Tracker, Cmd Event)
@@ -216,11 +211,8 @@ groupChildren tracker root children model = selectedEquation_ model
         |> Tuple.first
         |> Matcher.groupSubtree root children
         |> Result.map (\(newSelect, newEq) ->
-            let
-                newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-                newSel = Just (eq, ids, ids)
-            in
-                stageChange tracker eq newHis newSel entry model
+            let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
+            in stageChange tracker eq ids newHis entry model
             )
         )
 
@@ -230,32 +222,26 @@ ungroupChildren tracker root model = selectedEquation_ model
         History.current entry.history
         |> Tuple.first
         |> Matcher.ungroupSubtree root
-        |> Result.map (\(newID,newEq) ->
-            let
-                newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-                newSel = Just (eq, ids, matchPrevIDs ids (History.next newHis |> Tuple.first))
-            in
-                stageChange tracker eq newHis newSel entry model
+        |> Result.map (\(newID, newEq) ->
+            let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
+            in stageChange tracker eq ids newHis entry model
             )
         )
 
-replaceNumber: Animation.Tracker -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
-replaceNumber tracker root target replacement model = selectedEquation_ model
+partitionNumber: Animation.Tracker -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
+partitionNumber tracker root target replacement model = selectedEquation_ model
     |> Result.andThen (\(eq, ids, entry) ->
         History.current entry.history
         |> Tuple.first
         |> Matcher.replaceRealNode root target replacement
         |> Result.map (\(newSelect, newEq) ->
-            let
-                newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-                newSel = Just (eq, ids, Set.singleton newSelect)
-            in
-                stageChange tracker eq newHis newSel entry model
+            let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
+            in stageChange tracker eq ids newHis entry model
             )
         )
 
-replaceNodeWithNumber: Animation.Tracker -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
-replaceNodeWithNumber tracker root number model = selectedEquation_ model
+evaluateToNumber: Animation.Tracker -> Int -> Float -> Model -> Result String (Model, Animation.Tracker)
+evaluateToNumber tracker root number model = selectedEquation_ model
     |> Result.andThen (\(eq, ids, entry) ->
         let
             replacement = if number < 0
@@ -266,11 +252,8 @@ replaceNodeWithNumber tracker root number model = selectedEquation_ model
             |> Tuple.first
             |> Matcher.replaceSubtree (Set.singleton root) replacement Matcher.newResult
             |> Result.map (\(newSelect, newEq) ->
-                let
-                    newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-                    newSel = Just (eq, ids, Set.singleton newSelect)
-                in
-                    stageChange tracker eq newHis newSel entry model
+                let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
+                in stageChange tracker eq ids newHis entry model
                 )
         )
 
@@ -283,11 +266,8 @@ transform tracker replacement result model = selectedEquation_ model
             |> Result.map (\(num, newEq) -> (num, (newEq, Rules.toLatex newEq) :: others))
             ) (0, []) replacement
         |> Result.map (\(newSelect, newEq) ->
-            let
-                newHis = History.update (History.Stage (History.Changes (List.reverse newEq))) entry.history
-                newSel = Just (eq, ids, Set.singleton newSelect)
-            in
-                stageChange tracker eq newHis newSel entry model
+            let newHis = History.update (History.Stage (History.Changes (List.reverse newEq))) entry.history
+            in stageChange tracker eq ids newHis entry model
             )
         )
 
@@ -295,15 +275,12 @@ substitute: Animation.Tracker -> Int -> Model -> Result String (Model, Animation
 substitute tracker eqSub model = case Dict.get eqSub model.equations of
     Nothing -> Err "Substitution equation not found"
     Just subEntry -> selectedEquation_ model
-        |> Result.andThen (\(eqOrig, selected, origEntry) ->
+        |> Result.andThen (\(eqOrig, ids, origEntry) ->
             let origEq = History.current origEntry.history |> Tuple.first
-            in Matcher.replaceAllOccurrences selected (History.current subEntry.history |> Tuple.first) origEq
+            in Matcher.replaceAllOccurrences ids (History.current subEntry.history |> Tuple.first) origEq
                 |> Result.map (\(newSelected, newEq) ->
-                    let
-                        newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) origEntry.history
-                        newSel = Just (eqOrig, selected, newSelected)
-                    in
-                        stageChange tracker eqOrig newHis newSel origEntry model
+                    let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) origEntry.history
+                    in stageChange tracker eqOrig ids newHis origEntry model
                     )
             )
 
@@ -369,9 +346,6 @@ updateActions_ selected rules equations =
     in
         Actions.matchRules rules (Dict.size equations) selection
 
--- newSelectedNodes_: Set.Set Int -> FullEquation -> Set.Set Int
--- newSelectedNodes_ selected eq = let intersection = Set.filter (\n -> Dict.member n eq.tracker.parent) selected in
---     if Set.isEmpty intersection then Set.singleton (Math.getState eq.root |> Matcher.getID) else intersection
 
 matchPrevIDs: Set.Set Int -> FullEquation -> Set.Set Int
 matchPrevIDs prevSelected nextEquation =
@@ -496,7 +470,8 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                                         commutedL = Rules.toLatex commutedEq
                                         commutingEntry = { entry | commuting = Just {n | moved = True, currentIndex = newIndex} }
                                         newHis = History.update (History.Stage (History.Change (commutedEq, commutedL))) commutingEntry.history
-                                        (newModel, newTracker) = stageChange tracker eqNum newHis model.selected commutingEntry model
+                                        ids = model.selected |> Maybe.map (\(_, s, _) -> s) |> Maybe.withDefault Set.empty
+                                        (newModel, newTracker) = stageChange tracker eqNum ids newHis commutingEntry model
                                     in
                                         (newModel, newTracker, Cmd.none)
 

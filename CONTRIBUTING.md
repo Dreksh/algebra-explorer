@@ -250,7 +250,6 @@ xxx|xxxx
     * in this situation we can use the confirm button as the staging button
   * which actions are difficult to do because they split history?
     * Find Zeros
-    * in this situation maybe we should just spawn a modal to make them pick one...
 
 * evaluateStr ensures that there are no variables in the subtree i.e. it can be evaluated
 * affectedSubtree_ traces up the tree for all selected nodes and finds the first node that all of them trace through
@@ -259,8 +258,6 @@ xxx|xxxx
   * ActionView is actually what calls `Matcher.matchSubtree`
   * but it doesn't actually store the `Display.SelectedNode`, only renders it via a view
     * should `SelectedNode` also be somewhere else? Because it is only really used by ActionView, and therefore prevents Display from importing ActionView
-    * nah I think it is fine in Display because Display is what produces it
-    * but should we highlight all nodes in the selected subtree? (in a different colour to the ones actually clicked)
   * it cannot go into Matcher because it requires Rules.Parameters as part of the action
 
 * where should the grouping check go? In ActionView is a bit weird so I think it should go into Matcher

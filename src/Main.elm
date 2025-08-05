@@ -394,10 +394,10 @@ update event core = let model = core.swappable in
                 Nothing -> submitNotification_ newCore "Unable to evaluate a string"
                 Just (NumSubType_ root target replacement) -> if target /= reply.value
                     then submitNotification_ newCore ("Expression evaluates to: " ++ String.fromFloat reply.value ++ ", but expecting: " ++ String.fromFloat target)
-                    else case Display.replaceNumber core.animation root target replacement model.display of
+                    else case Display.partitionNumber core.animation root target replacement model.display of
                         Err errStr -> submitNotification_ newCore errStr
                         Ok (dModel, animation) -> commitChange_ {core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}
-                Just (EvalType_ id) -> case Display.replaceNodeWithNumber core.animation id reply.value model.display of
+                Just (EvalType_ id) -> case Display.evaluateToNumber core.animation id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
                     Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, Cmd.none)
 
