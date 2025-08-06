@@ -349,7 +349,9 @@ update event core = let model = core.swappable in
             Actions.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
-            Actions.Substitute -> ({core | dialog = Just (substitutionDialog_ model, Nothing)} , Cmd.none)
+            Actions.Substitute -> case model.display.selected of
+                Nothing -> submitNotification_ core "no equation is selected"
+                Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.none)
             Actions.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
@@ -537,15 +539,15 @@ parameterDialog_ params =
     ,   focus = Nothing
     }
 
-substitutionDialog_: Swappable -> Dialog.Model Event
-substitutionDialog_ model = let eqNum = model.display.selected |> Maybe.map (\(eq, _, _) -> eq) |> Maybe.withDefault -1 in
+substitutionDialog_: Display.Model -> Int -> Dialog.Model Event
+substitutionDialog_ dModel eqNum =
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"
         ,   lines = [[
                 Dialog.Radio
                 {   name = "eqNum"
-                ,   options = Dict.filter (\k _ -> k /= eqNum) model.display.equations
+                ,   options = Dict.filter (\k _ -> k /= eqNum) dModel.equations
                         |> Dict.map (\_ -> .history >> History.current >> Tuple.first >> .root >> Rules.process (\_ -> String.join "") identity)
                 }
             ]]

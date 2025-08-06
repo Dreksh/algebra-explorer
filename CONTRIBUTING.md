@@ -260,8 +260,6 @@ xxx|xxxx
     * should `SelectedNode` also be somewhere else? Because it is only really used by ActionView, and therefore prevents Display from importing ActionView
   * it cannot go into Matcher because it requires Rules.Parameters as part of the action
 
-* where should the grouping check go? In ActionView is a bit weird so I think it should go into Matcher
-
 * Any file x higher in the tree than another file y can handle events from y via converter type
 * But y cannot ever handle an event from x because it cannot import x to avoid cyclic dependencies
 * However, y can kinda use x via type variables (e.g. the a in `List a`) but you would need to pass in a function

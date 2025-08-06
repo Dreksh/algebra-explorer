@@ -41,10 +41,9 @@ isOpen (Current _ open) = open
 -- UI-related
 
 view: (Event -> msg) -> (Actions.Event -> msg) -> Dict.Dict String (List (Actions.Action)) -> Model -> Html.Html msg
-view converter actionConvert actions vModel =
+view converter actionConvert actions (Current c s) =
     let
-        (current, show) = case vModel of
-            Current c s -> (min c (Dict.size actions), s)
+        (current, show) = (min c (Dict.size actions), s)
     in
         Html.div [id "actions"]
         [   Icon.left ( if current <= 0 then [] else [HtmlEvent.onClick (Next (current - 1) |> converter), Icon.class "clickable"])

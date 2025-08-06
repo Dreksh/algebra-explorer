@@ -277,11 +277,13 @@ substitute tracker eqSub model = case Dict.get eqSub model.equations of
     Just subEntry -> selectedEquation_ model
         |> Result.andThen (\(eqOrig, ids, origEntry) ->
             let origEq = History.current origEntry.history |> Tuple.first
-            in Matcher.replaceAllOccurrences ids (History.current subEntry.history |> Tuple.first) origEq
-                |> Result.map (\(newSelected, newEq) ->
-                    let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) origEntry.history
-                    in stageChange tracker eqOrig ids newHis origEntry model
-                    )
+            in if eqOrig == eqSub
+                then Err "Cannot substitute equation with itself"
+                else Matcher.replaceAllOccurrences ids (History.current subEntry.history |> Tuple.first) origEq
+                    |> Result.map (\(newSelected, newEq) ->
+                        let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) origEntry.history
+                        in stageChange tracker eqOrig ids newHis origEntry model
+                        )
             )
 
 commit: Rules.Model -> Model -> Result String Model
@@ -316,6 +318,21 @@ reset tracker model = selectedEquation_ model
             )
         )
 
+revert_: Int -> Int -> Rules.Model -> Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
+revert_ eq idx rules tracker model = Dict.get eq model.equations
+    |> Maybe.map (\entry ->
+        let
+            newHis = History.update (History.Revert idx) entry.history
+            (newEntry, newTracker) = updateBricks tracker {entry | history = newHis}
+            newEquations = Dict.insert eq newEntry model.equations
+            newRootId = newHis |> History.current |> Tuple.first |> .root |> Math.getState |> Matcher.getID
+            newSelected = Just (eq, Set.singleton newRootId, Set.empty)
+            newActions = updateActions_ newSelected rules newEquations
+        in
+            ({model | equations = newEquations, selected = newSelected, actions = newActions}, newTracker)
+        )
+    |> Result.fromMaybe "Entry being reverted does not exist, invariant violated"
+
 updateSelected_: Int -> Int -> Bool -> Rules.Model -> Model -> Model
 updateSelected_ eq node combine rules model =
     let
@@ -349,7 +366,8 @@ updateActions_ selected rules equations =
 
 matchPrevIDs: Set.Set Int -> FullEquation -> Set.Set Int
 matchPrevIDs prevSelected nextEquation =
-    matchPrevIDs_ prevSelected Set.empty nextEquation.root
+    let ids = matchPrevIDs_ prevSelected Set.empty nextEquation.root in
+    if Set.isEmpty ids then Set.singleton (Math.getState nextEquation.root |> Matcher.getID) else ids
 
 matchPrevIDs_: Set.Set Int -> Set.Set Int -> Math.Tree (Matcher.State Animation.State) -> Set.Set Int
 matchPrevIDs_ prevIDs matchedIDs node =
@@ -394,35 +412,21 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, tracker, Cmd.none)
-    HistoryEvent eq he -> case Dict.get eq model.equations of
-        Nothing -> default
-        Just entry ->
-            let
-                -- TODO: refactor since this is a bit repetitive because of the commit and reset functions
-                newHis = {entry | history = History.update he entry.history}
-                (newEntry, newTracker) = case he of
-                    History.Commit -> (newHis, tracker)
-                    _ -> updateBricks tracker newHis
-
-                newEquations = Dict.insert eq newEntry model.equations
-
-                (selEq, ids, stage) = model.selected
-                    |> Maybe.withDefault (eq, Set.empty, Set.empty)
-
-                matched = matchPrevIDs ids (History.next newHis.history |> Tuple.first)
-
-                newSelected = case he of
-                    History.Stage _ -> Just (eq, ids, matched)
-                    History.Reset -> Just (eq, ids, Set.empty)
-                    History.Commit -> Just (eq, matched, Set.empty)
-                    History.Revert _ -> Nothing
-
-                newActions = case he of
-                    History.Stage _ -> model.actions
-                    History.Reset -> model.actions
-                    _ -> updateActions_ newSelected rules newEquations
-            in
-                updateQueryCmd newTracker {model | equations = newEquations, selected = newSelected, actions = newActions}
+    HistoryEvent eq he ->
+        let
+            resModelTracker = case he of
+                History.Stage staged -> let sel = model.selected |> Maybe.withDefault (eq, Set.empty, Set.empty) in case staged of
+                    -- a fallback selection is needed in case no equation is selected TODO: clean up since this is a bit ugly
+                    History.Undo -> undo tracker {model | selected = Just sel}
+                    History.Redo -> redo tracker {model | selected = Just sel}
+                    _ -> Err "Change should only be staged via Actions.Event, invariant violated"
+                History.Reset -> reset tracker model
+                History.Revert idx -> revert_ eq idx rules tracker model
+                History.Commit -> commit rules model |> Result.map (\m -> (m, tracker))
+        in
+            case resModelTracker of
+                Err _ -> default
+                Ok (m, t) -> updateQueryCmd t m
     DraggableEvent eq dEvent -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
@@ -567,9 +571,9 @@ views converter actionConvert model = Dict.toList model.equations
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
                 ,   div [class "contextualToolbar"]
-                    ([  div [class "contextualTopic"]
+                    (   div [class "contextualTopic"]
                         [   div
-                            ([ class "contextualAction" ] ++ (if History.canUndo entry.history then
+                            (   class "contextualAction" :: if History.canUndo entry.history then
                                 [   class "clickable"
                                 ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
                                 ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
@@ -578,20 +582,21 @@ views converter actionConvert model = Dict.toList model.equations
                                 --   maybe just skip the preview and allow direct commit in that case
                                 ]
                                 else [class "contextualDisabled"]
-                            ))
+                            )
                             [text "Undo"]  -- TODO: make these icons instead
                         ,   div
-                            ([ class "contextualAction" ] ++ (if History.canRedo entry.history then
+                            (   class "contextualAction" :: if History.canRedo entry.history then
                                 [   class "clickable"
                                 ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
                                 ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
                                 ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
                                 ]
                                 else [class "contextualDisabled"]
-                            ))
+                            )
                             [text "Redo"]
                         ]
-                    ] ++ if Set.isEmpty highlight then [] else ActionView.contextualActions actionConvert model.actions)
+                        :: if Set.isEmpty highlight then [] else ActionView.contextualActions actionConvert model.actions
+                    )
                 ]
             )
     )
