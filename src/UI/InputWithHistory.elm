@@ -38,32 +38,38 @@ type alias Model msg =
     }
 
 type Selection =
-    Default Input.Entry
-    | Previous Input.Entry
+    Default Input.Scope
+    | Previous Input.Scope
 
 type Event =
-    Click Input.Entry
+    Click Input.Scope
     | Submit
     | InputEvent Input.Event
 
 defaultOptions_: List Selection
 defaultOptions_ =
-    [   Default {scope = Input.Scope {fixed = True} [Input.StrElement "x+4=5"], funcName = Dict.empty, nextFunc = 1}
+    [   Default (Input.Scope {fixed = True} [Input.StrElement "x+4=5"])
     ,   Default
-        {   scope = Input.Scope {fixed = True}
-            [   Input.Fixed (Just 1)
-                [   Latex.Text () "f"
-                ,   Latex.Bracket () [Latex.Argument () 1]
-                ]
-                (Array.fromList [Input.Scope {fixed = False} [Input.StrElement "x"] ])
+        (   Input.Scope {fixed = True}
+            [   Input.Fixed
+                {   text = "\\f"
+                ,   latex =
+                    [   Latex.Text () "f"
+                    ,   Latex.Bracket () [Latex.Argument () 1]
+                    ]
+                ,   params = Array.fromList
+                    [(Input.Scope {fixed = False} [Input.StrElement "x"]
+                    ,{up = Nothing, down = Nothing, left = Nothing, right = Nothing}
+                    )]
+                ,   firstNode = Just 1
+                ,   lastNode = Just 1
+                }
             ,   Input.StrElement "=x+3"
             ]
-        ,   funcName = Dict.singleton 1 "f"
-        ,   nextFunc = 2
-        }
-    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "x(x+2)=-1" ], funcName = Dict.empty, nextFunc = 1 }
-    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "2x+y=5"], funcName = Dict.empty, nextFunc = 1}
-    ,   Default {scope = Input.Scope {fixed = True} [Input.StrElement "4x+3y=11"], funcName = Dict.empty, nextFunc = 1}
+        )
+    ,   Default (Input.Scope {fixed = True} [Input.StrElement "x(x+2)=-1" ])
+    ,   Default (Input.Scope {fixed = True} [Input.StrElement "2x+y=5"])
+    ,   Default (Input.Scope {fixed = True} [Input.StrElement "4x+3y=11"])
     ]
 
 init: Bool -> (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg
@@ -122,7 +128,7 @@ close tracker model = case model.current of
 update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
 update convert tracker funcDict event model = case event of
     Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "mainInput-input")
-    Submit -> let (Input.Scope _ children) = model.input.entry.scope in
+    Submit -> let (Input.Scope _ children) = model.input.entry in
         if List.isEmpty children then (close tracker model, Ok Nothing, Cmd.none)
         else case Input.toTree funcDict model.input of
             Err err -> ((model, tracker), Err err, Cmd.none)
@@ -174,11 +180,11 @@ createView_ converter funcDict model inputNum width height =
                 (\entry -> case entry of
                     Default val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.default []
-                        , Html.a [class "clickable"] [Input.toLatex False [] val.scope |> MathIcon.static []]
+                        , Html.a [class "clickable"] [Input.toLatex False [] val |> MathIcon.static []]
                         ]
                     Previous val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.history []
-                        , Html.a [class "clickable"] [Input.toLatex False [] val.scope |> MathIcon.static []]
+                        , Html.a [class "clickable"] [Input.toLatex False [] val |> MathIcon.static []]
                         ]
                 )
                 model.options

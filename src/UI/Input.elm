@@ -1,4 +1,4 @@
-module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), Entry, init, update, clear, set, view, toLatex, toTree)
+module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), init, update, clear, set, view, toLatex, toTree)
 
 import Array
 import Dict
@@ -24,13 +24,20 @@ import UI.SvgDrag as SvgDrag
 type Scope = Scope {fixed: Bool} (List ScopeElement)
 type ScopeElement =
     StrElement String -- Must not be empty string, they should be handled by removing them
-    | Fixed (Maybe Int) (Latex.Model ()) (Array.Array Scope) -- numFields & Only allow empty Latex.Text parts contain scope
-
-type alias Entry =
-    {   scope: Scope
-    ,   funcName: Dict.Dict Int String
-    ,   nextFunc: Int
-    }
+    | Fixed
+        {   text: String -- When put into string
+        ,   latex: Latex.Model () -- When put into latex
+        ,   params: Array.Array (Scope, DirectionOverride)
+        ,   firstNode: Maybe Int
+        ,   lastNode: Maybe Int
+        }
+    | Bracket (List ScopeElement)
+-- For Fixed models, the arguments can be in any order.
+-- So the default behaviour is to jump out of the fixed scope.
+-- If there is any overrides, it will use that to determine the next sibling to go to
+type alias DirectionOverride = {up: Maybe Int, down: Maybe Int, left: Maybe Int, right: Maybe Int}
+noOverride_: DirectionOverride
+noOverride_ = {up = Nothing, down = Nothing, left = Nothing, right = Nothing}
 
 -- CaretPosition has 2 different meanings for leaf node vs intermediate node
 -- intermediate node represents the zero-indexed nth ScopeElement in Scope, or the nth Scope in Fixed
@@ -40,7 +47,7 @@ type alias CaretPosition = List Int
 
 
 type alias Model msg =
-    {   entry: Entry
+    {   entry: Scope
     ,   functionInput: Maybe String
     ,   cursor: CaretPosition
     ,   showCursor: Bool
@@ -54,13 +61,13 @@ type Event =
     | HideCursor
     | MouseDown Encode.Value (Float, Float)
     | Shift SvgDrag.Event
-    | LatexChoice String Bool (Latex.Model ())
+    | InsertFixed ScopeElement
     | HelperInput String
     | HelperClear
 
 init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
-    {   entry = {scope = Scope {fixed = True} [], funcName = Dict.empty, nextFunc = 1}
+    {   entry = Scope {fixed = True} []
     ,   functionInput = Nothing
     ,   cursor = [0]
     ,   holderID = holderID
@@ -69,10 +76,10 @@ init mouseCmd focusCmd holderID =
     ,   focusCmd = focusCmd
     }
 
-set: Entry -> Model msg -> Model msg
-set entry model = let (Scope _ children) = entry.scope in
+set: Scope -> Model msg -> Model msg
+set (Scope detail children) model =
     {   model
-    |   entry = entry
+    |   entry = Scope detail children
     ,   functionInput = Nothing
     ,   cursor = [List.length children]
     ,   showCursor = False
@@ -80,7 +87,7 @@ set entry model = let (Scope _ children) = entry.scope in
 clear: Model msg -> Model msg
 clear model =
     {   model
-    |   entry = {scope = Scope {fixed = True} [], funcName = Dict.empty, nextFunc = 1}
+    |   entry = Scope {fixed = True} []
     ,   functionInput = Nothing
     ,   cursor = [0]
     ,   showCursor = False
@@ -101,7 +108,7 @@ view convert functions attr model =
             )
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
-            (toLatex False (if model.showCursor then model.cursor else []) (model.entry.scope |> Debug.log "scope") |> Debug.log "latex")
+            (toLatex False (if model.showCursor then model.cursor else []) (model.entry))
         ]
     |> Helper.maybeAppend (model.functionInput
             -- Has to be maybe, so that only one input will be on screen at any point
@@ -120,16 +127,17 @@ view convert functions attr model =
         )
     )
 
-formDecoder_: (String -> (String, Bool, Latex.Model ())) -> Decode.Decoder Event
+formDecoder_: (String -> ScopeElement) -> Decode.Decoder Event
 formDecoder_ convert = Decode.field "input" (Decode.field "value" Decode.string)
-    |> Decode.map (convert >> \(name, fixed, latex) -> LatexChoice name fixed latex)
+    |> Decode.map (convert >> InsertFixed)
 
 toLatex: Bool -> CaretPosition -> Scope -> Latex.Model ()
 toLatex border pos (Scope _ children) =
     let
         noCaret scopeElem = case scopeElem of
             StrElement text -> [Latex.Text () text]
-            Fixed _ latex params -> Latex.replace (Array.map (toLatex True []) params) latex
+            Fixed n -> Latex.replace (Array.map (Tuple.first >> toLatex True []) n.params) n.latex
+            Bracket inner -> toLatex True [] (Scope {fixed = True} inner)
     in
     List.foldl
     (\elem (model, index) ->
@@ -145,13 +153,15 @@ toLatex border pos (Scope _ children) =
                             ,   Latex.Caret ()
                             ,   Latex.Text () (String.dropLeft y str)
                             ]
-                    Fixed _ latex params -> if x /= index then noCaret elem
+                    Fixed n -> if x /= index then noCaret elem
                         else Latex.replace
                             (   Array.indexedMap
-                                (\i -> toLatex True (if i /= y then [] else other))
-                                params
+                                (\i -> Tuple.first >> toLatex True (if i /= y then [] else other))
+                                n.params
                             )
-                            latex
+                            n.latex
+                    Bracket inner -> if x /= index then noCaret elem
+                        else toLatex True (y::other) (Scope {fixed = True} inner)
         ,   index + 1
         )
     ) ([], 0) children
@@ -163,6 +173,10 @@ toLatex border pos (Scope _ children) =
 
 {- ## Updates -}
 
+allowedChars_: Set.Set Char
+allowedChars_ = String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-.,= "
+    |> Set.fromList
+
 update: Event -> Model msg -> (Model msg, String, Cmd msg)
 update event model = case event of
     Key e -> let entry = model.entry in
@@ -171,24 +185,37 @@ update event model = case event of
         ("Z", True, True) -> (model, "", Cmd.none) -- Redo
         ("Backspace", _, _) -> (delete_ False model, "", Cmd.none)
         ("Delete", _, _) -> (delete_ True model, "", Cmd.none)
-        ("ArrowUp", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowDown", False, _) -> ({model | cursor = model.cursor}, "", Cmd.none)
-        ("ArrowLeft", False, _) -> ({model | cursor = cursorNext_ False entry.scope model.cursor |> Debug.log "left"}, "", Cmd.none)
-        ("ArrowRight", False, _) -> ({model | cursor = cursorNext_ True entry.scope model.cursor |> Debug.log "right"}, "", Cmd.none)
+        ("ArrowUp", False, _) -> (cursorMove_ Up_ model, "", Cmd.none)
+        ("ArrowDown", False, _) -> (cursorMove_ Down_ model, "", Cmd.none)
+        ("ArrowLeft", False, _) -> (cursorMove_ Left_ model, "", Cmd.none)
+        ("ArrowRight", False, _) -> (cursorMove_ Right_ model, "", Cmd.none)
         (c, _, False) -> if String.length c == 1
             then case String.uncons c of
                 Nothing -> (model, "", Cmd.none)
-                Just (char, _) -> if Char.isAlphaNum char || char == ' ' || char == '.'
+                Just (char, _) -> if Set.member char allowedChars_
                     then case insertChar_ char model of
                         Err str -> (model, str, Cmd.none)
                         Ok (newModel) -> (newModel, "", Cmd.none)
                     else case char of
-                        '(' -> (model, "", Cmd.none)
-                        '+' -> (model, "", Cmd.none)
-                        '*' -> (model, "", Cmd.none)
-                        '/' -> (model, "", Cmd.none)
-                        '=' -> (model, "", Cmd.none)
-                        ',' -> (model, "", Cmd.none)
+                        '(' -> case insertScopeElement_ (Just 0) (Bracket []) model of
+                            Err str -> (model, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '*' ->
+                            let
+                                detail = {text = "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]
+                                        , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+                            in
+                            case insertScopeElement_ Nothing (Fixed detail) model of
+                            Err str -> (model, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '/' ->
+                            let
+                                detail = {text = "/", latex = [Latex.SymbolPart () Latex.Division]
+                                        , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+                            in
+                            case insertScopeElement_ Nothing (Fixed detail) model of
+                            Err str -> (model, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
                         '\\' -> ({model | functionInput = Just ""}, "", model.focusCmd "inputHelper")
                         _ -> (model, "'" ++ c ++ "' is not an allowed input", Cmd.none)
             else (model, "", Cmd.none)
@@ -199,224 +226,238 @@ update event model = case event of
     Shift e -> case e of
         SvgDrag.End _ _ -> (model, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
-    LatexChoice name fixed latex ->
-        latexArray_ fixed latex
-        |> Result.andThen (\params ->
-            insertLatex_ (if String.isEmpty name then Nothing else Just model.entry.nextFunc ,latex, params) model
-        )
-        |> \res -> case res of
+    InsertFixed elem -> case elem of
+        Fixed n -> case insertScopeElement_ n.firstNode elem model of
             Err str -> (model, str, Cmd.none)
-            Ok (newModel) -> let entry = newModel.entry in
-                (   {   newModel
-                    |   functionInput = Nothing
-                    ,   entry = if String.isEmpty name then entry
-                            else
-                                {   entry
-                                |   funcName = Dict.insert entry.nextFunc name entry.funcName
-                                ,   nextFunc = entry.nextFunc + 1
-                                }
-                    }
-                , "", model.focusCmd (model.holderID ++ "-input")
-                )
+            Ok finalModel -> (finalModel, "", model.focusCmd (model.holderID ++ "-input"))
+        _ -> (model, "unexpected fixed element to be inserted", Cmd.none)
     HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
     HelperClear -> ({model | functionInput = Nothing}, "", Cmd.none)
+
+{- ## Cursor Movement -}
+
+type Direction_ = Up_ | Down_ | Left_ | Right_
+type CursorDecision_ =
+    FoundCursor CaretPosition
+    | PreviousCursor | NextCursor | UpCursor | DownCursor
+
+cursorMove_: Direction_ -> Model msg -> Model msg
+cursorMove_ direction model = let (Scope _ children) = model.entry in
+    case cursorNext_ direction model.entry model.cursor of
+        FoundCursor newC -> {model | cursor = newC}
+        PreviousCursor -> {model | cursor = [0]}
+        NextCursor -> {model | cursor = [List.length children]}
+        UpCursor -> {model | cursor = [0]}
+        DownCursor -> {model | cursor = [List.length children]}
+
+cursorNext_: Direction_ -> Scope -> CaretPosition -> CursorDecision_
+cursorNext_ direction (Scope _ children) caret =
+    let
+        getPrevious midPoint = if midPoint <= 0 then PreviousCursor
+            else case List.drop (midPoint-1) children |> List.head of
+                Nothing -> PreviousCursor
+                Just (StrElement str) -> FoundCursor
+                    (if String.length str <= 1 then [midPoint-1] else [midPoint-1, String.length str - 1])
+                Just (Fixed f) -> case f.lastNode of
+                    Nothing -> FoundCursor [midPoint - 1]
+                    Just n -> FoundCursor [midPoint - 1, n, 0] -- TODO: Get size of the nth arg
+                Just (Bracket inner) -> FoundCursor [midPoint-1,List.length inner]
+        getNext midPoint = case List.drop midPoint children |> List.head of
+            Nothing -> NextCursor
+            Just (StrElement str) -> FoundCursor
+                (if String.length str <= 1 then [midPoint+1] else [midPoint, 1])
+            Just (Fixed f) -> case f.firstNode of
+                Nothing -> FoundCursor [midPoint + 1]
+                Just n -> FoundCursor [midPoint, n, 0]
+            Just (Bracket _) -> FoundCursor [midPoint,0]
+    in
+    case caret of
+    [] -> FoundCursor []
+    [x] -> case direction of
+        Up_ -> UpCursor
+        Down_ -> DownCursor
+        Left_ -> getPrevious x
+        Right_ -> getNext x
+    (x::y::others) ->
+        case List.drop x children |> List.head of
+            Just (StrElement str) -> case direction of
+                Up_ -> UpCursor
+                Down_ -> DownCursor
+                Left_ -> FoundCursor (if y == 1 then [x] else [x, y - 1])
+                Right_ -> FoundCursor (if y + 1 == String.length str then [x + 1] else [x, y + 1])
+            Just (Fixed f) -> case Array.get y f.params of
+                Nothing -> FoundCursor [x] -- reset to right before the fixed element
+                Just (inScope, overrides) -> cursorNext_ direction inScope others
+                    |> \res -> case res of
+                        FoundCursor c -> FoundCursor (x::y::c)
+                        UpCursor -> case overrides.up of
+                            Nothing -> UpCursor
+                            Just n -> FoundCursor [x, n, 0] -- TODO: Appraoch from % through the scope
+                        DownCursor -> case overrides.down of
+                            Nothing -> DownCursor
+                            Just n -> FoundCursor [x, n, 0] -- TODO: Approach from % through the scope
+                        PreviousCursor -> case overrides.left of
+                            Nothing -> FoundCursor [x]
+                            Just n -> FoundCursor [x, n, 0] -- TODO: Approach from behind
+                        NextCursor -> case overrides.right of
+                            Nothing -> FoundCursor [x+1]
+                            Just n -> FoundCursor [x, n, 0]
+            Just (Bracket inner) -> cursorNext_ direction (Scope {fixed = True} inner) (y::others)
+                |> \res -> case res of
+                    FoundCursor c -> FoundCursor (x::c)
+                    UpCursor -> UpCursor
+                    DownCursor -> DownCursor
+                    PreviousCursor -> FoundCursor [x]
+                    NextCursor -> FoundCursor [x+1]
+            Nothing -> FoundCursor [x] -- reset to previous
 
 {- ## Scope traversal -}
 
 type TraversalCase_ =
     TextCase (List ScopeElement) String Int (List ScopeElement)
     | IntermediateCase (List ScopeElement) (List ScopeElement)
-type TraversalResult_ =
-    Done (List ScopeElement, CaretPosition)
-    -- Next and Previous are specifically for moving the caret, inside Fixed ScopeElements
-    | NextScope
-    | PreviousScope
 type TraversalError_  =
     BrokenCaret -- For when the position cannot be found
+    | CannotSplitArgument_
 
-traverse: (TraversalCase_ -> TraversalResult_) -> Scope -> CaretPosition -> Result TraversalError_ TraversalResult_
-traverse process (Scope _ children) caret = case caret of
+traverse: ({fixed: Bool} -> TraversalCase_ -> Result TraversalError_ (List ScopeElement, CaretPosition))
+    -> Scope -> CaretPosition -> Result TraversalError_ (List ScopeElement, CaretPosition)
+traverse process (Scope detail children) caret = case caret of
     [] -> Err BrokenCaret
-    [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process |> Ok
+    [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process detail
     (x::y::others) -> let (prev, next) = (List.take x children, List.drop x children) in
         case next of
-            (StrElement str :: after) -> TextCase prev str y after |> process |> Ok
-            (Fixed funcNum latex params :: after) -> case Array.get y params of
+            (StrElement str :: after) -> TextCase prev str y after |> process detail
+            (Fixed f :: after) -> case Array.get y f.params of
                 Nothing -> Err BrokenCaret
-                Just (Scope detail inChildren) -> traverse process (Scope detail inChildren) others
-                    |> Result.andThen (\res -> case res of
-                            Done (newChildren, pos) ->
-                                let newParams = Array.set y (Scope detail newChildren) params in
-                                Ok (Done (prev ++ (Fixed funcNum latex newParams :: after), x::y::pos))
-                            NextScope -> if y + 1 == Array.length params then Ok (Done (children, [x + 1]))
-                                else Ok (Done (children, [x, y + 1, 0]))
-                            PreviousScope -> if y == 0 then Ok (Done (children, [x]))
-                                else case Array.get (y - 1) params of
-                                    Nothing -> Err BrokenCaret
-                                    Just (Scope _ prevChildren) -> Ok (Done (children, [x, y - 1, List.length prevChildren]))
+                Just (Scope inDetail inChildren, override) -> traverse process (Scope inDetail inChildren) others
+                    |> Result.andThen (\(newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
+                        Ok (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos)
                     )
+            (Bracket kids :: after) -> traverse process (Scope {fixed = True} kids) (y::others)
+                |> Result.map (\(newChildren, pos) -> (prev ++ (Bracket newChildren) :: after, x::pos))
             _ -> Err BrokenCaret
-
-{- ## Cursor Movement -}
-
-cursorNext_: Bool -> Scope -> List Int -> List Int
-cursorNext_ forwards scope current = traverse
-    (\input -> case input of
-        TextCase prev str num next -> Done
-            (   prev ++ (StrElement str :: next)
-            ,   let newNum = if forwards then num + 1 else num - 1 in
-                if newNum <= 0 then [List.length prev]
-                else if newNum >= String.length str then [List.length prev + 1]
-                else [List.length prev,newNum]
-            )
-        IntermediateCase prev next ->
-            if forwards then case next of
-                (head::after) -> Done
-                    (   prev ++ next
-                    ,   case head of
-                        StrElement str -> if String.length str <= 1
-                            then [List.length prev + 1]
-                            else [List.length prev, 1]
-                        Fixed _ _ params -> if Array.isEmpty params
-                            then [List.length prev + 1]
-                            else [List.length prev, 0, 0]
-                    )
-                _ -> NextScope
-            else let beforeLength = List.length prev - 1 in
-                case List.drop beforeLength prev of
-                    [head] -> Done
-                        (   prev ++ next
-                        ,   case head of
-                            StrElement str -> if String.length str <= 1
-                                then [List.length prev - 1]
-                                else [List.length prev - 1, String.length str - 1]
-                            Fixed _ _ params -> if Array.isEmpty params
-                                then [List.length prev - 1]
-                                else let finalIndex = Array.length params - 1 in
-                                    case Array.get finalIndex params of
-                                        Nothing -> [List.length prev - 1, finalIndex, 0]
-                                        Just (Scope _ p) ->
-                                            [List.length prev - 1, finalIndex, List.length p]
-                        )
-                    _ -> PreviousScope
-    )
-    scope current
-    |> \res -> case res of
-        Ok (Done (_,c)) -> c
-        _ -> current -- Either we have reached the ends, or something broke
 
 {- ## Insertion -}
 
 insertChar_: Char -> Model msg -> Result String (Model msg)
 insertChar_ char model = traverse
-    (\input -> case input of
-        TextCase prev str num next ->
-            let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
-            Done (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
-        IntermediateCase prev next -> case next of
-            (StrElement str::after) ->
-                Done (prev ++ (StrElement (String.cons char str) :: after), [List.length prev, 1])
-            _ -> let beforeLength = List.length prev - 1 in
-                case List.drop beforeLength prev of
-                    [StrElement str] -> Done
-                        (   List.take beforeLength prev ++ (StrElement (str ++ String.fromChar char) :: next)
-                        ,   [List.length prev]
-                        )
-                    _ -> Done
-                        (   prev ++ (StrElement (String.fromChar char) :: next)
-                        ,   [List.length prev + 1]
-                        )
+    (\parent input -> if parent.fixed && char == ',' then Err CannotSplitArgument_
+        else Ok
+        (   case input of
+            TextCase prev str num next ->
+                let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
+                (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
+            IntermediateCase prev next -> case next of
+                (StrElement str::after) ->
+                    (prev ++ (StrElement (String.cons char str) :: after), [List.length prev, 1])
+                _ -> let beforeLength = List.length prev - 1 in
+                    case List.drop beforeLength prev of
+                        [StrElement str] ->
+                            (   List.take beforeLength prev ++ (StrElement (str ++ String.fromChar char) :: next)
+                            ,   [List.length prev]
+                            )
+                        _ ->
+                            (   prev ++ (StrElement (String.fromChar char) :: next)
+                            ,   [List.length prev + 1]
+                            )
+        )
     )
-    model.entry.scope model.cursor
-    |> \res -> let entry = model.entry in case res of
-        Ok (Done (l,c)) -> Ok {model | entry = {entry | scope = Scope {fixed = True} l}, cursor = c}
+    model.entry model.cursor
+    |> \res -> case res of
+        Ok (l,c) -> Ok {model | entry = Scope {fixed = True} l, cursor = c}
         _ -> Err "Something went wrong"
 
-insertLatex_: (Maybe Int, Latex.Model (), Array.Array Scope) -> Model msg -> Result String (Model msg)
-insertLatex_ (funcNum, latex, arr) model = traverse
-    (\input -> case input of
-        TextCase prev str num next -> Done
-            (   prev
-                ++  ( StrElement (String.left num str) :: Fixed funcNum latex arr
-                    :: StrElement (String.dropLeft num str) :: next
+insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
+insertScopeElement_ firstNode element model = traverse
+    (\_ input -> Ok
+        (   case input of
+                TextCase prev str num next ->
+                    (   prev
+                        ++  ( StrElement (String.left num str) :: element
+                            :: StrElement (String.dropLeft num str) :: next
+                            )
+                    ,   case firstNode of
+                        Nothing -> [List.length prev + 2]
+                        Just n -> [List.length prev + 1, n, 0]
                     )
-            ,   if Array.isEmpty arr
-                then [List.length prev + 2]
-                else [List.length prev + 1, 0, 0]
-            )
-        IntermediateCase prev next -> Done
-            (   prev ++ (Fixed funcNum latex arr :: next) |> Debug.log "insert"
-            ,   if Array.isEmpty arr
-                then [List.length prev + 1]
-                else [List.length prev, 0, 0]
-            )
+                IntermediateCase prev next ->
+                    (   prev ++ (element :: next)
+                    ,   case firstNode of
+                        Nothing -> [List.length prev + 1]
+                        Just n -> [List.length prev, n, 0]
+                    )
+        )
     )
-    model.entry.scope model.cursor
-    |> \res -> let entry = model.entry in case res of
-        Ok (Done (l,c)) -> Ok {model | entry = {entry | scope = Scope {fixed = True} l}, cursor = c}
+    model.entry model.cursor
+    |> \res -> case res of
+        Ok (l,c) -> Ok {model | entry = Scope {fixed = True} l, cursor = c}
         _ -> Err "Something went wrong"
 
-latexArray_: Bool -> Latex.Model () -> Result String (Array.Array Scope)
-latexArray_ fixed latex = Latex.extractArgs (Set.empty, 0) latex
-    |> Result.map (\(_, count) -> if fixed
-        then Array.repeat count (Scope {fixed = True} [])
-        else Array.fromList [Scope {fixed = False} []]
+latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
+latexArray_ fixed latex = Latex.extractArgs latex
+    |> Result.map (\dict -> if fixed
+        then Dict.foldl (\_ override -> Array.push (Scope {fixed = True} [], override)) Array.empty dict
+        else Array.fromList [(Scope {fixed = False} [], noOverride_)]
     )
 
 {- ## Deletion -}
 
 delete_: Bool -> Model msg -> Model msg
 delete_ forwards model = traverse
-    (\input -> case input of
-        TextCase prev str num next -> if forwards
-            then Done
-                (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
-                ,   if num + 1 == String.length str then [List.length prev + 1] else [List.length prev, num]
-                )
-            else Done
-                (   prev ++ (StrElement (String.left (num - 1) str ++ String.dropLeft num str) :: next)
-                ,   if num == 1 then [List.length prev] else [List.length prev, num - 1]
-                )
-        IntermediateCase prev next -> if forwards
-            then Done
-                (   case List.head next of
-                    Nothing -> prev
-                    Just (StrElement str) -> prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
-                    Just (Fixed _ _ _ ) -> prev ++ List.drop 1 next
-                ,   [List.length prev]
-                )
-            else let beforeLength = List.length prev - 1 in
-                case List.drop beforeLength prev of
-                    [StrElement str] -> Done
-                        (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
-                        ,   [List.length prev]
-                        )
-                    [Fixed _ _ _] -> Done (List.take beforeLength prev ++ next, [beforeLength])
-                    _ -> Done (next, [0])
-    ) model.entry.scope model.cursor
+    (\_ input -> Ok
+        (   case input of
+            TextCase prev str num next -> if forwards
+                then
+                    (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
+                    ,   if num + 1 == String.length str then [List.length prev + 1] else [List.length prev, num]
+                    )
+                else
+                    (   prev ++ (StrElement (String.left (num - 1) str ++ String.dropLeft num str) :: next)
+                    ,   if num == 1 then [List.length prev] else [List.length prev, num - 1]
+                    )
+            IntermediateCase prev next -> if forwards
+                then
+                    (   case List.head next of
+                        Nothing -> prev
+                        Just (StrElement str) -> prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
+                        Just (Fixed _) -> prev ++ List.drop 1 next
+                        Just (Bracket _) -> prev ++ List.drop 1 next
+                    ,   [List.length prev]
+                    )
+                else let beforeLength = List.length prev - 1 in
+                    case List.drop beforeLength prev of
+                        [StrElement str] ->
+                            (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
+                            ,   [List.length prev]
+                            )
+                        [Fixed _] -> (List.take beforeLength prev ++ next, [beforeLength])
+                        [Bracket _] -> (List.take beforeLength prev ++ next, [beforeLength])
+                        _ -> (next, [0])
+        )
+    ) model.entry model.cursor
     |> \res -> case res of
-        Ok (Done (children, c)) -> let entry = model.entry in
-            {model | entry = {entry | scope = Scope {fixed = True} children}, cursor = c}
+        Ok (children, c) -> {model | entry = Scope {fixed = True} children, cursor = c}
         _ -> model
 
 {- ## Extraction -}
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String Display.FullEquation
-toTree dict model = toEntryString_ model.entry.funcName model.entry.scope
+toTree dict model = toEntryString_ model.entry
     |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
 
-toEntryString_: Dict.Dict Int String -> Scope -> Result String String
-toEntryString_ funcName (Scope _ children) = Helper.resultList (\child res -> case child of
+toEntryString_: Scope -> Result String String
+toEntryString_ (Scope _ children) = Helper.resultList (\child res -> case child of
         StrElement str -> Ok (res ++ str)
-        Fixed funcNum latex params -> case funcNum of
-            Nothing -> Ok (res ++ Latex.unparse latex) -- mainly symbols
-            Just num -> case Dict.get num funcName of
-                Nothing -> Err "Missing function name"
-                Just name -> Helper.resultArray (\index innerScope innerRes ->
-                        toEntryString_ funcName innerScope
-                        |> Result.map (\str -> Array.set index str innerRes)
-                    ) (Array.repeat (Array.length params) "") params
-                    |> Result.map (\arr -> "\\" ++ name ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
+        Bracket inner -> toEntryString_ (Scope {fixed = True} inner)
+            |> Result.map (\inStr -> "(" ++ inStr ++ ")")
+        Fixed f -> if Array.isEmpty f.params
+            then Ok (res ++ f.text)
+            else Helper.resultArray (\index (innerScope, _) innerRes ->
+                toEntryString_ innerScope
+                |> Result.map (\str -> Array.set index str innerRes)
+            ) (Array.repeat (Array.length f.params) "") f.params
+            |> Result.map (\arr -> f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
     ) "" children
 
 {- ## Suggestion -}
@@ -424,7 +465,8 @@ toEntryString_ funcName (Scope _ children) = Helper.resultList (\child res -> ca
 defaultOps: Set.Set String
 defaultOps = Set.fromList ["+", "-", "*", "/", "="]
 
-displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (List (String, Html.Html Event), String -> (String, Bool, Latex.Model ()))
+displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String
+    -> (List (String, Html.Html Event), String -> ScopeElement)
 displaySuggestions_ functions input =
     let
         inputOrder = letterOrder_ input
@@ -435,28 +477,32 @@ displaySuggestions_ functions input =
             ]
         funcPropToLatex key value = case value.property of
             Math.VariableNode n -> case n.state.latex of
-                Just l -> ("", True, l)
-                Nothing -> let l = createLatex key 1 in (key, False, l)
+                Just l -> (True, l)
+                Nothing -> let l = createLatex key 1 in (False, l)
             Math.UnaryNode n -> case n.state.latex of
-                Just l -> (key, True, l)
-                Nothing -> let l = createLatex key 1 in (key, True, l)
+                Just l -> (True, l)
+                Nothing -> let l = createLatex key 1 in (True, l)
             Math.BinaryNode n -> case n.state.latex of
-                Just l -> (key, (not n.associative), l)
+                Just l -> (not n.associative, l)
                 Nothing -> if n.associative
-                    then let l = createLatex key 1 in (key, False, l)
-                    else let l = createLatex key 2 in (key, True, l)
+                    then let l = createLatex key 1 in (False, l)
+                    else let l = createLatex key 2 in (True, l)
             Math.GenericNode n -> case n.state.latex of
-                Just l -> (key, True, l)
-                Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (key, True, l)
-            _ -> let l = createLatex key 1 in (key, False, l)
+                Just l -> (True, l)
+                Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (True, l)
+            _ -> let l = createLatex key 1 in (False, l)
         functionSymbols = functions
             |> Dict.filter (\key _ -> Set.member key defaultOps |> not)
             |> Dict.toList
-            |> List.map (\(key, value) -> let (functionName, fixed, latex) = funcPropToLatex key value in
+            |> List.map (\(key, value) -> let (fixed, latex) = funcPropToLatex key value in
                 (   cosineCorrelation_ inputOrder (letterOrder_ key)
                 ,   (   key
                     -- don't use onClick, because some onBlurs get triggered first
-                    ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> LatexChoice functionName fixed latex)]
+                    ,   Html.a
+                        [   class "clickable"
+                        ,   HtmlEvent.onPointerCapture identity
+                            (\_ _ -> InsertFixed (fixedFrom_ ("\\" ++ key) fixed latex))
+                        ]
                         [MathIcon.static [] latex]
                     )
                 )
@@ -466,9 +512,93 @@ displaySuggestions_ functions input =
         |> \list ->
             (   List.map Tuple.second list
             ,   \str -> case Dict.get str functions of
-                    Nothing -> (str, False, [Latex.Text () str, Latex.Bracket () [Latex.Argument () 1]])
-                    Just value -> funcPropToLatex str value
+                    Nothing ->
+                        fixedFrom_ ("\\" ++ str) False
+                        [Latex.Text () str, Latex.Bracket () [Latex.Argument () 1]]
+                    Just value -> let (fixed, latex) = funcPropToLatex str value in
+                        fixedFrom_ ("\\" ++ str) fixed latex
             )
+
+fixedFrom_: String -> Bool -> Latex.Model () -> ScopeElement
+fixedFrom_ text fixed latex =
+    let
+        defaultStart =
+            (   {topLast = Nothing, midLast = Just -1, botLast  = Nothing}
+            ,   Dict.singleton -1 noOverride_
+            )
+        updateRight now (prev, dict) =
+            (   {topLast = Nothing, midLast = Just now, botLast = Nothing}
+            ,   case (prev.topLast, prev.midLast, prev.botLast) of
+                (Nothing, Just mid, Nothing) -> Dict.insert now {noOverride_ | left = Just mid} dict
+                    |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
+                (Nothing, Just mid, Just bot) -> Dict.insert now {noOverride_ | left = Just bot} dict
+                    |> Dict.update mid (Maybe.map(\v -> {v | right = Just bot}))
+                    |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                (Just top, Just mid, Nothing) ->  Dict.insert now {noOverride_ | left = Just top} dict
+                    |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
+                    |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
+                (Just top, Just mid, Just bot) ->  Dict.insert now {noOverride_ | left = Just top} dict
+                    |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
+                    |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
+                    |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                (Just top, Nothing, Just bot) ->  Dict.insert now {noOverride_ | left = Just top} dict
+                    |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
+                    |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                _ -> Dict.insert now noOverride_ dict
+            )
+        getLastest ref = case ref.topLast of
+            Just _ -> ref.topLast
+            Nothing -> case ref.botLast of
+                Just _ -> ref.botLast
+                Nothing -> ref.midLast
+        getFirstAndUpdate newLeft dict =
+            (   Dict.get -1 dict |> Maybe.andThen .right
+            ,   Dict.remove -1 dict
+                |> Dict.map (\_ v -> if v.left == Just -1 then {v | left = newLeft} else v)
+            )
+        recursive initial =  List.foldl (\part (ref, dict) -> case part of
+            Latex.Fraction _ top bot ->
+                let
+                    (topRef, topDict) = recursive defaultStart top
+                    (botRef, botDict) = recursive defaultStart bot
+                    prev = getLastest ref
+                    (topFirst, newTop) = getFirstAndUpdate prev topDict
+                    (botFirst, newBot) = getFirstAndUpdate prev botDict
+                    first = case topFirst of
+                        Just _ -> topFirst
+                        Nothing -> botFirst
+                in
+                (   {   topLast = getLastest topRef
+                    ,   midLast = Nothing
+                    ,   botLast = getLastest botRef
+                    }
+                ,   Maybe.map (\p -> Dict.update p (Maybe.map (\v -> {v | right = first})) dict) prev
+                    |> Maybe.withDefault dict
+                    |> \dict1 -> Dict.foldl (\k v -> Dict.insert k {v | down = botFirst}) dict1 newTop
+                    |> \dict2 -> Dict.foldl (\k v -> Dict.insert k {v | up = topFirst}) dict2 newBot
+                )
+            Latex.Superscript _ inner -> let (newRef, newDict) = recursive (ref, dict) inner in
+                ({ref | topLast = newRef.midLast}, newDict)
+            Latex.Subscript _ inner -> let (newRef, newDict) = recursive (ref, dict) inner in
+                ({ref | botLast = newRef.midLast}, newDict)
+            Latex.Bracket _ inner -> recursive (ref, dict) inner
+            Latex.Sqrt _ inner -> recursive (ref, dict) inner
+            Latex.Argument _ num -> updateRight (num - 1) (ref, dict)
+            Latex.Param _ num -> updateRight (num - 1) (ref, dict)
+            _ -> (ref, dict)
+            ) initial
+    in
+        recursive defaultStart latex
+        |> \(ref, dict) -> let (first, dict1) = getFirstAndUpdate Nothing dict in
+            Fixed
+            {   text = text
+            ,   latex = latex
+            ,   params = Dict.toList dict1
+                    |> List.map (\(_, override) -> (Scope {fixed = fixed} [], override))
+                    |> Array.fromList
+            ,   firstNode = first
+            ,   lastNode = getLastest ref
+            }
 
 -- 36 of them, a-z + 0-9
 letterOrder_: String -> Array.Array Float

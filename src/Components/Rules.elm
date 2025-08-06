@@ -218,7 +218,9 @@ toLatex_ converter complete tree =
     in
     case tree of
         Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text treeState ]
-        Math.VariableNode n -> [Latex.Text treeState n.name]
+        Math.VariableNode n -> case Dict.get n.name Latex.greekLetters of
+            Nothing -> [Latex.Text treeState n.name]
+            Just symb -> [Latex.SymbolPart treeState symb]
         Math.UnaryNode n -> case n.name of
             "-" -> toLatex_ converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree

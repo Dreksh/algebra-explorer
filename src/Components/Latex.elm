@@ -178,30 +178,34 @@ unparse = List.map (\token -> case token of
 parse: String -> Result String (Model ())
 parse str = case Parser.run (modelParser_ |. Parser.end) str of
     Err _ -> Err "TODO"
-    Ok model -> extractArgs (Set.empty, 0) model
-        |> Result.andThen ( \(set, max) -> if Set.size set == max then Ok model
+    Ok model -> extractArgs model |> Result.map (\_ -> model)
+
+extractArgs: Model a -> Result String (Dict.Dict Int a)
+extractArgs =
+    let
+        recursive initial = Helper.resultList (\elem (found, m) -> case elem of
+                Fraction _ top bot -> recursive (found, m) top
+                    |> Result.andThen (\b -> recursive b bot)
+                Text _ _ -> Ok (found, m)
+                SymbolPart _ _ -> Ok (found, m)
+                Superscript _ n -> recursive (found, m) n
+                Subscript _ n -> recursive (found, m) n
+                Bracket _ _ -> Ok (found, m)
+                Sqrt _ n -> recursive (found, m) n
+                Argument s arg -> if Dict.member arg found
+                    then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
+                    else Ok (Dict.insert arg s found, max m arg)
+                Param s arg -> if Dict.member arg found
+                    then Err ("Param number " ++ String.fromInt arg ++ " is repeated")
+                    else Ok (Dict.insert arg s found, max m arg)
+                Caret _ -> Ok (found, m)
+                Border _ n -> Ok (found, m)
+            ) initial
+    in
+        recursive (Dict.empty, 0)
+        >> Result.andThen (\(dict, maxNum) -> if Dict.size dict == maxNum then Ok dict
             else Err "Not all arguments are present in the representation"
         )
-
-extractArgs: (Set.Set Int, Int) -> Model () -> Result String (Set.Set Int, Int)
-extractArgs = Helper.resultList (\elem (found, m) -> case elem of
-        Fraction _ top bot -> extractArgs (found, m) top
-            |> Result.andThen (\b -> extractArgs b bot)
-        Text _ _ -> Ok (found, m)
-        SymbolPart _ _ -> Ok (found, m)
-        Superscript _ n -> extractArgs (found, m) n
-        Subscript _ n -> extractArgs (found, m) n
-        Bracket _ _ -> Ok (found, m)
-        Sqrt _ n -> extractArgs (found, m) n
-        Argument _ arg -> if Set.member arg found
-            then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
-            else Ok (Set.insert arg found, max m arg)
-        Param _ arg -> if Set.member arg found
-            then Err ("Param number " ++ String.fromInt arg ++ " is repeated")
-            else Ok (Set.insert arg found, max m arg)
-        Caret _ -> Ok (found, m)
-        Border _ n -> Ok (found, m)
-    )
 
 modelParser_: Parser.Parser (Model ())
 modelParser_ = Parser.loop []
