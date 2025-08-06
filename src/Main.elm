@@ -220,7 +220,7 @@ update event core = let model = core.swappable in
         NotificationEvent e -> let (nModel, newT) = Notification.update core.animation e model.notification in
             ({core | animation = newT, swappable = {model | notification = nModel}}, Cmd.none)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
-        ActionViewEvent e -> let (newIn, newT) = InputWithHistory.close core.animation model.input in
+        ActionViewEvent e -> let (newIn, newT) = InputWithHistory.close core.animation core.input in
             ({core | animation = newT, input = newIn, swappable = {model | actionView = ActionView.update e model.actionView}}, Cmd.none)
         InputEvent e -> let ((newIn, newT), submitted, cmd) = InputWithHistory.update InputEvent core.animation (Rules.functionProperties model.rules) e core.input in
             case submitted of
