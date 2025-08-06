@@ -98,7 +98,7 @@ calculateTree_ animation root rects =
         (declID, items) = distributeDeclarative grid
 
         -- don't tween if they aren't visible
-        oldRects = rects |> Dict.filter (\_ rect -> rect.visible)
+        oldRects = rects |> Dict.filter (\_ rect -> Animation.current rect.opacity /= 0)
 
         -- if we are doing an undo then we can try to reverse-engineer where it came from
         -- note that this can be a one-to-many mapping and this current logic just chooses a random last one
@@ -119,6 +119,7 @@ calculateTree_ animation root rects =
                 nextOld = oldRects |> Dict.get nextID
 
                 -- TODO: handle ctrl+z better because currently prevID always has priority over nextID
+                --   maybe we should just not ease anything when swapping between non-adjacent equations
                 (old, easedId, a1) = case (thisOld, prevOld, nextOld) of
                     (Just o, _, _) ->  let (text, newA) = MathIcon.set a0 (Just item.text.scale) item.text.frame o.text in
                         ({o | text = text}, (id, id2), newA)
@@ -216,7 +217,7 @@ type alias GridItem =
 type alias Grid =
     {   items: Dict.Dict Int GridItem
     ,   lines: Array.Array Float  -- only need column lines because children only nest in the x-axis
-    ,   declarative: Maybe GridItem  -- for DeclarativeNode, reuses commutable as child ranges
+    ,   declarative: Maybe GridItem  -- for DeclarativeNode, reuses .commutable as child ranges
     }
 
 -- getColX returns the x-component of the column's right-most point

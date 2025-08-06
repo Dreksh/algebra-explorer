@@ -36,8 +36,6 @@ bricks xMax yMax children =
 brick: Float -> Float -> Float -> Float -> Float -> Bool -> List (Attribute event) -> MathIcon.Model -> Html event
 brick xMin xMax yMin yMax opacity_ canHover attrs label =
     let
-        -- TODO: it would be nice for rects to overlap slightly
-        --   but need to bring the hovered rect to the front for the :hover stroke to look nice
         x_ = xMin + (strokeWidth_ / 2) + (horizontalPad_ / 2)
         y_ = -(yMax - (strokeWidth_ / 2))  -- use yMax because the y-axis in SVG extends downwards
         width_ = (xMax - xMin) - strokeWidth_ - horizontalPad_

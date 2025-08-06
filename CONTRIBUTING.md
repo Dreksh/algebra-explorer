@@ -239,3 +239,43 @@ xxx|xxxx
   * these events then feed back via the port `svgMouseEvent` which fires the `Display.svgDragEvent`
 * whether a block is draggable is determined in `Bricks.stackRecursive_`
   * `GridItem` now contains a `Maybe (Int, List (Int, Int))` which contains the order of the sibling (e.g. first child, second child) plus sibling column start+ends
+* how to handle undo and redo?
+  * we need some sort of staging in the history
+    * as you hover over the undo you stage some history, then if you click it actually does it
+    * just like the toolbar will be
+  * which actions are difficult to do because they spawn modals?
+    * Expand (Core)
+    * Substitution
+    * Operate on both sides
+    * in this situation we can use the confirm button as the staging button
+  * which actions are difficult to do because they split history?
+    * Find Zeros
+
+* evaluateStr ensures that there are no variables in the subtree i.e. it can be evaluated
+* affectedSubtree_ traces up the tree for all selected nodes and finds the first node that all of them trace through
+
+* where should Rules.Event actually go?
+  * ActionView is actually what calls `Matcher.matchSubtree`
+  * but it doesn't actually store the `Display.SelectedNode`, only renders it via a view
+    * should `SelectedNode` also be somewhere else? Because it is only really used by ActionView, and therefore prevents Display from importing ActionView
+  * it cannot go into Matcher because it requires Rules.Parameters as part of the action
+
+* Any file x higher in the tree than another file y can handle events from y via converter type
+* But y cannot ever handle an event from x because it cannot import x to avoid cyclic dependencies
+* However, y can kinda use x via type variables (e.g. the a in `List a`) but you would need to pass in a function
+  * e.g. the converters that get passed from `Main.view` allow the sub-views to use Main's types even though they are not imported
+  * e.g. Matcher.elm needs to be able to update the state of Animation.elm and Rules.elm, so `Matcher.parseEquation` requires functions as arguments
+
+              Main
+              /
+          ActionView
+            /
+          Display
+        /    \    \        \
+Animation  Bricks  History  Draggable
+  /
+Rules
+  /
+Matcher
+  /
+Math

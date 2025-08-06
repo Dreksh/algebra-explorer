@@ -1,5 +1,5 @@
 module UI.HtmlEvent exposing (
-    onClick, onSubmit, onFocus, onSubmitField, onSubmitForm,
+    onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onSubmitField, onSubmitForm,
     onPointerCapture, onPointerMove)
 
 -- Event is needed to block the js events from propagating upwards
@@ -10,6 +10,12 @@ import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, stri
 
 onClick: msg -> Html.Attribute msg
 onClick event = stopPropagationOn "click" (succeed (event, True))
+
+onPointerEnter: msg -> Html.Attribute msg
+onPointerEnter event = stopPropagationOn "pointerenter" (succeed (event, True))
+
+onPointerLeave: msg -> Html.Attribute msg
+onPointerLeave event = stopPropagationOn "pointerleave" (succeed (event, True))
 
 onSubmit: msg -> Html.Attribute msg
 onSubmit = Html.Events.onSubmit

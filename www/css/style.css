@@ -11,6 +11,7 @@
     --color-textbox-alternate: rgb(230,230,230);
     --color-drag: rgb(230,230,230);
     --color-selected: lightgreen;
+    --color-toolbar: rgb(180,180,180);
 }
 html, body {
     margin: 0;
@@ -342,10 +343,44 @@ dialog svg {
     text-align: center;
     overflow: scroll;
 }
+.historyHolder > div {
+    height: 100%;
+}
 .contextualToolbar {
     grid-column: 1/3;
     grid-row: 3;
     min-height: 2rem;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow: scroll;
+    background-color: var(--color-toolbar);
+}
+.contextualTopic {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    margin-left: 0.1rem;
+    margin-right: 0.1rem;
+}
+.contextualAction {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    margin-top: 0.2rem;
+    margin-bottom: 0.2rem;
+    margin-left: 0.1rem;
+    margin-right: 0.1rem;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+    background-color: var(--color-textbox-alternate);
+    border-radius: 0.4rem;
+}
+.contextualDisabled {
+    pointer-events: none;
+    color: var(--color-background);
 }
 .node {
     padding: 0.2rem;
@@ -401,7 +436,6 @@ div.history {
     padding: 0 0.5rem;
     display: flex;
     flex-direction: column;
-    height: 100%;
     position: relative;
     overflow: scroll;
 }
@@ -509,7 +543,7 @@ div#actions {
     padding-top: 0;
     transition: height 0.5s ease-out, padding-top 0.5s ease-out;
 }
-#actions > ul > li > div > a.disallowed {
+#actions > ul > li > div > div.disallowed {
     text-decoration: line-through;
     pointer-events: none;
     color: var(--color-background);
