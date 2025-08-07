@@ -1,15 +1,18 @@
-module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime, view, static, toSvgGroup)
+module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime,
+    closestFrame, closestChar, view, static, staticWithCursor, toSvgGroup
+    )
 
 import Dict
 import Html
 import Svg
-import Svg.Attributes exposing (d, fill, opacity, stroke, strokeWidth, viewBox)
+import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeWidth, viewBox, width, x, y)
 -- Ours
 import Algo.BFS as BFS
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.Icon as Icon
+import UI.Animation as Animation
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -178,11 +181,15 @@ iteratorToPart_ it =
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
                 else result (Latex.Sqrt (s, True) inner :: next) s " sqrt"
+            Latex.Border s inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Border s innerIt.remaining :: next} , part)
             Latex.Argument (s, _) num -> result next s (" " ++ String.fromInt num)
             Latex.Param (s, _) num -> result next s (" " ++ String.fromInt num)
+            Latex.Caret _ -> iteratorToPart_ {it | remaining = next}
 
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
-toMatches_ input =
+toMatches_ inList =
     let
         strictID part = (part.id, part.str)
         matchID part = (part.corrID, part.str) -- Secondary matching is with prevID
@@ -195,7 +202,7 @@ toMatches_ input =
         BFS.Add new -> (new :: pending, done, (found, del))
         BFS.Delete old -> (pending, done, (found, insert strictID old del))
         BFS.None new old -> (pending, Dict.insert (new.id, new.occurrence) old done, (insert matchID old found, del))
-    ) ([], Dict.empty, (Dict.empty, Dict.empty)) input
+    ) ([], Dict.empty, (Dict.empty, Dict.empty)) inList
     -- Exact match with deleted values first
     |> (    \(pending, done, (found, del)) -> List.reverse pending
             |> List.foldl (\part (more, doneDict, (foundDict, delDict)) ->
@@ -218,11 +225,13 @@ toMatches_ input =
     |> Tuple.first
 
 toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
-toAnimationDict_ scale = processFrame_ (\s strokes origin inScale dict -> let id = Matcher.getID s in
-        Dict.insert
-        (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
-        {strokes = strokes, origin = origin, scale = inScale}
-        dict
+toAnimationDict_ scale = processFrame_ (\frame origin inScale dict -> case frame.data of
+        BaseFrame detail -> let id = Matcher.getID detail.elem in
+            Dict.insert
+            (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
+            {strokes = detail.strokes, origin = origin, scale = inScale}
+            dict
+        _ -> dict
     )
     (0,0) scale Dict.empty
 
@@ -243,11 +252,17 @@ newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat anim
 type FrameData state =
     BaseFrame {strokes: List Stroke, elem: state}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
+    | Cursor
+    | Border
 type alias Frame state =
     {   data: FrameData state
     ,   topLeft: Vector2
     ,   botRight: Vector2
     }
+type CursorInsertion =
+    InFront
+    | Behind
+    | NoCursor
 
 type alias Ref =
     {   topX: Float -- how left (most cases)
@@ -257,19 +272,19 @@ type alias Ref =
     }
 
 latexToFrames: Latex.Model state -> Frame state
-latexToFrames = List.foldl
-    (\elem ((list, topLeft, botRight), ref) ->
-        symbolsToFrames_ ref elem
-        |> \(new, newRef) -> let offset = (max ref.topX ref.botX, 0) in
-            (   (   {frame = new, origin = offset, scale = 1} :: list
-                ,   Animation.minVector2 topLeft (Animation.addVector2 offset new.topLeft)
-                ,   Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
-                )
-            ,   newRef
+latexToFrames model = List.foldl (\elem ((list, topLeft, botRight), ref) ->
+    symbolsToFrames_ ref elem
+    |> \(new, newRef) -> let offset = (max ref.topX ref.botX, 0) in
+        (   (   {frame = new, origin = offset, scale = 1} :: list
+            ,   Animation.minVector2 topLeft (Animation.addVector2 offset new.topLeft)
+            ,   Animation.maxVector2 botRight (Animation.addVector2 offset new.botRight)
             )
+        ,   newRef
+        )
     )
     (([], (0,0), (0, 0)), {topX = 0, botX=0, topY = 0, botY = 0})
-    >> \((list, topLeft, botRight),_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
+    model
+    |> \((list, topLeft, botRight),_) -> {data = Position (List.reverse list), topLeft = topLeft, botRight = botRight}
 
 symbolsToFrames_: Ref -> Latex.Part state -> (Frame state, Ref)
 symbolsToFrames_ ref elem = case elem of
@@ -320,10 +335,7 @@ symbolsToFrames_ ref elem = case elem of
             )
     Latex.Text s str -> wordStrokes_ s str
         |> \new ->
-            (   {   data = Position [{frame = new, origin = (0,0), scale = 1}]
-                ,   topLeft = new.topLeft
-                ,   botRight = new.botRight
-                }
+            (   new
             ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) in
                 {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
@@ -380,15 +392,40 @@ symbolsToFrames_ ref elem = case elem of
         ,   let offsetX = (max ref.topX ref.botX) + 1 in
             {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
-    Latex.Param s _ ->
-        (   failedFrame_ s
+    Latex.Param s _ -> -- Same as Argument for displaying options, for input selection
+        (   {   data = BaseFrame
+                {   strokes =
+                    [   Move (0.4, -0.3), Line (0.2,-0.3), Line (0.2,-0.1)
+                    ,   Move (0.4, 0.3), Line (0.2,0.3), Line (0.2,0.1)
+                    ,   Move (0.6, 0.3), Line (0.8,0.3), Line (0.8,0.1)
+                    ,   Move (0.6, -0.3), Line (0.8,-0.3), Line (0.8,-0.1)
+                    ]
+                , elem = s
+                }
+            ,   topLeft  = (0, -0.5)
+            ,   botRight = (1,0.5)
+            }
         ,   let offsetX = (max ref.topX ref.botX) + 1 in
-            {topX = offsetX, botX = offsetX, topY = -0.5, botY = 0.5}
+            {topX = offsetX, botX = offsetX, topY = -1, botY = 0.5}
         )
+    Latex.Border s inner -> latexToFrames inner
+            |> \new -> let (newTL, newBR) = (Animation.minVector2 (0,-1) new.topLeft, Animation.maxVector2 (0.4,0.5) new.botRight) in
+                (   {   data = Position
+                        [   {frame = new, origin = (0,0), scale = 1}
+                        ,   {frame = {data = Border, topLeft = newTL, botRight = newBR}
+                            , origin = (0,0), scale = 1
+                            }
+                        ]
+                    ,   topLeft = newTL
+                    ,   botRight = newBR
+                    }
+                ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first newBR) in
+                    {topX = offsetX, botX = offsetX, topY = newTL |> Tuple.second, botY = newBR |> Tuple.second}
+                )
+    Latex.Caret _ -> ({data = Cursor, topLeft = (0,min -1 ref.topY), botRight = (0,max 0.5 ref.botY)}, ref)
 
-processFrame_: (state -> List Stroke -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
+processFrame_: (Frame state -> Vector2 -> Float -> end -> end) -> Vector2 -> Float -> end -> Frame state -> end
 processFrame_ combine origin scale initial frame = case frame.data of
-    BaseFrame s -> combine s.elem s.strokes origin scale initial
     Position list -> List.foldl (\elem result ->
             processFrame_ combine
             (Animation.scaleVector2 scale elem.origin |> Animation.addVector2 origin)
@@ -396,6 +433,7 @@ processFrame_ combine origin scale initial frame = case frame.data of
             result
             elem.frame
         ) initial list
+    _ -> combine frame origin scale initial
 
 {- toStrokes
 
@@ -420,87 +458,84 @@ symbolStrokes_ s str = case str of
     Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
 
 wordStrokes_: state -> String -> Frame state
-wordStrokes_ s = String.foldl (\c res -> case res of
-        Err err -> Err err
-        Ok (list, (_, top), (right, bot)) -> charStrokes_ c
-            |> Result.map (\(strokes, (_, newTop), (newRight, newBot)) ->
-                (rightShiftStrokes_ right strokes ++ list, (0, min top newTop), (right + newRight, max bot newBot))
-            )
-    ) (Ok ([], (0, 0), (0, 0)))
-    >> \r -> case r of
-        Ok (list, topLeft, botRight) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
-        Err _ -> failedFrame_ s
+wordStrokes_ s str =
+    String.foldl (\c (list, ((_, top), (right, bot))) -> charStrokes_ c
+            |> \(strokes, (_, newTop), (newRight, newBot)) ->
+                (rightShiftStrokes_ right strokes ++ list, ((0, min top newTop), (right + newRight, max bot newBot)))
+        ) ([], ((0, 0), (0, 0))) str
+        |> \(list, (topLeft, botRight)) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
 
-charStrokes_: Char -> Result String (List Stroke, Vector2, Vector2)
+charStrokes_: Char -> (List Stroke, Vector2, Vector2)
 charStrokes_ c = case c of
-    'a' -> Ok ([Move (0.7,-0.3), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.3),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -0.5), (1, 0.5))
-    'b' -> Ok ([Move (0.1,-0.8), Line (0.1,0.4), Curve (0.1,0) (0.3,-0.3) (0.6,-0.3), Curve (1,-0.3) (0.9,0.7) (0.1,0.2)], (0, -1), (1, 0.5))
-    'c' -> Ok ([Move (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
-    'd' -> Ok ([Move (0.7,-0.1), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.8),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -1), (1, 0.5))
-    'e' -> Ok ([Move (0.1,0), Curve (0.5,0.1) (0.8,-0.1) (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
-    'f' -> Ok ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.9) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -0.5), (0.9, 0.5))
-    'g' -> Ok ([Move (0.7,-0.1), Curve (0.5,-0.5) (0, -0.3) (0.1,0), Curve (0.2,0.3) (0.6,0.4) (0.7,-0.3), Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
-    'h' -> Ok ([Move (0.1,-0.9), Curve (0.2,-0.6) (0.2,-0.4) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -1), (0.9, 0.5))
-    'i' -> Ok ([Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3), Move (0.2,-0.75), Line (0.3,-0.6)], (0, -0.8), (0.5, 0.5))
-    'j' -> Ok ([Move (0.3,-0.4), Curve (0.5,0.9) (0.4,0.9) (0.1,0.7), Move (0.2,-0.75), Line(0.3,-0.6)], (0, -0.8), (0.5, 1))
-    'k' -> Ok ([Move (0.1,-0.9), Line (0.1,0.4), Move (0.6,-0.4), Line (0.1,-0.1), Line (0.7,0.4)], (0, -0.5), (0.8, 0.5))
-    'l' -> Ok ([Move (0.1,-0.9), Curve (0,0.4) (0.2,0.5) (0.4,0.3)], (0, -1), (0.5, 0.5))
-    'm' -> Ok ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4), Curve (1.1,-0.5) (1.4,-0.6) (1.4,0.4)], (0, -0.5), (1.5, 0.5))
-    'n' -> Ok ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -0.5), (0.9, 0.5))
-    'o' -> Ok ([Move (0.5,-0.4), Curve (0.3,-0.4) (0.1,-0.2) (0.1,0),Curve (0.1,0.2) (0.3,0.4) (0.5,0.4), Curve (0.7,0.4) (0.9,0.2) (0.9,0), Curve (0.9,-0.2) (0.7,-0.4) (0.5,-0.4)], (0, -0.5), (1, 0.5))
-    'p' -> Ok ([Move (0,-0.4), Curve (0.1,-0.2) (0.1,0) (0.1,0.9), Move (0.1,-0.1), Curve (0.3,-0.5) (0.5,-0.4) (0.7,-0.2), Curve (0.9,0) (0.7,0.5) (0.1,0.1)], (0, -0.5), (1, 1))
-    'q' -> Ok ([Move (0.7,-0.4), Curve (0.6,-0.2) (0.6,0.1) (0.6,0.85), Line (0.9,0.7), Move (0.65,-0.2), Curve (0.4,-0.5) (0.1,-0.2) (0.1,0), Curve (0.1,0.2) (0.4,0.3) (0.6,0.2)], (0, -0.5), (1, 1))
-    'r' -> Ok ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.2,-0.3) (0.4,-0.5) (0.7,-0.2)], (0, -0.5), (0.8, 0.5))
-    's' -> Ok ([Move (0.6,-0.3), Curve (0.3,-0.5) (0,-0.2) (0.5,-0.05), Curve (1,0.1) (0.5,0.7) (0.1,0.2)], (0, -0.5), (1, 0.5))
-    't' -> Ok ([Move (0.5,-0.8), Curve (0.2,0.2) (0.2,0.5) (0.7,0.2), Move (0.1,-0.3), Line (0.7,-0.4)], (0, -0.9), (0.8, 0.5))
-    'u' -> Ok ([Move (0.2,-0.4), Curve (0,1) (0.7,0.2) (0.8,-0.4), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -0.5), (1, 0.5))
-    'v' -> Ok ([Move (0.1,-0.4), Curve (0.3,-0.2) (0.4,0.2) (0.5,0.35), Curve (0.6,0.2) (0.8,-0.2) (0.9,-0.4)], (0, -0.5), (1, 0.5))
-    'w' -> Ok ([Move (0.2,-0.3), Curve (0,0.5) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.2,0.5) (1.1,-0.4)], (0, -0.5), (1.2, 0.5))
-    'x' -> Ok ([Move (0.1,-0.2), Curve (0.3,-0.7) (0.9,-0.1) (0.1,0.4), Move (0.9,0.2), Curve (0.7,0.7) (0.1,0.1) (0.9,-0.4)], (0, -0.5), (1, 0.5))
-    'y' -> Ok ([Move (0.1,-0.4), Curve (0.1,0.3) (0.6,0.3) (0.7,-0.4),Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
-    'z' -> Ok ([Move (0.1,-0.3), Curve (0.9,-0.5) (0.7,-0.2) (0.5,0), Curve (0.3,0.2) (-0.3,0.5) (0.9,0.3), Move (0.1,0), Line (0.9,-0.1)], (0, -0.5), (1, 0.5))
-    'A' -> Ok ([Move (0.1, 0.4), Line (0.5,-0.75), Line (0.9,0.4), Move (0.2,0), Line (0.8,0)], (0, -1), (1, 0.5))
-    'B' -> Ok ([Move (0.2,-0.8), Line (0.2,0.3), Move (0.1,-0.8), Curve (1,-1) (0.6,-0.5) (0.2,-0.4), Curve (1,-0.6) (1.1,0.6) (0.1,0.3)], (0, -1), (0.9, 0.5))
-    'C' -> Ok ([Move (0.8,-0.8), Curve (0.3,-1) (0.1,-0.5) (0.1,-0.25), Curve (0.1,0) (0.3,0.5) (0.9,0.2)], (0, -1), (1, 0.5))
-    'D' -> Ok ([Move (0.2,-0.8), Line (0.2,0.3), Move (0.1,-0.7), Curve (0.3,-1) (0.6,-0.7) (0.8,-0.3), Curve (0.9,-0.1) (1,0.5) (0.1,0.3)], (0, -1), (1, 0.5))
-    'E' -> Ok ([Move (0.2,-0.7), Curve (0,0.3) (0,0.5) (0.9,0.3), Move (0.1,-0.2), Line (0.7,-0.3), Move (0.1,-0.7), Line (0.8,-0.8)], (0, -1), (1, 0.5))
-    'F' -> Ok ([Move (0.1,0.4), Line (0.1,-0.8), Line (0.9,-0.8), Move (0.1,-0.3), Line (0.8,-0.3)], (0, -1), (1, 0.5))
-    'G' -> Ok ([Move (0.7,-0.8), Curve (0.2,-1) (0.1,-0.5) (0.1,-0.25), Curve (0.1,0) (0.2,0.5) (0.8,0), Move (0.5,-0.2), Line (1.1,-0.2), Move (0.8,-0.2), Line (0.8,0.4)], (0, -1), (1.2, 0.5))
-    'H' -> Ok ([Move (0.1,-0.9), Line (0.1,0.4), Move (0.1,-0.3), Line (0.9,-0.3), Move (0.9,-0.9), Line (0.9,0.4)], (0, -1), (1, 0.5))
-    'I' -> Ok ([Move (0.1,-0.8), Line (0.9,-0.8), Move (0.5,-0.8), Line (0.5,0.3), Move (0.1,0.3), Line (0.9,0.3)], (0, -1), (1, 0.5))
-    'J' -> Ok ([Move (0.3,-0.8), Line (1.1,-0.8), Move (0.7,-0.8), Curve (1,0.5) (0.6,0.4) (0.1,0.2)], (0, -1), (1.2, 0.5))
-    'K' -> Ok ([Move (0.2,-0.8), Line (0.2,0.4), Move (0.8,-0.7), Line (0.2,-0.1), Line (0.9,0.4)], (0, -1), (1, 0.5))
-    'L' -> Ok ([Move (0.1,-0.8), Line (0.1,0.3), Line (0.8,0.3)], (0, -1), (0.9, 0.5))
-    'M' -> Ok ([Move (0.1,0.4), Line (0.1,-0.6), Line (0.5,-0.2), Line (0.9,-0.7), Line (0.9,0.4)], (0, -1), (1, 0.5))
-    'N' -> Ok ([Move (0.1,0.3), Line (0.1,-0.7), Line (0.8,0.3), Curve (0.9,0.3) (0.9,0) (0.8,-0.9)], (0, -1), (1, 0.5))
-    'O' -> Ok ([Move (0.6,-0.8), Curve (0.2,-0.8) (0.1,-0.5) (0.1,-0.2), Curve (0.1,0.1) (0.2,0.3) (0.6,0.3), Curve (1,0.3) (1.1, 0.1) (1.1,-0.2), Curve (1.1,-0.5) (1,-0.8) (0.6,-0.8)], (0, -1), (1.2, 0.5))
-    'P' -> Ok ([Move (0.1,0.4), Line (0.1,-0.8), Curve (1,-1) (1,-0.1) (0.1,-0.2)], (0, -1), (0.9, 0.5))
-    'Q' -> Ok ([Move (0.6,-0.8), Curve (0.2,-0.8) (0.1,-0.5) (0.1,-0.2), Curve (0.1,0.1) (0.2,0.3) (0.6,0.3), Curve (1,0.3) (1.1, 0.1) (1.1,-0.2), Curve (1.1,-0.5) (1,-0.8) (0.6,-0.8), Move (0.7,0), Line (1.1,0.4)], (0, -1), (1.2, 0.5))
-    'R' -> Ok ([Move (0.1,0.4), Line (0.1,-0.8), Curve (1,-1) (1,-0.1) (0.1,-0.2), Curve (0.2,-0.2) (0.5,0) (0.8,0.4)], (0, -1), (0.9, 0.5))
-    'S' -> Ok ([Move (0.8,-0.8), Curve (0.2,-1.1) (0,-0.4) (0.4,-0.4), Curve (1,-0.4) (1,0.3) (0.5,0.3), Curve (0.4,0.3) (0.2,0.3) (0.1,0.2)], (0, -1), (1, 0.5))
-    'T' -> Ok ([Move (0.1,-0.8), Line (0.9,-0.8), Move (0.5,-0.8), Line (0.5,0.4)], (0, -1), (1, 0.5))
-    'U' -> Ok ([Move (0.1,-0.8), Curve (0,0.7) (0.9,0.7) (0.8,-0.8), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -1), (1, 0.5))
-    'V' -> Ok ([Move (0.1,-0.8), Curve (0.4,0.3) (0.5,0.3) (0.5,0.4), Curve (0.5,0.3) (0.6,0.3) (0.9,-0.8)], (0, -1), (1, 0.5))
-    'W' -> Ok ([Move (0.1,-0.8), Curve (0.3,0.3) (0.4,0.3) (0.4,0.4), Curve (0.4,0.3) (0.7,-0.2) (0.7,-0.3), Curve (0.7,-0.2) (1,0.3) (1,0.4), Curve (1,0.3) (1.1,0.3) (1.3,-0.8)], (0, -1), (1.4, 0.5))
-    'X' -> Ok ([Move (0.1,-0.8), Line (0.9,0.4), Move (0.1,0.4), Line (0.9,-0.8)], (0, -1), (1, 0.5))
-    'Y' -> Ok ([Move (0.1,-0.8), Line (0.5,-0.2), Line (0.9,-0.8), Move (0.5,-0.2), Line (0.5,0.4)], (0, -1), (1, 0.5))
-    'Z' -> Ok ([Move (0.1,-0.8), Line (0.8,-0.8), Line (0.2,0.3), Line (0.9,0.3), Move (0.1,-0.3), Line (0.9,-0.3)], (0, -1), (1, 0.5))
-    ',' -> Ok ([Move (0.1,0.3), Line (0.2,0.4), Curve (0.2,0.6) (0.15,0.65) (0.1,0.7)], (0, 0.3), (0.25, 0.7))
-    '.' -> Ok ([Move (0.1,0.3), Line (0.2,0.4)], (0, 0.3), (0.25, 0.4))
-    '0' -> Ok ([Move (0.4,-0.8), Curve (0,-0.8) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.8) (0.4,-0.8)], (0, -1), (0.8, 0.5))
-    '1' -> Ok ([Move (0.25,-0.8), Curve (0.3, -0.3) (0.3, 0) (0.3, 0.4)], (0, -1), (0.5, 0.5))
-    '2' -> Ok ([Move (0.1,-0.5), Curve (0.5,-1) (0.9,-0.7) (0.4,0), Curve (0,0.6) (0,0.2) (0.3,0.2), Curve (0.4, 0.2) (0.6,0.4) (0.9, 0.3)], (0, -1), (1, 1))
-    '3' -> Ok ([Move (0.1,-0.8), Curve (1,-1) (0.6,-0.5) (0.2,-0.4), Curve (1,-0.6) (1.1,0.6) (0.1,0.3)], (0, -1), (0.9, 0.5))
-    '4' -> Ok ([Move (0.6,-0.8), Line (0.2,0), Line (0.9,0), Move (0.7,-0.6), Line (0.7,0.4)], (0, -1), (1, 0.5))
-    '5' -> Ok ([Move (0.8,-0.8), Line (0.1,-0.8), Line (0.1,-0.3), Curve (0.3,-0.4) (0.8,-0.4) (0.8,0), Curve (0.8,0.45) (0.1,0.45) (0.1,0.1)], (0, -1), (1, 0.5))
-    '6' -> Ok ([Move (0.7,-0.8), Curve (-0.2,-0.7) (0,0.4) (0.5,0.4), Curve (1,0.4) (1,-0.2) (0.5,-0.2), Curve (0.3,-0.2) (0.2,-0.1) (0.1,0.1)], (0, -1), (1, 0.5))
-    '7' -> Ok ([Move (0.1,-0.8), Line (0.8,-0.8), Line (0.5,0.4), Move (0.2,-0.3), Line (0.9,-0.3)], (0, -1), (1, 0.5))
-    '8' -> Ok ([Move (0.5,-0.8), Curve (0.1,-0.8) (0.1,-0.3) (0.5,-0.3), Curve (1,-0.3) (1,0.4) (0.5,0.4), Curve (0,0.4) (0,-0.3) (0.5,-0.3), Curve (0.9,-0.3) (0.9,-0.8) (0.5,-0.8)], (0, -1), (1, 0.5))
-    '9' -> Ok ([Move (0.8,-0.7), Curve (0.6,-1) (0.1,-0.7) (0.1,-0.4), Curve (0.1,-0.1) (0.7,0) (0.8,-0.8), Line (0.8,0.4)], (0, -1), (1, 0.5))
-    '-' -> Ok ([Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
-    '+' -> Ok ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
-    '=' -> Ok ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
-    _ -> Err ("invalid character found: " ++ (Char.toCode c |> String.fromInt))
+    'a' -> ([Move (0.7,-0.3), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.3),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -0.5), (1, 0.5))
+    'b' -> ([Move (0.1,-0.8), Line (0.1,0.4), Curve (0.1,0) (0.3,-0.3) (0.6,-0.3), Curve (1,-0.3) (0.9,0.7) (0.1,0.2)], (0, -1), (1, 0.5))
+    'c' -> ([Move (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
+    'd' -> ([Move (0.7,-0.1), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.8),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -1), (1, 0.5))
+    'e' -> ([Move (0.1,0), Curve (0.5,0.1) (0.8,-0.1) (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
+    'f' -> ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.9) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -0.5), (0.9, 0.5))
+    'g' -> ([Move (0.7,-0.1), Curve (0.5,-0.5) (0, -0.3) (0.1,0), Curve (0.2,0.3) (0.6,0.4) (0.7,-0.3), Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
+    'h' -> ([Move (0.1,-0.9), Curve (0.2,-0.6) (0.2,-0.4) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -1), (0.9, 0.5))
+    'i' -> ([Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3), Move (0.2,-0.75), Line (0.3,-0.6)], (0, -0.8), (0.5, 0.5))
+    'j' -> ([Move (0.3,-0.4), Curve (0.5,0.9) (0.4,0.9) (0.1,0.7), Move (0.2,-0.75), Line(0.3,-0.6)], (0, -0.8), (0.5, 1))
+    'k' -> ([Move (0.1,-0.9), Line (0.1,0.4), Move (0.6,-0.4), Line (0.1,-0.1), Line (0.7,0.4)], (0, -0.5), (0.8, 0.5))
+    'l' -> ([Move (0.1,-0.9), Curve (0,0.4) (0.2,0.5) (0.4,0.3)], (0, -1), (0.5, 0.5))
+    'm' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4), Curve (1.1,-0.5) (1.4,-0.6) (1.4,0.4)], (0, -0.5), (1.5, 0.5))
+    'n' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -0.5), (0.9, 0.5))
+    'o' -> ([Move (0.5,-0.4), Curve (0.3,-0.4) (0.1,-0.2) (0.1,0),Curve (0.1,0.2) (0.3,0.4) (0.5,0.4), Curve (0.7,0.4) (0.9,0.2) (0.9,0), Curve (0.9,-0.2) (0.7,-0.4) (0.5,-0.4)], (0, -0.5), (1, 0.5))
+    'p' -> ([Move (0,-0.4), Curve (0.1,-0.2) (0.1,0) (0.1,0.9), Move (0.1,-0.1), Curve (0.3,-0.5) (0.5,-0.4) (0.7,-0.2), Curve (0.9,0) (0.7,0.5) (0.1,0.1)], (0, -0.5), (1, 1))
+    'q' -> ([Move (0.7,-0.4), Curve (0.6,-0.2) (0.6,0.1) (0.6,0.85), Line (0.9,0.7), Move (0.65,-0.2), Curve (0.4,-0.5) (0.1,-0.2) (0.1,0), Curve (0.1,0.2) (0.4,0.3) (0.6,0.2)], (0, -0.5), (1, 1))
+    'r' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.2,-0.3) (0.4,-0.5) (0.7,-0.2)], (0, -0.5), (0.8, 0.5))
+    's' -> ([Move (0.6,-0.3), Curve (0.3,-0.5) (0,-0.2) (0.5,-0.05), Curve (1,0.1) (0.5,0.7) (0.1,0.2)], (0, -0.5), (1, 0.5))
+    't' -> ([Move (0.5,-0.8), Curve (0.2,0.2) (0.2,0.5) (0.7,0.2), Move (0.1,-0.3), Line (0.7,-0.4)], (0, -0.9), (0.8, 0.5))
+    'u' -> ([Move (0.2,-0.4), Curve (0,1) (0.7,0.2) (0.8,-0.4), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -0.5), (1, 0.5))
+    'v' -> ([Move (0.1,-0.4), Curve (0.3,-0.2) (0.4,0.2) (0.5,0.35), Curve (0.6,0.2) (0.8,-0.2) (0.9,-0.4)], (0, -0.5), (1, 0.5))
+    'w' -> ([Move (0.2,-0.3), Curve (0,0.5) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.2,0.5) (1.1,-0.4)], (0, -0.5), (1.2, 0.5))
+    'x' -> ([Move (0.1,-0.2), Curve (0.3,-0.7) (0.9,-0.1) (0.1,0.4), Move (0.9,0.2), Curve (0.7,0.7) (0.1,0.1) (0.9,-0.4)], (0, -0.5), (1, 0.5))
+    'y' -> ([Move (0.1,-0.4), Curve (0.1,0.3) (0.6,0.3) (0.7,-0.4),Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
+    'z' -> ([Move (0.1,-0.3), Curve (0.9,-0.5) (0.7,-0.2) (0.5,0), Curve (0.3,0.2) (-0.3,0.5) (0.9,0.3), Move (0.1,0), Line (0.9,-0.1)], (0, -0.5), (1, 0.5))
+    'A' -> ([Move (0.1, 0.4), Line (0.5,-0.75), Line (0.9,0.4), Move (0.2,0), Line (0.8,0)], (0, -1), (1, 0.5))
+    'B' -> ([Move (0.2,-0.8), Line (0.2,0.3), Move (0.1,-0.8), Curve (1,-1) (0.6,-0.5) (0.2,-0.4), Curve (1,-0.6) (1.1,0.6) (0.1,0.3)], (0, -1), (0.9, 0.5))
+    'C' -> ([Move (0.8,-0.8), Curve (0.3,-1) (0.1,-0.5) (0.1,-0.25), Curve (0.1,0) (0.3,0.5) (0.9,0.2)], (0, -1), (1, 0.5))
+    'D' -> ([Move (0.2,-0.8), Line (0.2,0.3), Move (0.1,-0.7), Curve (0.3,-1) (0.6,-0.7) (0.8,-0.3), Curve (0.9,-0.1) (1,0.5) (0.1,0.3)], (0, -1), (1, 0.5))
+    'E' -> ([Move (0.2,-0.7), Curve (0,0.3) (0,0.5) (0.9,0.3), Move (0.1,-0.2), Line (0.7,-0.3), Move (0.1,-0.7), Line (0.8,-0.8)], (0, -1), (1, 0.5))
+    'F' -> ([Move (0.1,0.4), Line (0.1,-0.8), Line (0.9,-0.8), Move (0.1,-0.3), Line (0.8,-0.3)], (0, -1), (1, 0.5))
+    'G' -> ([Move (0.7,-0.8), Curve (0.2,-1) (0.1,-0.5) (0.1,-0.25), Curve (0.1,0) (0.2,0.5) (0.8,0), Move (0.5,-0.2), Line (1.1,-0.2), Move (0.8,-0.2), Line (0.8,0.4)], (0, -1), (1.2, 0.5))
+    'H' -> ([Move (0.1,-0.9), Line (0.1,0.4), Move (0.1,-0.3), Line (0.9,-0.3), Move (0.9,-0.9), Line (0.9,0.4)], (0, -1), (1, 0.5))
+    'I' -> ([Move (0.1,-0.8), Line (0.9,-0.8), Move (0.5,-0.8), Line (0.5,0.3), Move (0.1,0.3), Line (0.9,0.3)], (0, -1), (1, 0.5))
+    'J' -> ([Move (0.3,-0.8), Line (1.1,-0.8), Move (0.7,-0.8), Curve (1,0.5) (0.6,0.4) (0.1,0.2)], (0, -1), (1.2, 0.5))
+    'K' -> ([Move (0.2,-0.8), Line (0.2,0.4), Move (0.8,-0.7), Line (0.2,-0.1), Line (0.9,0.4)], (0, -1), (1, 0.5))
+    'L' -> ([Move (0.1,-0.8), Line (0.1,0.3), Line (0.8,0.3)], (0, -1), (0.9, 0.5))
+    'M' -> ([Move (0.1,0.4), Line (0.1,-0.6), Line (0.5,-0.2), Line (0.9,-0.7), Line (0.9,0.4)], (0, -1), (1, 0.5))
+    'N' -> ([Move (0.1,0.3), Line (0.1,-0.7), Line (0.8,0.3), Curve (0.9,0.3) (0.9,0) (0.8,-0.9)], (0, -1), (1, 0.5))
+    'O' -> ([Move (0.6,-0.8), Curve (0.2,-0.8) (0.1,-0.5) (0.1,-0.2), Curve (0.1,0.1) (0.2,0.3) (0.6,0.3), Curve (1,0.3) (1.1, 0.1) (1.1,-0.2), Curve (1.1,-0.5) (1,-0.8) (0.6,-0.8)], (0, -1), (1.2, 0.5))
+    'P' -> ([Move (0.1,0.4), Line (0.1,-0.8), Curve (1,-1) (1,-0.1) (0.1,-0.2)], (0, -1), (0.9, 0.5))
+    'Q' -> ([Move (0.6,-0.8), Curve (0.2,-0.8) (0.1,-0.5) (0.1,-0.2), Curve (0.1,0.1) (0.2,0.3) (0.6,0.3), Curve (1,0.3) (1.1, 0.1) (1.1,-0.2), Curve (1.1,-0.5) (1,-0.8) (0.6,-0.8), Move (0.7,0), Line (1.1,0.4)], (0, -1), (1.2, 0.5))
+    'R' -> ([Move (0.1,0.4), Line (0.1,-0.8), Curve (1,-1) (1,-0.1) (0.1,-0.2), Curve (0.2,-0.2) (0.5,0) (0.8,0.4)], (0, -1), (0.9, 0.5))
+    'S' -> ([Move (0.8,-0.8), Curve (0.2,-1.1) (0,-0.4) (0.4,-0.4), Curve (1,-0.4) (1,0.3) (0.5,0.3), Curve (0.4,0.3) (0.2,0.3) (0.1,0.2)], (0, -1), (1, 0.5))
+    'T' -> ([Move (0.1,-0.8), Line (0.9,-0.8), Move (0.5,-0.8), Line (0.5,0.4)], (0, -1), (1, 0.5))
+    'U' -> ([Move (0.1,-0.8), Curve (0,0.7) (0.9,0.7) (0.8,-0.8), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -1), (1, 0.5))
+    'V' -> ([Move (0.1,-0.8), Curve (0.4,0.3) (0.5,0.3) (0.5,0.4), Curve (0.5,0.3) (0.6,0.3) (0.9,-0.8)], (0, -1), (1, 0.5))
+    'W' -> ([Move (0.1,-0.8), Curve (0.3,0.3) (0.4,0.3) (0.4,0.4), Curve (0.4,0.3) (0.7,-0.2) (0.7,-0.3), Curve (0.7,-0.2) (1,0.3) (1,0.4), Curve (1,0.3) (1.1,0.3) (1.3,-0.8)], (0, -1), (1.4, 0.5))
+    'X' -> ([Move (0.1,-0.8), Line (0.9,0.4), Move (0.1,0.4), Line (0.9,-0.8)], (0, -1), (1, 0.5))
+    'Y' -> ([Move (0.1,-0.8), Line (0.5,-0.2), Line (0.9,-0.8), Move (0.5,-0.2), Line (0.5,0.4)], (0, -1), (1, 0.5))
+    'Z' -> ([Move (0.1,-0.8), Line (0.8,-0.8), Line (0.2,0.3), Line (0.9,0.3), Move (0.1,-0.3), Line (0.9,-0.3)], (0, -1), (1, 0.5))
+    ',' -> ([Move (0.1,0.3), Line (0.2,0.4), Curve (0.2,0.6) (0.15,0.65) (0.1,0.7)], (0, 0.3), (0.25, 0.7))
+    '.' -> ([Move (0.1,0.3), Line (0.2,0.4)], (0, 0.3), (0.25, 0.4))
+    '0' -> ([Move (0.4,-0.8), Curve (0,-0.8) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.8) (0.4,-0.8)], (0, -1), (0.8, 0.5))
+    '1' -> ([Move (0.25,-0.8), Curve (0.3, -0.3) (0.3, 0) (0.3, 0.4)], (0, -1), (0.5, 0.5))
+    '2' -> ([Move (0.1,-0.5), Curve (0.5,-1) (0.9,-0.7) (0.4,0), Curve (0,0.6) (0,0.2) (0.3,0.2), Curve (0.4, 0.2) (0.6,0.4) (0.9, 0.3)], (0, -1), (1, 0.5))
+    '3' -> ([Move (0.1,-0.8), Curve (1,-1) (0.6,-0.5) (0.2,-0.4), Curve (1,-0.6) (1.1,0.6) (0.1,0.3)], (0, -1), (0.9, 0.5))
+    '4' -> ([Move (0.6,-0.8), Line (0.2,0), Line (0.9,0), Move (0.7,-0.6), Line (0.7,0.4)], (0, -1), (1, 0.5))
+    '5' -> ([Move (0.8,-0.8), Line (0.1,-0.8), Line (0.1,-0.3), Curve (0.3,-0.4) (0.8,-0.4) (0.8,0), Curve (0.8,0.45) (0.1,0.45) (0.1,0.1)], (0, -1), (1, 0.5))
+    '6' -> ([Move (0.7,-0.8), Curve (-0.2,-0.7) (0,0.4) (0.5,0.4), Curve (1,0.4) (1,-0.2) (0.5,-0.2), Curve (0.3,-0.2) (0.2,-0.1) (0.1,0.1)], (0, -1), (1, 0.5))
+    '7' -> ([Move (0.1,-0.8), Line (0.8,-0.8), Line (0.5,0.4), Move (0.2,-0.3), Line (0.9,-0.3)], (0, -1), (1, 0.5))
+    '8' -> ([Move (0.5,-0.8), Curve (0.1,-0.8) (0.1,-0.3) (0.5,-0.3), Curve (1,-0.3) (1,0.4) (0.5,0.4), Curve (0,0.4) (0,-0.3) (0.5,-0.3), Curve (0.9,-0.3) (0.9,-0.8) (0.5,-0.8)], (0, -1), (1, 0.5))
+    '9' -> ([Move (0.8,-0.7), Curve (0.6,-1) (0.1,-0.7) (0.1,-0.4), Curve (0.1,-0.1) (0.7,0) (0.8,-0.8), Line (0.8,0.4)], (0, -1), (1, 0.5))
+    '-' -> ([Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
+    '+' -> ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
+    '=' -> ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
+    ' ' -> ([], (0, 0), (0.4, 0))
+    _ -> ([Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], (0, -0.5), (1,0.5))
 
 rightShiftStrokes_: Float -> List Stroke -> List Stroke
 rightShiftStrokes_ left = List.map (\elem -> case elem of
@@ -509,18 +544,139 @@ rightShiftStrokes_ left = List.map (\elem -> case elem of
     Curve (x1, y1) (x2,y2) (x3,y3) -> Curve (x1+left,y1) (x2+left,y2) (x3+left,y3)
     )
 
+{- Cursor input -}
+
+closestFrame: Latex.Model a -> Vector2 -> Maybe (a, Vector2) -- identitified by the state + remaining diff vector from its border
+closestFrame latex point = latexToFrames latex
+    |> clickedRecursive_ (Animation.descaleVector2 20 point)
+
+clickedRecursive_: Vector2 -> Frame a -> Maybe (a, Vector2) -- The element + direction compared to its centre
+clickedRecursive_ point frame = case frame.data of
+    Position l -> List.map (\subFrame ->
+            let
+                scaledPoint = Animation.subVector2 subFrame.origin point
+                    |> Animation.descaleVector2 subFrame.scale
+            in
+            (   distanceFromFrame_ subFrame.frame scaledPoint
+                |> distanceSquared_
+                |> \d -> d*subFrame.scale*subFrame.scale
+            ,   (scaledPoint, subFrame.frame)
+            )
+        ) l
+        |> List.sortBy Tuple.first
+        |> List.foldl (\(_, (p, f)) res -> case res of
+            Just _ -> res
+            Nothing -> clickedRecursive_ p f
+        ) Nothing
+    BaseFrame n -> Just (n.elem, point)
+    Cursor -> Nothing
+    Border -> Nothing
+
+
+distanceSquared_: Vector2 -> Float
+distanceSquared_ (x, y) = x*x + y*y
+
+distanceFromFrame_: {s | topLeft: Vector2, botRight: Vector2} -> Vector2 -> Vector2
+distanceFromFrame_ frame (x, y) =
+    let
+        (top, left) = frame.topLeft
+        (bot, right) = frame.botRight
+    in
+    (   if x < left then x - left
+        else if x > right then x - right
+        else 0
+    ,   if y < top then y - top
+        else if y > bot then y - bot
+        else 0
+    )
+
+closestChar: String -> Vector2 -> (Int, Vector2)
+closestChar str point = String.foldl (\c (res, index, p) ->
+        let
+            (_, topLeft, botRight) = charStrokes_ c
+            diff = distanceFromFrame_ {topLeft = topLeft, botRight = botRight} p
+            distance = distanceSquared_ diff
+        in
+        (   case res of
+            Nothing -> Just (distance, index, diff)
+            Just (d, i, v) -> if distance < d then Just (distance, index, diff) else res
+        ,   index + 1
+        ,   Animation.subVector2 (Tuple.first botRight, 0) p
+        )
+    ) (Nothing, 0, point) str
+    |> \(res, _, _) -> case res of
+        Nothing -> (0, point)
+        Just (_, index, vector) -> (index, vector)
+
 {- UI -}
 
 static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in
-    processFrame_ (\_ strokes origin scale list ->
-        Svg.path [d (strokeToPath_ origin scale strokes), stroke "currentColor", strokeWidth "1", fill "none"] []
-        :: list
+    processFrame_ (\frame origin scale list -> case frame.data of
+            BaseFrame detail -> Svg.path
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "1", fill "none"]
+                []
+                :: list
+            _ -> list -- Ignore cursor, border and position
         ) (0,0) 20 [] frames
     |>  Svg.svg
         (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
         ::  attrs
         )
+
+staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
+staticWithCursor attrs model = let frames = latexToFrames model in
+    processFrame_ (\frame origin scale list -> case frame.data of
+            BaseFrame detail -> Svg.path
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "1", fill "none"]
+                []
+                :: list
+            Cursor -> Svg.path
+                [   d (strokeToPath_ origin scale [Move frame.topLeft, Line frame.botRight])
+                ,   stroke "currentColor", strokeWidth "1", fill "none", class "cursor"]
+                []
+                :: list
+            Border ->
+                let
+                    shift = Animation.scaleVector2 scale >> Animation.addVector2 origin
+                    ((left, top), (right, bot)) = (shift frame.topLeft, shift frame.botRight)
+                in
+                Svg.rect
+                [   x (String.fromFloat left), y (String.fromFloat top)
+                ,   width (String.fromFloat (right-left)), height (String.fromFloat (bot-top))
+                ,   stroke "currentColor", strokeWidth "1", fill "none", class "border"
+                ]
+                []
+                :: list
+            _ -> list -- Ignore cursor, border and position
+        ) (0,0) 20 [] frames
+    |> \children ->  Svg.svg
+        (   toViewBox_
+            -- Add horizontal shift to allow for borders and cursors to be displayed
+            (Animation.scaleVector2 20 frames.topLeft |> Animation.addVector2 (-1,-1))
+            (Animation.scaleVector2 20 frames.botRight |> Animation.addVector2 (1,1))
+        ::  attrs
+        )
+        (   Svg.style [] [Svg.text cursorStyle]
+        ::  children
+        )
+
+cursorStyle: String
+cursorStyle = """
+@keyframes blink {
+  49%{ opacity: 1; }
+  50% { opacity: 0; }
+  100%{ opacity: 0; }
+}
+.cursor {
+    animation: 2s blink 0s infinite;
+    opacity: 1;
+}
+.border {
+    stroke-dasharray: 4;
+}
+"""
+
 
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
 view convert attrs model = Dict.toList model.frames
@@ -548,11 +704,6 @@ frameToAttr_ frame =
     [   d (strokeToPath_ (Animation.current frame.origin) (Animation.current frame.scale) frame.strokes)
     ,   opacity (Animation.current frame.opacity |> String.fromFloat)
     ]
-
--- For inputting (i.e. with virtual keyboard that lists out all the available functions)
--- https://stackoverflow.com/a/37202118
--- input: Math.Tree elem -> Html.Html msg
--- input root = Html.p [] [Html.text "TODO"]
 
 {- UI -}
 

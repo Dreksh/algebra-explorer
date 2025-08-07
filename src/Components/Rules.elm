@@ -104,10 +104,14 @@ init =
     }
 
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
-functionProperties model = Dict.foldl
-    (\k (_, count) d -> Math.createConstant {javascript = FuncOp k |> Just , latex = Just [Latex.Text () k] } k
-        |> \entry -> Dict.insert k {property = entry, count = count} d
-    ) model.functions model.constants
+functionProperties model = model.constants
+    |> Dict.foldl
+        (\k (javascript, count) d -> Math.createConstant {javascript = PrefixOp javascript |> Just , latex = Just [Latex.Text () k] } k
+            |> \entry -> Dict.insert k {property = entry, count = count} d
+        ) model.functions
+    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart () symbol]} name
+        |> \entry -> Dict.insert name {property = entry, count = 1} d
+        ) dict Latex.greekLetters
 
 {- Functions -}
 
@@ -214,7 +218,9 @@ toLatex_ converter complete tree =
     in
     case tree of
         Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text treeState ]
-        Math.VariableNode n -> [Latex.Text treeState n.name]
+        Math.VariableNode n -> case Dict.get n.name Latex.greekLetters of
+            Nothing -> [Latex.Text treeState n.name]
+            Just symb -> [Latex.SymbolPart treeState symb]
         Math.UnaryNode n -> case n.name of
             "-" -> toLatex_ converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
@@ -252,6 +258,7 @@ substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem
     Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert complete state args inner)]
     Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert complete state args inner)]
     Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert complete state args inner)]
+    Latex.Border _ inner -> [Latex.Border state (substituteArgs_ convert complete state args inner)]
     Latex.Argument _ n -> if complete
         then (case getN_ (n-1) args of
                 Nothing -> [Latex.Argument state n] -- Display missing info
@@ -263,6 +270,7 @@ substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem
         Just t -> toLatex_ convert True t
     Latex.Text _ str ->  [Latex.Text state str]
     Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
+    Latex.Caret _  -> [Latex.Caret state]
     )
 
 getN_: Int -> List a -> Maybe a

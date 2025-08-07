@@ -1,5 +1,6 @@
 module Helper exposing (..)
 
+import Array
 import Dict
 import Json.Decode as Decode
 import Set
@@ -32,6 +33,12 @@ maybeDict process start = Dict.foldl (\key value result -> Maybe.andThen (proces
 
 resultList: (a -> b -> Result error b) -> b -> List a -> Result error b
 resultList process start = List.foldl (\elem res -> Result.andThen (process elem) res) (Ok start)
+
+resultArray: (Int -> a -> b -> Result error b) -> b -> Array.Array a -> Result error b
+resultArray process start = Array.foldl
+    (\elem (index, res) -> (index + 1, Result.andThen (process index elem) res))
+    (0, (Ok start))
+    >> Tuple.second
 
 resultDict: (k -> v -> b -> Result error b) -> b -> Dict.Dict k v -> Result error b
 resultDict process start = Dict.foldl (\key value result -> Result.andThen (process key value) result) (Ok start)

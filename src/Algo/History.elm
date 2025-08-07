@@ -1,5 +1,6 @@
 module Algo.History exposing (Model, Staged(..), Event(..),
     init, update, current, next, canUndo, canRedo,
+    undo, redo, stage, flushAndCommit, commit,
     serialize, encode, decoder
     )
 
@@ -90,6 +91,22 @@ next model =
 
 currentNode_: Model component -> Int
 currentNode_ model = List.head model.visits |> Maybe.withDefault -1
+
+undo: Model component -> Model component
+undo model = case model.visits of
+    [] -> model
+    (x::other) -> {model | visits = other, undone = x :: model.undone}
+
+redo: Model component -> Model component
+redo model = case model.undone of
+    [] -> model
+    (x::other) -> {model | visits = x :: model.visits, undone = other}
+
+stage: component -> Model component -> Model component
+stage c model = {model | staged = Just (Change c)}
+
+flushAndCommit: component -> Model component -> Model component
+flushAndCommit entry model = commit model |> commit_ entry
 
 commit: Model component -> Model component
 commit model = case model.staged of

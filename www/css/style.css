@@ -114,19 +114,6 @@ span.space {
     height: 2rem;
     margin: 0 0.5rem;
 }
-.textbar > input[type="text"] {
-    height: 100%;
-    padding: 0;
-    margin: 0;
-    min-width: 0;
-    font-size: 2rem;
-    box-sizing: border-box;
-    background: none;
-    border: none;
-    box-shadow: none;
-    flex-grow: 1;
-    flex-shrink: 1;
-}
 .input > ul {
     width: 70%;
     list-style: none;
@@ -147,6 +134,55 @@ span.space {
 .input > ul svg {
     height: 1rem;
     margin: 0 0.5rem;
+}
+.mathInput {
+    height: 100%;
+    width: 100%;
+    position: relative;
+    display: block;
+}
+.mathInput > input {
+    display: block;
+    position: absolute;
+    box-sizing: border-box;
+    border: none;
+    box-shadow: none;
+    border-radius: 0 1.5rem 1.5rem 0;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    caret-color: transparent;
+}
+.mathInput > svg {
+    display: block;
+    position: absolute;
+    margin: 0;
+    top: 0;
+    left: 0;
+    height: 100%;
+    max-width: 100%;
+}
+.mathInput > .popup {
+    z-index: 1;
+    display: flex;
+    flex-direction: row;
+    position: absolute;
+    bottom: -2.5rem;
+    height: 2rem;
+    width: 100%;
+    border-radius: 1rem;
+    padding: 0 1rem;
+    background-color: var(--color-textbox);
+    box-sizing: border-box;
+}
+.mathInput > .popup > div {
+    flex-shrink: 1;
+    display: flex;
+    flex-direction: row;
+    overflow-x: scroll;
+    overflow-y: hidden;
+    box-sizing: border-box;
 }
 /* Menu */
 #menuToggle {

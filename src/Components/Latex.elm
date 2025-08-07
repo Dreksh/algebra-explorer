@@ -1,5 +1,11 @@
-module Components.Latex exposing (Model, Part(..), Symbol(..), map, parse, unparse, symbolToStr, decoder, encode)
+module Components.Latex exposing (
+    Model, Part(..), Symbol(..), getState, map, replace,
+    symbolToStr, extractArgs, greekLetters,
+    parse, unparse, decoder, encode
+    )
 
+import Array
+import Dict
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Parser exposing ((|.), (|=))
@@ -19,6 +25,9 @@ type Part elem =
     | Sqrt elem (Model elem)
     | Argument elem Int -- Our custom insertion, for adding
     | Param elem Int
+    -- Specifically for input
+    | Caret elem
+    | Border elem (Model elem) --
 
 type Symbol =
     AlphaLower
@@ -26,6 +35,23 @@ type Symbol =
     | CrossMultiplcation
     | Division
     | Integration
+
+{- ## General processing of Latex.Model -}
+
+-- note that fraction doesn't reveal the other state of the bottom fraction
+getState: Part a -> a
+getState p = case p of
+    Fraction e _ _ -> e
+    Text e _ -> e
+    SymbolPart e _ -> e
+    Superscript e _ -> e
+    Subscript e _ -> e
+    Bracket e _ -> e
+    Sqrt e _ -> e
+    Argument e _ -> e
+    Param e _ -> e
+    Caret e -> e
+    Border e _ -> e
 
 map: (a -> b) -> Model a -> Model b
 map convert = List.map (\root -> case root of
@@ -38,7 +64,30 @@ map convert = List.map (\root -> case root of
         Sqrt e inner -> Sqrt (convert e) (map convert inner)
         Argument e int -> Argument (convert e) int
         Param e int -> Param (convert e) int
+        Caret e -> Caret (convert e)
+        Border e inner -> Border (convert e) (map convert inner)
     )
+
+replace: Array.Array (Model state) -> Model state -> Model state
+replace params = List.concatMap (\part -> case part of
+        Fraction e top bot -> [Fraction e (replace params top) (replace params bot)]
+        Text e str -> [Text e str]
+        SymbolPart e symbol -> [SymbolPart e symbol]
+        Superscript e inner -> [Superscript e (replace params inner)]
+        Subscript e inner -> [Subscript e (replace params inner)]
+        Bracket e inner -> [Bracket e (replace params inner)]
+        Sqrt e inner -> [Sqrt e (replace params inner)]
+        Argument e num -> case Array.get (num - 1) params of
+            Nothing -> [Argument e num]
+            Just model -> model
+        Param e num -> case Array.get (num - 1) params of
+            Nothing -> [Param e num]
+            Just model -> model
+        Caret e -> [Caret e]
+        Border e inner -> [Border e (replace params inner)]
+    )
+
+{- ## Encoding, Decoding: to and from the written form of the tree structure -}
 
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
 decoder inner = Decode.field "type" Decode.string
@@ -60,7 +109,8 @@ decoder inner = Decode.field "type" Decode.string
 
 encode: (s -> Encode.Value) -> Model s -> Encode.Value
 encode convert = Encode.list (\n -> case n of
-        Fraction e top bot -> Encode.object [("type",Encode.string "fraction"), ("state",convert e),("top",encode convert top),("bot",encode convert bot)]
+        Fraction e top bot -> Encode.object
+            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot),("state",convert e)]
         Text e str -> Encode.object [("type",Encode.string "text"),("state", convert e),("text",Encode.string str)]
         SymbolPart e symbol -> Encode.object [("type",Encode.string "symbol"),("state", convert e),("symbol",encodeSymbol_ symbol)]
         Superscript e inner -> Encode.object [("type",Encode.string "sup"),("state", convert e),("inner",encode convert inner)]
@@ -69,6 +119,8 @@ encode convert = Encode.list (\n -> case n of
         Sqrt e inner -> Encode.object [("type",Encode.string "sqrt"),("state", convert e),("inner",encode convert inner)]
         Argument e int -> Encode.object [("type",Encode.string "arg"),("state", convert e),("num", Encode.int int)]
         Param e int -> Encode.object [("type",Encode.string "param"),("state", convert e),("num", Encode.int int)]
+        Caret e -> Encode.null
+        Border e inner -> Encode.null
     )
 
 symbolDecoder_: Decode.Decoder Symbol
@@ -92,8 +144,18 @@ symbolToStr s = case s of
     Division -> "div"
     Integration -> "int"
 
+greekLetters: Dict.Dict String Symbol
+greekLetters =
+    [   AlphaLower
+    ,   BetaLower
+    ]
+    |> List.map (\s -> (symbolToStr s,s))
+    |> Dict.fromList
+
 encodeSymbol_: Symbol -> Encode.Value
 encodeSymbol_ = symbolToStr >> Encode.string
+
+{- Parsing and Unparsing: To and from the written latex script (partial implementaiton) -}
 
 unparse: Model s -> String
 unparse = List.map (\token -> case token of
@@ -106,6 +168,8 @@ unparse = List.map (\token -> case token of
     Sqrt _ inner -> "{" ++ unparse inner ++ "}"
     Argument _ num -> "\\arg{" ++ String.fromInt num ++ "}"
     Param _ num -> "\\param{" ++ String.fromInt num ++ "}"
+    Caret _ -> ""
+    Border _ inner -> unparse inner
     )
     >> String.join ""
 
@@ -114,26 +178,34 @@ unparse = List.map (\token -> case token of
 parse: String -> Result String (Model ())
 parse str = case Parser.run (modelParser_ |. Parser.end) str of
     Err _ -> Err "TODO"
-    Ok model -> extractArgs_ (Set.empty, 0) model
-        |> Result.andThen ( \(set, max) -> if Set.size set == max then Ok model
+    Ok model -> extractArgs model |> Result.map (\_ -> model)
+
+extractArgs: Model a -> Result String (Dict.Dict Int a)
+extractArgs =
+    let
+        recursive initial = Helper.resultList (\elem (found, m) -> case elem of
+                Fraction _ top bot -> recursive (found, m) top
+                    |> Result.andThen (\b -> recursive b bot)
+                Text _ _ -> Ok (found, m)
+                SymbolPart _ _ -> Ok (found, m)
+                Superscript _ n -> recursive (found, m) n
+                Subscript _ n -> recursive (found, m) n
+                Bracket _ _ -> Ok (found, m)
+                Sqrt _ n -> recursive (found, m) n
+                Argument s arg -> if Dict.member arg found
+                    then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
+                    else Ok (Dict.insert arg s found, max m arg)
+                Param s arg -> if Dict.member arg found
+                    then Err ("Param number " ++ String.fromInt arg ++ " is repeated")
+                    else Ok (Dict.insert arg s found, max m arg)
+                Caret _ -> Ok (found, m)
+                Border _ n -> Ok (found, m)
+            ) initial
+    in
+        recursive (Dict.empty, 0)
+        >> Result.andThen (\(dict, maxNum) -> if Dict.size dict == maxNum then Ok dict
             else Err "Not all arguments are present in the representation"
         )
-
-extractArgs_: (Set.Set Int, Int) -> Model () -> Result String (Set.Set Int, Int)
-extractArgs_ = Helper.resultList (\elem (found, m) -> case elem of
-        Fraction _ top bot -> extractArgs_ (found, m) top
-            |> Result.andThen (\b -> extractArgs_ b bot)
-        Text _ _ -> Ok (found, m)
-        SymbolPart _ _ -> Ok (found, m)
-        Superscript _ n -> extractArgs_ (found, m) n
-        Subscript _ n -> extractArgs_ (found, m) n
-        Bracket _ _ -> Ok (found, m)
-        Sqrt _ n -> extractArgs_ (found, m) n
-        Argument _ arg -> if Set.member arg found
-            then Err ("Arg number " ++ String.fromInt arg ++ " is repeated")
-            else Ok (Set.insert arg found, max m arg)
-        Param _ arg -> Ok (Set.insert arg found, max m arg)
-    )
 
 modelParser_: Parser.Parser (Model ())
 modelParser_ = Parser.loop []
@@ -164,7 +236,7 @@ valueParser_ = Parser.oneOf
     [   Parser.succeed identity
         |. Parser.token "\\"
         |= Parser.oneOf
-            [   Parser.succeed (Fraction ()) |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
+            [   Parser.succeed (Fraction ())  |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
             ,   Parser.succeed (Sqrt ()) |. Parser.keyword "sqrt" |= bracketParser_
             ,   Parser.succeed (Argument ()) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
             ,   Parser.succeed (Param ()) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"
