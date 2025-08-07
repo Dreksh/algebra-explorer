@@ -128,7 +128,7 @@ close tracker model = case model.current of
 update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
 update convert tracker funcDict event model = case event of
     Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "mainInput-input")
-    Submit -> let (Input.Scope _ children) = model.input.entry in
+    Submit -> let (Input.Scope detail children) = Input.current model.input in
         if List.isEmpty children then (close tracker model, Ok Nothing, Cmd.none)
         else case Input.toTree funcDict model.input of
             Err err -> ((model, tracker), Err err, Cmd.none)
@@ -136,7 +136,7 @@ update convert tracker funcDict event model = case event of
                 (   (   {   newModel
                         |   options = if List.isEmpty children
                                 then newModel.options
-                                else Previous model.input.entry :: newModel.options
+                                else Previous (Input.Scope detail children) :: newModel.options
                         }
                     ,   newT
                     )
@@ -180,11 +180,11 @@ createView_ converter funcDict model inputNum width height =
                 (\entry -> case entry of
                     Default val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.default []
-                        , Html.a [class "clickable"] [Input.toLatex False [] val |> MathIcon.static []]
+                        , Html.a [class "clickable"] [Input.toLatex False [] [] val |> MathIcon.static []]
                         ]
                     Previous val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.history []
-                        , Html.a [class "clickable"] [Input.toLatex False [] val |> MathIcon.static []]
+                        , Html.a [class "clickable"] [Input.toLatex False [] [] val |> MathIcon.static []]
                         ]
                 )
                 model.options

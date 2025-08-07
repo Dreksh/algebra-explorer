@@ -1,6 +1,6 @@
 module UI.Animation exposing (
     State, stateOps,
-    Vector2, minVector2, maxVector2, addVector2, scaleVector2,
+    Vector2, minVector2, maxVector2, addVector2, subVector2, scaleVector2, descaleVector2,
     EaseState, newEase, newEaseFloat, newEaseVector2,
     setEase, current, target, advance,
     Tracker, updateTracker,
@@ -115,8 +115,14 @@ maxVector2 (x1,y1) (x2,y2) = (max x1 x2, max y1 y2)
 addVector2: Vector2 -> Vector2 -> Vector2
 addVector2 (x1, y1) (x2, y2) = (x1+x2, y1+y2)
 
+subVector2: Vector2 -> Vector2 -> Vector2
+subVector2 (x1, y1) (x2, y2) = (x2 - x1, y2-y1)
+
 scaleVector2: Float -> Vector2 -> Vector2
 scaleVector2 scale (x,y) = (x * scale, y * scale)
+
+descaleVector2: Float -> Vector2 -> Vector2
+descaleVector2 scale (x,y) = (x / scale, y / scale)
 
 advance: Float -> EaseState t -> EaseState t
 advance deltaTime (EaseState state) = let remainingTime = state.remainingTime - deltaTime |> max 0 in

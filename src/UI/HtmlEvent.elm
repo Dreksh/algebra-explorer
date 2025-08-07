@@ -6,7 +6,7 @@ module UI.HtmlEvent exposing (
 
 import Html
 import Html.Events exposing(custom, on, preventDefaultOn, stopPropagationOn)
-import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, map3, string, succeed, value)
+import Json.Decode exposing (Decoder, Value, bool, field, float, map, map2, map4, string, succeed, value)
 import Set
 
 onClick: msg -> Html.Attribute msg
@@ -57,11 +57,11 @@ onPointerMove converter move cancel = let pointerId = field "pointerId" value in
 propagatableEvents_: Set.Set String
 propagatableEvents_ = Set.fromList ["Tab", "Escape", "Enter"]
 
-onKeyDown: ((String, Bool, Bool) -> msg) -> Html.Attribute msg
+onKeyDown: ({key: String, shift: Bool, meta: Bool, time: Float} -> msg) -> Html.Attribute msg
 onKeyDown event = custom "keydown"
-    (   map3
-        (\key shift cmd ->
-            {   message = event (key, shift, cmd)
+    (   map4
+        (\key shift meta time ->
+            {   message = event {key = key, shift = shift, meta = meta, time = time}
             ,   stopPropagation = Set.member key propagatableEvents_ |> not
             ,   preventDefault = Set.member key propagatableEvents_ |> not
             }
@@ -69,4 +69,5 @@ onKeyDown event = custom "keydown"
         (field "key" string)
         (field "shiftKey" bool)
         (field "metaKey" bool)
+        (field "timeStamp" float)
     )
