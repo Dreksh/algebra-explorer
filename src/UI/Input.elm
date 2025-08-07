@@ -211,7 +211,7 @@ flushStage_ model = {model | history = History.commit model.history, previousInp
 update: Event -> Model msg -> (Model msg, String, Cmd msg)
 update event model = case event of
     Key e -> let entry = current model in
-        case (e.key, e.meta) |> Debug.log "key" of
+        case (e.key, e.meta) of
         ("z", True) ->
             (   {model | history = History.commit model.history |> History.undo }
             , "", Cmd.none)

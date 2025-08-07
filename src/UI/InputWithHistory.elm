@@ -67,7 +67,13 @@ defaultOptions_ =
             ,   Input.StrElement "=x+3"
             ]
         )
-    ,   Default (Input.Scope {fixed = True} [Input.StrElement "x(x+2)=-1" ])
+    ,   Default
+        (   Input.Scope {fixed = True}
+            [   Input.StrElement "x"
+            ,   Input.Bracket [Input.StrElement "x+2"]
+            ,   Input.StrElement "=-1"
+            ]
+        )
     ,   Default (Input.Scope {fixed = True} [Input.StrElement "2x+y=5"])
     ,   Default (Input.Scope {fixed = True} [Input.StrElement "4x+3y=11"])
     ]
