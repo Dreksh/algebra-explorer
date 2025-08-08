@@ -514,14 +514,14 @@ toEntryString_: Scope -> Result String String
 toEntryString_ (Scope _ children) = Helper.resultList (\child res -> case child of
         StrElement str -> Ok (res ++ str)
         Bracket inner -> toEntryString_ (Scope {fixed = True} inner)
-            |> Result.map (\inStr -> "(" ++ inStr ++ ")")
+            |> Result.map (\inStr -> res ++ "(" ++ inStr ++ ")")
         Fixed f -> if Array.isEmpty f.params
             then Ok (res ++ f.text)
             else Helper.resultArray (\index (innerScope, _) innerRes ->
                 toEntryString_ innerScope
                 |> Result.map (\str -> Array.set index str innerRes)
             ) (Array.repeat (Array.length f.params) "") f.params
-            |> Result.map (\arr -> f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
+            |> Result.map (\arr -> res ++ "\\" ++ f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
     ) "" children
 
 {- ## Suggestion -}
