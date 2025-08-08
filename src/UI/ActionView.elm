@@ -40,23 +40,25 @@ isOpen (Current _ open) = open
 
 -- UI-related
 
-view: (Event -> msg) -> (Actions.Event -> msg) -> Dict.Dict String (List (Actions.Action)) -> Model -> Html.Html msg
+view: (Event -> msg) -> (Actions.Event -> msg) -> List (String, (List (Actions.Action))) -> Model -> Html.Html msg
 view converter actionConvert actions (Current c s) =
     let
-        (current, show) = (min c (Dict.size actions), s)
+        numTopics = List.length actions
+        (current, show) = (min c numTopics, s)
     in
         Html.div [id "actions"]
         [   Icon.left ( if current <= 0 then [] else [HtmlEvent.onClick (Next (current - 1) |> converter), Icon.class "clickable"])
         ,   node "ul" []
             (   actions
-                |> Dict.foldl (\topic actionList (foldList, idx) ->
+                |> List.foldl (\(topic, actionList) (foldList, idx) ->
                     (   (topic, actionList |> displayTopic_ converter actionConvert current show topic idx) :: foldList
                     ,   idx + 1
                     )
                     ) ([], 0)
                 |> Tuple.first
+                |> List.reverse
             )
-        ,   Icon.right ( if current >= Dict.size actions then [] else [HtmlEvent.onClick (Next (current + 1) |> converter), Icon.class "clickable"])
+        ,   Icon.right ( if current >= numTopics then [] else [HtmlEvent.onClick (Next (current + 1) |> converter), Icon.class "clickable"])
         ]
 
 displayTopic_: (Event -> msg) -> (Actions.Event -> msg) -> Int -> Bool -> String -> Int -> List Actions.Action -> Html.Html msg
@@ -93,25 +95,28 @@ actionToHtml_ actionConvert attrs action = case action of
         in case event of
             Actions.NumericalSubstitution _ _ -> unhoverable
             Actions.Substitute -> unhoverable
-            Actions.Apply application -> if Dict.isEmpty application.parameters
+            Actions.Apply matchedRule ->
+                if Dict.isEmpty matchedRule.parameters && List.length matchedRule.matches < 2
                 then hoverable
                 else unhoverable
             _ -> hoverable
 
 
-contextualActions: (Actions.Event -> msg) -> Dict.Dict String (List Actions.Action) -> List (Html.Html msg)
+contextualActions: (Actions.Event -> msg) -> List (String, (List Actions.Action)) -> List (Html.Html msg)
 contextualActions actionConvert actionDict =
     actionDict
-    |> Dict.foldl (\topic actions foldTopics ->
+    |> List.foldl (\(topic, actions) foldTopics ->
         (   Html.div
             [class "contextualTopic"]
             (   List.foldl (\action foldActions -> case action of
                     Actions.Allowed aEvent name -> actionToHtml_ actionConvert [class "contextualAction"] action :: foldActions
                     _ -> foldActions
                 ) [] actions
+                |> List.reverse
             )
         ) :: foldTopics
         ) []
+        |> List.reverse
 
 {- Encoding and Decoding -}
 

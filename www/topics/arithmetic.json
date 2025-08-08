@@ -9,67 +9,64 @@
     "constants": {},
     "actions": [
         {
-            "title": "Cancel out",
-            "description": "Combining with their inverse, values can be cancelled out",
+            "title": "Cancel Out",
+            "description": "Combining with their inverse, variables can be cancelled out",
             "matches": [
-                {"from": "--a", "to": ["a"]},
                 {"from": "a-a", "to": ["0"]},
-                {"from": "a/a", "to": ["1"]},
-                {"from": "(a*b)/(a*c)", "to": ["b/c"]},
-                {"from": "b/(c/a)", "to": ["a*b/c"]},
-                {"from": "-(-a*b)", "to": ["a*b"]},
-                {"from": "-(a/-b)", "to": ["a/b"]},
-                {"from": "-a*-b", "to": ["a*b"]},
-                {"from": "-a/-b", "to": ["a/b"]}
+                {"from": "a*0", "to": ["0"]},
+                {"from": "a/a", "to": ["1"]}
             ]
         },
         {
-            "title": "Multiply by 1",
-            "description": "Multiplying by 1 does not change the value",
-            "matches": [{"from": "a", "to": ["a*1"]}]
+            "title": "Apply Identity",
+            "description": "Applying identity does not change the value",
+            "matches": [
+                {"from": "a", "to": ["a+0"]},
+                {"from": "a", "to": ["a-0"]},
+                {"from": "a", "to": ["a*1"]},
+                {"from": "a", "to": ["a/1"]},
+                {"from": "a", "to": ["--a"]},
+                {"from": "a", "to": ["1/1/a"]}
+            ]
         },
         {
-            "title": "Add 0",
-            "description": "Adding 0 does not change the value",
-            "matches": [{"from": "a", "to": ["a+0"]}]
-        },
-        {
-            "title": "Remove identity",
+            "title": "Remove Identity",
             "description": "Removing the identity does not affect the value",
             "matches": [
                 {"from": "a+0", "to": ["a"]},
                 {"from": "a-0", "to": ["a"]},
                 {"from": "a*1", "to": ["a"]},
-                {"from": "a/1", "to": ["a"]}
+                {"from": "a/1", "to": ["a"]},
+                {"from": "--a", "to": ["a"]},
+                {"from": "1/1/a", "to": ["a"]}
+            ]
+        },
+        {
+            "title": "Move Negation",
+            "description": "Negation can be moved to any factor of a term",
+            "matches": [
+                {"from": "-a*b", "to": ["a*-b"]},
+                {"from": "1/-a", "to": ["-1/a"]}
             ]
         },
         {
             "title": "Expand",
-            "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
+            "description": "Operations on an expression can be distributed amongst components",
             "matches": [
                 {"from": "-(a+b)", "to": ["-a-b"]},
                 {"from": "m(a+b)", "to": ["ma+mb"]},
                 {"from": "-(a*b)", "to": ["-a*b"]},
-                {"from": "a/b", "to": ["a*(1/b)"]}
+                {"from": "1/(a*b)", "to": ["1/a*1/b"]}
             ]
         },
         {
             "title": "Factorise",
-            "description": "Terms with the same factor in a sum can be grouped",
+            "description": "Sub-operations within an expression can be gathered across components",
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
                 {"from": "ma+mb", "to": ["m(a+b)"]},
-                {"from": "ma-mb", "to": ["m(a-b)"]},
-                {"from": "-a*b", "to": ["-(ab)"]},
-                {"from": "a/-b", "to": ["-(a/b)"]},
-                {"from": "a/c+b/c", "to": ["(a+b)/c"]}
-            ]
-        },
-        {   "title": "Combine",
-            "description": "Putting products of fractions into one big fraction",
-            "matches": [
-                {"from": "a*b/c", "to": ["(a*b)/c"]},
-                {"from": "a/b*c/d", "to": ["(a*c)/(b*d)"]}
+                {"from": "-a*b", "to": ["-(a*b)"]},
+                {"from": "1/a*1/b", "to": ["1/(a*b)"]}
             ]
         },
         {

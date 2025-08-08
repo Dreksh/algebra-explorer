@@ -42,7 +42,7 @@ type alias Selection =
     ,   nodes: Set.Set Int
     }
 
-matchRules: Rules.Model -> Int -> Maybe Selection -> Dict.Dict String (List Action)
+matchRules: Rules.Model -> Int -> Maybe Selection -> List (String, (List Action))
 matchRules rules numEqs selected =
     let
         loadedTopics = Rules.loadedTopics rules
@@ -51,7 +51,6 @@ matchRules rules numEqs selected =
         selectedNode = selected
             |> Maybe.andThen (\n -> Matcher.getNode n.root n.tree |> Maybe.map (\m -> (n, m)))
     in
-        Dict.fromList
         (
             ("Core", coreTopic_ rules numEqs selectedNode |> coreToList_)
         ::  (List.map (\topic ->

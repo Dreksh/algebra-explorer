@@ -38,7 +38,7 @@ type alias Model =
     {   equations: Dict.Dict Int Entry
     ,   nextEquationNum: Int
     ,   selected: Maybe (Int, Set.Set Int, Set.Set Int)  -- eq, selected, staged
-    ,   actions: Dict.Dict String (List Actions.Action)  -- actions a cache for displaying matched rules
+    ,   actions: List (String, (List Actions.Action))  -- actions a cache for displaying matched rules
     ,   createModeForEquation: Maybe Int
     ,   recencyList: List Int
     -- Command creators
@@ -108,7 +108,7 @@ init setCapture updateQuery svgMouseCmd tracker l =
         (   {   equations = Dict.fromList eqList
             ,   nextEquationNum = size
             ,   selected = Nothing
-            ,   actions = Dict.empty
+            ,   actions = []
             ,   createModeForEquation = Nothing
             ,   recencyList = []
             ,   setCapture = setCapture
@@ -320,6 +320,33 @@ reset tracker model = selectedEquation_ model
             )
         )
 
+-- a fallback selection is needed in case another or no equation is selected
+-- TODO: clean up since this is a bit ugly
+swapSelectedIfNecessary_: Int -> Rules.Model -> Model -> Model
+swapSelectedIfNecessary_ eq rules model =
+    let
+        selEq = model.selected |> Maybe.map (\(sel, _, _) -> sel)
+        newSelected = if selEq == Just eq
+            then model.selected
+            else (
+                model.equations
+                |> Dict.get eq
+                |> Maybe.map (\entry ->
+                    entry.history
+                    |> History.current
+                    |> Tuple.first
+                    |> .root
+                    |> Math.getState
+                    |> Matcher.getID
+                    |> \id -> (eq, Set.singleton id, Set.empty)
+                    )
+                )
+        newActions = if selEq == Just eq
+            then model.actions
+            else updateActions_ newSelected rules model.equations
+    in
+        { model | selected = newSelected, actions = newActions }
+
 revert_: Int -> Int -> Rules.Model -> Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
 revert_ eq idx rules tracker model = Dict.get eq model.equations
     |> Maybe.map (\entry ->
@@ -352,7 +379,7 @@ updateSelected_ eq node combine rules model =
     in
         { model | selected = selected, actions = actions }
 
-updateActions_: Maybe (Int, Set.Set Int, Set.Set Int) -> Rules.Model -> Dict.Dict Int Entry -> Dict.Dict String (List Actions.Action)
+updateActions_: Maybe (Int, Set.Set Int, Set.Set Int) -> Rules.Model -> Dict.Dict Int Entry -> List (String, (List Actions.Action))
 updateActions_ selected rules equations =
     let
         selection = selected
@@ -433,10 +460,9 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
         let
             newModel = {model | recencyList = updateEqOrder_ eq model.recencyList}
             resModelTracker = case he of
-                History.Stage staged -> let sel = newModel.selected |> Maybe.withDefault (eq, Set.empty, Set.empty) in case staged of
-                    -- a fallback selection is needed in case no equation is selected TODO: clean up since this is a bit ugly
-                    History.Undo -> undo tracker {newModel | selected = Just sel}
-                    History.Redo -> redo tracker {newModel | selected = Just sel}
+                History.Stage staged -> case staged of
+                    History.Undo -> undo tracker (swapSelectedIfNecessary_ eq rules newModel)
+                    History.Redo -> redo tracker (swapSelectedIfNecessary_ eq rules newModel)
                     _ -> Err "Change should only be staged via Actions.Event, invariant violated"
                 History.Reset -> reset tracker newModel
                 History.Revert idx -> revert_ eq idx rules tracker newModel
@@ -644,8 +670,8 @@ historyEntry_ converter current eqNum index inner = Html.a
     [inner]
 
 brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.Attribute Event)
-brickAttr_ highlight eqNum id draggable =
-    (   case draggable of
+brickAttr_ highlight eqNum id commutable =
+    (   case commutable of
             Nothing ->
                 [   HtmlEvent.onPointerCapture identity (PointerDown eqNum id -1 [])
                 ]
@@ -660,15 +686,6 @@ encode: Model -> Encode.Value
 encode model = Encode.object
     [   (   "equations", Encode.dict String.fromInt encodeEntry_ model.equations)
     ,   (   "nextEquationNum", Encode.int model.nextEquationNum)
-    -- TODO: add back .selected along with .actions
-    -- ,   (   "selected"
-    --     ,   case model.selected of
-    --         Nothing -> Encode.null
-    --         Just (eq, nodes) -> Encode.object
-    --             [   ("eq", Encode.int eq)
-    --             ,   ("nodes", Encode.set Encode.int nodes)
-    --             ]
-    --     )
     ,   (   "createModeForEquation"
         ,   case model.createModeForEquation of
             Nothing -> Encode.null
@@ -694,13 +711,9 @@ encodeHistoryState_ (eq, l) = Encode.object
 
 decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
-decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing Dict.empty create [] setCapture svgMouseCmd updateQuery, t))
+decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing [] create [] setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (   Decode.field "nextEquationNum" Decode.int)
-    -- TODO: add back .selected along with .actions
-    -- (   Decode.field "selected"
-    --     <| Decode.maybe <| Decode.map2 Tuple.pair (Decode.field "eq" Decode.int) (Decode.field "nodes" <| Decode.map Set.fromList <| Decode.list Decode.int)
-    -- )
     (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
 type alias TmpEntry_ =

@@ -279,3 +279,14 @@ Rules
 Matcher
   /
 Math
+
+### What to use as Rules?
+* maybe need to remove some
+  * e.g. a-b = -(b+a) is actually a-b = --(a-b) = -(-a--b) = (-a+b)
+  * e.g. ma-mb = m(a-b) is actually ma-mb = ma+m(-b) = m(a+(-b)) = m(a-b)
+
+* why not reversible rules?
+  * "I tried reversible rules, but it didn't make the 'understanding' of it easier. like we'll provide the pair with the same name, and m(a+b) and am+bm will both be named as the equivalent rule."
+
+    "At the same time, "expand"/"simplify" has many different meanings, many different transformations, so having a grouping related to what type of action to perform might be easier than saying exactly which reversible rule it belongs to."
+  * also if you reverse e.g. a-a=0 then you need parameters
