@@ -3,8 +3,8 @@
     "functions":{
         "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"},
         "logarithm": {"arguments": 2, "associative": false, "commutative": false, "latex": "log_\\param{1}\\arg{2}"},
-        "lnlogarithm": {"arguments": 1, "latex": "ln(\\arg{1})"},
-        "log10logarithm": {"arguments": 1, "latex": "log(\\arg{1})"}
+        "ln": {"arguments": 1, "latex": "ln(\\arg{1})"},
+        "log10": {"arguments": 1, "latex": "log(\\arg{1})"}
     },
     "constants": {
         "e": "Math.E"
@@ -22,7 +22,10 @@
             "title": "To log",
             "description": "Convert anything into a log with the specific base",
             "parameters": {
-                "\\base": "The base of the log to use"
+                "\\base": {
+                    "description": "The base of the log to use",
+                    "example": "e"
+                }
             },
             "matches": [
                 {"from": "a", "to": ["\\logarithm(\\base,\\power(\\base, a))"]}
@@ -31,7 +34,10 @@
         {   "title": "Change of base",
             "description": "Rewrite the log in terms of a combination of a different base",
             "parameters": {
-                "\\base": "The new base to use"
+                "\\base": {
+                    "description": "The new base to use",
+                    "example": "e"
+                }
             },
             "matches": [
                 {"from": "\\logarithm(a,b)", "to": ["\\logarithm(\\base,b)/\\logarithm(\\base,a)"]}

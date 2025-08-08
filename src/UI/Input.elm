@@ -1,4 +1,5 @@
-module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), init, update, clear, set, current, view, toLatex, toTree)
+module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), defaultScopeDetail,
+    init, initWithFixed, update, clear, set, current, view, toLatex, toTree, toString, fromString)
 
 import Array
 import Dict
@@ -7,6 +8,7 @@ import Html.Attributes exposing (class, id, name, style, type_)
 import Html.Keyed
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Parser exposing ((|=), (|.))
 import Set
 -- Ours
 import Helper
@@ -22,7 +24,8 @@ import UI.MathIcon as MathIcon
 import UI.SvgDrag as SvgDrag
 
 -- Scope is always editable and capable of inserting & deleting. But the scope itself cannot be deleted.
-type Scope = Scope {fixed: Bool} (List ScopeElement)
+type Scope = Scope ScopeDetail (List ScopeElement)
+type alias ScopeDetail = {inseparable: Bool, immutable: Bool}
 type ScopeElement =
     StrElement String -- Must not be empty string, they should be handled by removing them
     | Fixed
@@ -33,6 +36,7 @@ type ScopeElement =
         ,   lastNode: Maybe Int
         }
     | Bracket (List ScopeElement)
+    | InnerScope Scope
 -- For Fixed models, the arguments can be in any order.
 -- So the default behaviour is to jump out of the fixed scope.
 -- If there is any overrides, it will use that to determine the next sibling to go to
@@ -72,12 +76,27 @@ type Event =
     | HelperInput String
     | HelperClear
 
+defaultScopeDetail: ScopeDetail
+defaultScopeDetail = {inseparable = True, immutable = False}
+
 init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
-    {   history = History.init (Scope {fixed = True} [])
+    {   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
     ,   functionInput = Nothing
     ,   cursor = [0]
+    ,   holderID = holderID
+    ,   showCursor = False
+    ,   mouseCmd = mouseCmd
+    ,   focusCmd = focusCmd
+    }
+initWithFixed: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String
+    -> List ScopeElement -> CaretPosition -> Model msg
+initWithFixed mouseCmd focusCmd holderID elements pos =
+    {   history = History.init (Scope {inseparable = True, immutable = True} elements)
+    ,   previousInput = Nothing
+    ,   functionInput = Nothing
+    ,   cursor = pos
     ,   holderID = holderID
     ,   showCursor = False
     ,   mouseCmd = mouseCmd
@@ -96,7 +115,7 @@ set (Scope detail children) model =
 clear: Model msg -> Model msg
 clear model =
     {   model
-    |   history = History.init (Scope {fixed = True} [])
+    |   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
     ,   functionInput = Nothing
     ,   cursor = [0]
@@ -151,8 +170,9 @@ toLatex border parentPos pos (Scope _ children) =
             StrElement text -> [Latex.Text state text]
             Fixed n -> Latex.map (\_ -> state ) n.latex
                 |> Latex.replace (Array.map (Tuple.first >> toLatex True state []) n.params)
-            Bracket inner -> toLatex True state [] (Scope {fixed = True} inner)
+            Bracket inner -> toLatex True state [] (Scope defaultScopeDetail inner)
                 |> \newInner -> [Latex.Bracket state newInner]
+            InnerScope inScope -> toLatex True state [] inScope
     in
     List.foldl
     (\elem (model, index) -> let childPos = parentPos ++ [index] in
@@ -176,8 +196,10 @@ toLatex border parentPos pos (Scope _ children) =
                                 n.params
                             )
                     Bracket inner -> if x /= index then noCaret childPos elem
-                        else toLatex True (childPos ++ [0]) other (Scope {fixed = True} inner)
+                        else toLatex True (childPos ++ [0]) other (Scope defaultScopeDetail inner)
                             |> \newInner -> [ Latex.Bracket (childPos ++ [0]) newInner]
+                    InnerScope inner -> if x /= index then noCaret childPos elem
+                        else toLatex True (childPos ++ [0]) other inner
         ,   index + 1
         )
     ) ([], 0) children
@@ -281,48 +303,60 @@ cursorMove_: Direction_ -> Model msg -> Model msg
 cursorMove_ direction model = let (Scope d children) = current model in
     case cursorNext_ direction (Scope d children) model.cursor of
         FoundCursor newC -> {model | cursor = newC}
-        PreviousCursor -> {model | cursor = [0]}
-        NextCursor -> {model | cursor = [List.length children]}
-        UpCursor -> {model | cursor = [0]}
-        DownCursor -> {model | cursor = [List.length children]}
+        _ -> model
 
 cursorNext_: Direction_ -> Scope -> CaretPosition -> CursorDecision_
-cursorNext_ direction (Scope _ children) caret =
+cursorNext_ direction (Scope detail children) caret =
     let
-        getPrevious midPoint = if midPoint <= 0 then PreviousCursor
-            else case List.drop (midPoint-1) children |> List.head of
+        getPrevious d c midPoint = if midPoint <= 0 then PreviousCursor
+            else case List.drop (midPoint-1) c |> List.head of
                 Nothing -> PreviousCursor
-                Just (StrElement str) -> FoundCursor
-                    (if String.length str <= 1 then [midPoint-1] else [midPoint-1, String.length str - 1])
+                Just (StrElement str) -> if d.immutable then getPrevious d c (midPoint - 1)
+                    else FoundCursor (if String.length str <= 1 then [midPoint-1] else [midPoint-1, String.length str - 1])
                 Just (Fixed f) -> case f.lastNode of
-                    Nothing -> FoundCursor [midPoint - 1]
-                    Just n -> FoundCursor [midPoint - 1, n, 0] -- TODO: Get size of the nth arg
-                Just (Bracket inner) -> FoundCursor [midPoint-1,0,List.length inner]
-        getNext midPoint = case List.drop midPoint children |> List.head of
+                    Nothing -> if d.immutable then getPrevious d c (midPoint - 1)
+                        else FoundCursor [midPoint - 1]
+                    Just n -> case Array.get n f.params of
+                        Nothing -> FoundCursor [midPoint - 1, n, 0]
+                        Just (Scope _ inS, _) -> FoundCursor [midPoint - 1, n, List.length inS]
+                Just (Bracket inner) -> if d.immutable then getPrevious d c (midPoint - 1)
+                    else FoundCursor [midPoint-1,0,List.length inner]
+                Just (InnerScope (Scope inDetail inner)) -> if inDetail.immutable
+                    then if d.immutable then getPrevious d c (midPoint - 1) else FoundCursor [midPoint - 1]
+                    else FoundCursor [ midPoint - 1, 0, List.length inner]
+        getNext d c midPoint = case List.drop midPoint children |> List.head of
             Nothing -> NextCursor
-            Just (StrElement str) -> FoundCursor
-                (if String.length str <= 1 then [midPoint+1] else [midPoint, 1])
+            Just (StrElement str) -> if d.immutable then getNext d c (midPoint + 1)
+                else FoundCursor (if String.length str <= 1 then [midPoint+1] else [midPoint, 1])
             Just (Fixed f) -> case f.firstNode of
-                Nothing -> FoundCursor [midPoint + 1]
+                Nothing -> if d.immutable then getNext d c (midPoint + 1) else FoundCursor [midPoint + 1]
                 Just n -> FoundCursor [midPoint, n, 0]
-            Just (Bracket _) -> FoundCursor [midPoint,0,0]
+            Just (Bracket _) -> if d.immutable then getNext d c (midPoint + 1)
+                else FoundCursor [midPoint,0,0]
+            Just (InnerScope (Scope inDetail _)) -> if inDetail.immutable
+                then if d.immutable then getNext d c midPoint else FoundCursor [midPoint + 1]
+                else FoundCursor [midPoint, 0, 0]
     in
     case caret of
     [] -> FoundCursor []
     [x] -> case direction of
         Up_ -> UpCursor
         Down_ -> DownCursor
-        Left_ -> getPrevious x
-        Right_ -> getNext x
+        Left_ -> getPrevious detail children x
+        Right_ -> getNext detail children x
     (x::y::others) ->
         case List.drop x children |> List.head of
-            Just (StrElement str) -> case direction of
+            Just (StrElement str) ->
+                case direction of
                 Up_ -> UpCursor
                 Down_ -> DownCursor
-                Left_ -> FoundCursor (if y == 1 then [x] else [x, y - 1])
-                Right_ -> FoundCursor (if y + 1 == String.length str then [x + 1] else [x, y + 1])
+                Left_ -> if detail.immutable then getPrevious detail children x
+                    else FoundCursor (if y == 1 then [x] else [x, y - 1])
+                Right_ -> if detail.immutable then getNext detail children (x + 1)
+                    else FoundCursor (if y + 1 == String.length str then [x + 1] else [x, y + 1])
             Just (Fixed f) -> case Array.get y f.params of
-                Nothing -> FoundCursor [x] -- reset to right before the fixed element
+                Nothing -> if detail.immutable then getPrevious detail children x
+                    else FoundCursor [x] -- reset to right before the fixed element
                 Just (inScope, overrides) -> cursorNext_ direction inScope others
                     |> \res -> case res of
                         FoundCursor c -> FoundCursor (x::y::c)
@@ -333,19 +367,28 @@ cursorNext_ direction (Scope _ children) caret =
                             Nothing -> DownCursor
                             Just n -> FoundCursor [x, n, 0] -- TODO: Approach from % through the scope
                         PreviousCursor -> case overrides.left of
-                            Nothing -> FoundCursor [x]
-                            Just n -> FoundCursor [x, n, 0] -- TODO: Approach from behind
+                            Nothing -> if detail.immutable then getPrevious detail children x else FoundCursor [x]
+                            Just n -> case Array.get n f.params of
+                                Nothing -> FoundCursor [x,n,0]
+                                Just (Scope _ newC, _) -> FoundCursor [x,n,List.length newC]
                         NextCursor -> case overrides.right of
-                            Nothing -> FoundCursor [x+1]
+                            Nothing -> if detail.immutable then getNext detail children (x + 1) else FoundCursor [x+1]
                             Just n -> FoundCursor [x, n, 0]
-            Just (Bracket inner) -> cursorNext_ direction (Scope {fixed = True} inner) others
+            Just (Bracket inner) -> cursorNext_ direction (Scope detail inner) others
                 |> \res -> case res of
                     FoundCursor c -> FoundCursor (x::y::c)
                     UpCursor -> UpCursor
                     DownCursor -> DownCursor
-                    PreviousCursor -> FoundCursor [x]
-                    NextCursor -> FoundCursor [x+1]
-            Nothing -> FoundCursor [x] -- reset to previous
+                    PreviousCursor -> if detail.immutable then getPrevious detail children x else FoundCursor [x]
+                    NextCursor -> if detail.immutable then getNext detail children (x + 1) else FoundCursor [x+1]
+            Just (InnerScope inner) -> cursorNext_ direction inner others
+                |> \res -> case res of
+                    FoundCursor c -> FoundCursor (x::y::c)
+                    UpCursor -> UpCursor
+                    DownCursor -> DownCursor
+                    PreviousCursor -> if detail.immutable then getPrevious detail children x else FoundCursor [x]
+                    NextCursor -> if detail.immutable then getNext detail children (x + 1) else FoundCursor [x+1]
+            Nothing -> if detail.immutable then getPrevious detail children x else FoundCursor [x] -- reset to previous
 
 {- ## Click -}
 
@@ -383,8 +426,9 @@ type TraversalCase_ =
 type TraversalError_  =
     BrokenCaret -- For when the position cannot be found
     | CannotSplitArgument_
+    | CannotModifySection_
 
-traverse: ({fixed: Bool} -> TraversalCase_ -> Result TraversalError_ (List ScopeElement, CaretPosition))
+traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (List ScopeElement, CaretPosition))
     -> Scope -> CaretPosition -> Result TraversalError_ (List ScopeElement, CaretPosition)
 traverse process (Scope detail children) caret = case caret of
     [] -> Err BrokenCaret
@@ -398,15 +442,18 @@ traverse process (Scope detail children) caret = case caret of
                     |> Result.andThen (\(newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
                         Ok (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos)
                     )
-            (Bracket kids :: after) -> traverse process (Scope {fixed = True} kids) others
+            (Bracket kids :: after) -> traverse process (Scope detail kids) others
                 |> Result.map (\(newChildren, pos) -> (prev ++ (Bracket newChildren) :: after, x::y::pos))
+            (InnerScope (Scope inD inC) :: after) -> traverse process (Scope inD inC) others
+                |> Result.map (\(newChildren, pos) -> (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos))
             _ -> Err BrokenCaret
 
 {- ## Insertion -}
 
 insertChar_: Char -> Model msg -> Result String (Model msg)
-insertChar_ char model = traverse
-    (\parent input -> if parent.fixed && char == ',' then Err CannotSplitArgument_
+insertChar_ char model = let (Scope detail children) = current model in
+    traverse
+    (\parent input -> if parent.inseparable && char == ',' then Err CannotSplitArgument_
         else Ok
         (   case input of
             TextCase prev str num next ->
@@ -427,13 +474,14 @@ insertChar_ char model = traverse
                             )
         )
     )
-    (current model) model.cursor
+    (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (l,c) -> Ok {model | history = History.stage (Scope {fixed = True} l) model.history, cursor = c}
+        Ok (l,c) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
 insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
-insertScopeElement_ firstNode element model = traverse
+insertScopeElement_ firstNode element model = let (Scope detail children) = current model in
+    traverse
     (\_ input -> Ok
         (   case input of
                 TextCase prev str num next ->
@@ -453,24 +501,25 @@ insertScopeElement_ firstNode element model = traverse
                     )
         )
     )
-    (current model) model.cursor
+    (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (l,c) -> Ok {model | history = History.stage (Scope {fixed = True} l) model.history, cursor = c}
+        Ok (l,c) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
 latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
 latexArray_ fixed latex = Latex.extractArgs latex
     |> Result.map (\dict -> if fixed
-        then Dict.foldl (\_ override -> Array.push (Scope {fixed = True} [], override)) Array.empty dict
-        else Array.fromList [(Scope {fixed = False} [], noOverride_)]
+        then Dict.foldl (\_ override -> Array.push (Scope defaultScopeDetail [], override)) Array.empty dict
+        else Array.fromList [(Scope defaultScopeDetail [], noOverride_)]
     )
 
 {- ## Deletion -}
 
 delete_: Bool -> Model msg -> Model msg
-delete_ forwards model = traverse
-    (\_ input -> Ok
-        (   case input of
+delete_ forwards model = let (Scope detail children) = current model in
+    traverse
+    (\scopeDetail input -> if scopeDetail.immutable then Err CannotModifySection_
+        else Ok (   case input of
             TextCase prev str num next -> if forwards
                 then
                     (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
@@ -487,6 +536,7 @@ delete_ forwards model = traverse
                         Just (StrElement str) -> prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
                         Just (Fixed _) -> prev ++ List.drop 1 next
                         Just (Bracket _) -> prev ++ List.drop 1 next
+                        Just (InnerScope _) -> prev ++ List.drop 1 next
                     ,   [List.length prev]
                     )
                 else let beforeLength = List.length prev - 1 in
@@ -499,29 +549,35 @@ delete_ forwards model = traverse
                         [Bracket _] -> (List.take beforeLength prev ++ next, [beforeLength])
                         _ -> (next, [0])
         )
-    ) (current model) model.cursor
+    )
+    (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (children, c) -> {model | history = History.stage (Scope {fixed = True} children) model.history, cursor = c}
+        Ok (l, c) -> {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> model
 
 {- ## Extraction -}
 
 toTree: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String Display.FullEquation
-toTree dict model = toEntryString_ (current model)
+toTree dict model = toString model
     |> Result.andThen (Matcher.parseEquation dict Animation.stateOps)
+
+toString: Model msg -> Result String String
+toString model = toEntryString_ (current model)
 
 toEntryString_: Scope -> Result String String
 toEntryString_ (Scope _ children) = Helper.resultList (\child res -> case child of
         StrElement str -> Ok (res ++ str)
-        Bracket inner -> toEntryString_ (Scope {fixed = True} inner)
+        Bracket inner -> toEntryString_ (Scope defaultScopeDetail inner)
             |> Result.map (\inStr -> res ++ "(" ++ inStr ++ ")")
         Fixed f -> if Array.isEmpty f.params
-            then Ok (res ++ f.text)
+            then Ok (res ++ "\\" ++ f.text)
             else Helper.resultArray (\index (innerScope, _) innerRes ->
                 toEntryString_ innerScope
                 |> Result.map (\str -> Array.set index str innerRes)
             ) (Array.repeat (Array.length f.params) "") f.params
             |> Result.map (\arr -> res ++ "\\" ++ f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
+        InnerScope inner -> toEntryString_ inner
+            |> Result.map (\inStr -> res ++ inStr)
     ) "" children
 
 {- ## Suggestion -}
@@ -531,60 +587,59 @@ defaultOps = Set.fromList ["+", "-", "*", "/", "="]
 
 displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String
     -> (List (String, Html.Html Event), String -> ScopeElement)
-displaySuggestions_ functions input =
-    let
-        inputOrder = letterOrder_ input
-        createLatex name args =
-            [   Latex.Text () name
-            ,   Latex.Bracket ()
-                (List.range 1 args |> List.map (Latex.Argument ()) |> List.intersperse (Latex.Text () ","))
-            ]
-        funcPropToLatex key value = case value.property of
-            Math.VariableNode n -> case n.state.latex of
-                Just l -> (True, l)
-                Nothing -> let l = createLatex key 1 in (False, l)
-            Math.UnaryNode n -> case n.state.latex of
-                Just l -> (True, l)
-                Nothing -> let l = createLatex key 1 in (True, l)
-            Math.BinaryNode n -> case n.state.latex of
-                Just l -> (not n.associative, l)
-                Nothing -> if n.associative
-                    then let l = createLatex key 1 in (False, l)
-                    else let l = createLatex key 2 in (True, l)
-            Math.GenericNode n -> case n.state.latex of
-                Just l -> (True, l)
-                Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (True, l)
-            _ -> let l = createLatex key 1 in (False, l)
-        functionSymbols = functions
-            |> Dict.filter (\key _ -> Set.member key defaultOps |> not)
-            |> Dict.toList
-            |> List.map (\(key, value) -> let (fixed, latex) = funcPropToLatex key value in
-                (   cosineCorrelation_ inputOrder (letterOrder_ key)
-                ,   (   key
-                    -- don't use onClick, because some onBlurs get triggered first
-                    ,   Html.a
-                        [   class "clickable"
-                        ,   HtmlEvent.onPointerCapture identity
-                            (\_ _ -> InsertFixed (fixedFrom_ ("\\" ++ key) fixed latex))
-                        ]
-                        [MathIcon.static [] latex]
-                    )
-                )
+displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
+    Dict.keys functions
+    |> List.filter (\key -> Set.member key defaultOps |> not)
+    |> List.map (\key -> let (fixed, latex) = funcPropToLatex_ functions key in
+        (   cosineCorrelation_ inputOrder (letterOrder_ key)
+        ,   (   key
+            -- don't use onClick, because some onBlurs get triggered first
+            ,   Html.a
+                [   class "clickable"
+                ,   HtmlEvent.onPointerCapture identity
+                    (\_ _ -> InsertFixed (fixedFrom_ ("\\" ++ key) fixed Array.empty latex))
+                ]
+                [MathIcon.static [] latex]
             )
-    in
-        List.sortBy (\(corr, _) -> -corr) functionSymbols
-        |> \list ->
-            (   List.map Tuple.second list
-            ,   \str -> case Dict.get str functions of
-                    Nothing ->
-                        fixedFrom_ ("\\" ++ str) False
-                        [Latex.Text () str, Latex.Bracket () [Latex.Argument () 1]]
-                    Just value -> let (fixed, latex) = funcPropToLatex str value in
-                        fixedFrom_ ("\\" ++ str) fixed latex
-            )
+        )
+    )
+    |> List.sortBy (\(corr, _) -> -corr)
+    |> \list ->
+        (   List.map Tuple.second list
+        ,   \str -> let (fixed, latex) = funcPropToLatex_ functions str in
+                fixedFrom_ ("\\" ++ str) fixed Array.empty latex
+        )
 
-fixedFrom_: String -> Bool -> Latex.Model () -> ScopeElement
-fixedFrom_ text fixed latex =
+funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model ())
+funcPropToLatex_ funcDict key = case Dict.get key funcDict of
+    Nothing -> (False, [Latex.Text () key, Latex.Bracket () [Latex.Argument () 1]])
+    Just value ->
+        let
+            createLatex name args =
+                [   Latex.Text () name
+                ,   Latex.Bracket ()
+                    (List.range 1 args |> List.map (Latex.Argument ()) |> List.intersperse (Latex.Text () ","))
+                ]
+        in
+        case value.property of
+        Math.VariableNode n -> case n.state.latex of
+            Just l -> (True, l)
+            Nothing -> let l = createLatex key 1 in (False, l)
+        Math.UnaryNode n -> case n.state.latex of
+            Just l -> (True, l)
+            Nothing -> let l = createLatex key 1 in (True, l)
+        Math.BinaryNode n -> case n.state.latex of
+            Just l -> (not n.associative, l)
+            Nothing -> if n.associative
+                then let l = createLatex key 1 in (False, l)
+                else let l = createLatex key 2 in (True, l)
+        Math.GenericNode n -> case n.state.latex of
+            Just l -> (True, l)
+            Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (True, l)
+        _ -> let l = createLatex key 1 in (False, l)
+
+fixedFrom_: String -> Bool -> Array.Array (List ScopeElement) -> Latex.Model () -> ScopeElement
+fixedFrom_ text fixed args latex =
     let
         defaultStart =
             (   {topLast = Nothing, midLast = Just -1, botLast  = Nothing}
@@ -658,7 +713,12 @@ fixedFrom_ text fixed latex =
             {   text = text
             ,   latex = latex
             ,   params = Dict.toList dict1
-                    |> List.map (\(_, override) -> (Scope {fixed = fixed} [], override))
+                    |> List.map (\(i, override) ->
+                        (   Scope {inseparable = fixed, immutable = False}
+                            (Array.get i args |> Maybe.withDefault [])
+                        ,   override
+                        )
+                    )
                     |> Array.fromList
             ,   firstNode = first
             ,   lastNode = getLastest ref
@@ -691,3 +751,67 @@ cosineCorrelation_ left right = List.range 0 35
     ) (0, 0, 0)
     |> \(cross, l, r) -> if l == 0 || r == 0 then -1
         else cross / sqrt (l * r)
+
+{- ## conversions -}
+
+fromString: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> Result String (List ScopeElement)
+fromString funcDict str = Parser.run (scopeParser_ funcDict|. Parser.end) str
+    |> \res -> case res of
+        Err _ -> Err "Something went wrong parsing into scopes"
+        Ok list -> Ok list
+
+
+scopeParser_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Parser.Parser (List ScopeElement)
+scopeParser_ funcDict = Parser.loop []
+    (\prev -> Parser.oneOf
+        [   textParser_ |> Parser.map (\elem -> Parser.Loop (elem :: prev))
+        ,   Parser.succeed Bracket |. Parser.token "(" |= scopeParser_ funcDict |. Parser.token ")"
+            |> Parser.map (\elem -> Parser.Loop (elem :: prev))
+        ,   fixedParser_ funcDict |> Parser.map (\elem -> Parser.Loop (elem :: prev))
+        ,   Parser.succeed (Parser.Done prev)
+        ]
+    )
+    |> Parser.map List.reverse
+
+textParser_: Parser.Parser ScopeElement
+textParser_ = Parser.variable
+    {   start = \c -> Set.member c allowedChars_
+    ,   inner = \c -> Set.member c allowedChars_
+    ,   reserved = Set.empty
+    }
+    |> Parser.map StrElement
+
+nameParser_: Parser.Parser String
+nameParser_ = Parser.variable
+    {   start = Char.isAlphaNum
+    ,   inner = Char.isAlphaNum
+    ,   reserved = Set.empty
+    }
+
+fixedParser_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Parser.Parser ScopeElement
+fixedParser_ funcDict = Parser.succeed
+    (\name args -> let (fixed, latex) = funcPropToLatex_ funcDict name in
+        fixedFrom_ ("\\" ++ name) fixed
+            ((if fixed then args else [List.intersperse [StrElement ","] args |> List.concat]) |> Array.fromList)
+            latex
+    )
+    |. Parser.token "\\"
+    |= nameParser_
+    |= Parser.oneOf
+        [   Parser.succeed identity
+            |. Parser.token "("
+            |= Parser.loop []
+                (\prev -> Parser.oneOf
+                    [   Parser.succeed
+                        (\inner done -> if done then Parser.Done (List.reverse (inner :: prev)) else Parser.Loop (inner::prev))
+                        |= scopeParser_ funcDict
+                        |= Parser.oneOf
+                            [   Parser.succeed True |. Parser.token ")"
+                            ,   Parser.succeed False |. Parser.token ","
+                            ]
+                    ,   Parser.succeed (Parser.Done prev)
+                    ]
+                )
+        ,   Parser.succeed []
+        ]
+

@@ -6,6 +6,7 @@
             "description": "Covers addition, subtraction, multiplication and division."
         },
         "Fractions": {
+            "preinstall": true,
             "url": "topics/fractions.json",
             "description": "Covers fractions and mixed numbers."
         },

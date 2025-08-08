@@ -2,7 +2,7 @@ module Algo.Matcher exposing (
     State, StateOp, getID, getState, getName, encodeState, stateDecoder,
     Equation, parseEquation, getNode, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
-    Replacement, toReplacement, encodeReplacement, replacementDecoder,
+    Replacement, toReplacement, toSubstitution, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
     groupSubtree, ungroupSubtree, setChildIndex, refreshFuncProp,
     selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
@@ -164,6 +164,24 @@ Replacement are blueprints to reconstruct equations
 --}
 
 type alias Replacement prop = Math.Tree (Maybe prop, Maybe Int)
+
+toSubstitution: Dict.Dict String {a | property: Math.FunctionProperty prop} -> String -> Result String (String, Replacement prop)
+toSubstitution funcProps str =
+    let
+        checkUniqueName name _ set = if Set.member name set
+            then Err (name ++ " has been used twice in the definition of a generic function")
+            else Ok (Set.insert name set)
+    in
+    case String.split "=" str of
+    [x, y] -> parseMatcher checkUniqueName funcProps Set.empty x
+        |> Result.andThen (\(matcherRoot, _) -> case matcherRoot of
+            AnyMatcher n -> List.indexedMap (\i arg -> (arg, (0, i))) n.arguments
+                |> Dict.fromList
+                |> \argDict -> toReplacement funcProps False argDict y
+                |> Result.map (\replacement -> (n.name, replacement))
+            _ -> Err "Expecting the left of the equation to be a generic variable or a generic function"
+        )
+    _ -> Err "Must be an equation that defines a variable or a function"
 
 toReplacement: Dict.Dict String {a | property: Math.FunctionProperty prop} -> Bool -> Dict.Dict String (Int, Int) -> String -> Result String (Replacement prop)
 toReplacement funcProps strict argDict = Math.parse funcProps >> Result.andThen (toReplacement_ identity strict argDict)

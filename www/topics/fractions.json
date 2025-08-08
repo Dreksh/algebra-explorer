@@ -21,7 +21,10 @@
             "title": "Change denominator",
             "description": "When you split the cake into smaller chunks, you also get more chunks",
             "parameters": {
-                "\\multiplier": "Number of times to split it. It will be multiplied on both the top and bottom of the fraction"
+                "\\multiplier": {
+                    "description": "Number of times to split it. It will be multiplied on both the top and bottom of the fraction",
+                    "example": "1"
+                }
             },
             "matches": [{"from": "\\fraction(a,b)", "to": ["\\fraction(a*\\multiplier,b*\\multiplier)"]}]
         },

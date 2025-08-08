@@ -48,17 +48,17 @@ type Event =
 
 defaultOptions_: List Selection
 defaultOptions_ =
-    [   Default (Input.Scope {fixed = True} [Input.StrElement "x+4=5"])
+    [   Default (Input.Scope Input.defaultScopeDetail [Input.StrElement "x+4=5"])
     ,   Default
-        (   Input.Scope {fixed = True}
+        (   Input.Scope Input.defaultScopeDetail
             [   Input.Fixed
-                {   text = "\\f"
+                {   text = "f"
                 ,   latex =
                     [   Latex.Text () "f"
                     ,   Latex.Bracket () [Latex.Argument () 1]
                     ]
                 ,   params = Array.fromList
-                    [(Input.Scope {fixed = False} [Input.StrElement "x"]
+                    [(Input.Scope {inseparable = False, immutable = False} [Input.StrElement "x"]
                     ,{up = Nothing, down = Nothing, left = Nothing, right = Nothing}
                     )]
                 ,   firstNode = Just 1
@@ -68,14 +68,14 @@ defaultOptions_ =
             ]
         )
     ,   Default
-        (   Input.Scope {fixed = True}
+        (   Input.Scope Input.defaultScopeDetail
             [   Input.StrElement "x"
             ,   Input.Bracket [Input.StrElement "x+2"]
             ,   Input.StrElement "=-1"
             ]
         )
-    ,   Default (Input.Scope {fixed = True} [Input.StrElement "2x+y=5"])
-    ,   Default (Input.Scope {fixed = True} [Input.StrElement "4x+3y=11"])
+    ,   Default (Input.Scope Input.defaultScopeDetail [Input.StrElement "2x+y=5"])
+    ,   Default (Input.Scope Input.defaultScopeDetail [Input.StrElement "4x+3y=11"])
     ]
 
 init: Bool -> (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Model msg

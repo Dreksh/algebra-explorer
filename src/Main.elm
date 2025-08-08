@@ -39,6 +39,7 @@ import UI.InputWithHistory as InputWithHistory
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
+import UI.Dialog as Dialog
 
 -- Overall Structure of the app: it's a document
 
@@ -65,8 +66,8 @@ setCapture s e p = capture {set = s, eId = e, pId = p}
 displayMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd msg
 displayMouseCmd id pId (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y, pointerID = pId}
 
-mainInputMouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
-mainInputMouseCmd pId (x, y) = svgMouseBegin {id = "mainInput", x=x, y=y, pointerID = pId}
+inputMouseCmd: String -> Encode.Value -> (Float, Float) -> Cmd msg
+inputMouseCmd name pId (x, y) = svgMouseBegin {id = name, x=x, y=y, pointerID = pId}
 
 -- Types
 
@@ -104,6 +105,7 @@ type Event =
     | ActionViewEvent ActionView.Event
     | InputEvent InputWithHistory.Event
     | SvgDragEvent SvgDrag.Raw
+    | DialogEvent Dialog.Event
     -- Event from the UI
     | NoOp -- For setting focus on textbox
     | RedirectTo String
@@ -167,7 +169,7 @@ init flags url key =
             |> Result.toMaybe
             |> Maybe.withDefault (0, 0)
         , animation = finalT
-        , input = InputWithHistory.init newScreen mainInputMouseCmd focusTextBar_
+        , input = InputWithHistory.init newScreen (inputMouseCmd "mainInput") focusTextBar_
         , svgDragMap = Dict.fromList
             [   ("Equation-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.Commute eqNum event |> DisplayEvent)))
             ,   ("mainInput", (\_ -> Input.Shift >> InputWithHistory.InputEvent >> InputEvent >> Just ))
@@ -239,6 +241,11 @@ update event core = let model = core.swappable in
         SvgDragEvent e -> case SvgDrag.resolve e core.svgDragMap of
             Nothing -> (core, Cmd.none)
             Just newE -> update newE core
+        DialogEvent e -> case core.dialog of
+            Nothing -> (core, Cmd.none)
+            Just (dialog, matched) -> Dialog.update e dialog
+                |> \(newDialog, errStr, cmd) -> if errStr /= "" then submitNotification_ core errStr
+                    else ({core  | dialog = Just (newDialog, matched)}, cmd)
         NoOp -> (core, Cmd.none)
         RedirectTo url -> (core, Nav.load url)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of
@@ -346,7 +353,7 @@ update event core = let model = core.swappable in
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m False core
-                else ({ core | dialog = Just (parameterDialog_ p, Just p)}, Cmd.none)
+                else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.none)
             Actions.Group root children -> case Display.groupChildren core.animation root children model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
@@ -369,13 +376,8 @@ update event core = let model = core.swappable in
                         else case v of
                             Dialog.TextValue val -> Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty val
                                 |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
-                            Dialog.FunctionValue args val -> List.indexedMap Tuple.pair args
-                                |> Helper.resultList (\(i, name) dict -> if Dict.member name dict
-                                        then Err "Function arguments need to be unique in the function definition"
-                                        else Math.validVariable name |> Result.map (\n -> Dict.insert n (0, i) dict)
-                                    ) Dict.empty
-                                |> Result.andThen (\argDict -> Matcher.toReplacement (Rules.functionProperties model.rules) False argDict val)
-                                |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
+                            Dialog.MathValue str -> Matcher.toSubstitution (Rules.functionProperties model.rules) str
+                                |> Result.map (\(key, replacement) -> {r | from = Matcher.addMatch key replacement r.from})
                             _ -> Ok r
                         )
                     prev params
@@ -492,7 +494,7 @@ view core = let model = core.swappable in
                     ]
                 ]) |> Just
             --,   ("tutorial", Tutorial.view TutorialEvent [] model.tutorial) |> Just
-            ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view d))
+            ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view DialogEvent (Rules.functionProperties model.rules) d))
             ,   ("notification", Notification.view NotificationEvent [id "notification"] model.notification) |> Just
             ]
         )
@@ -516,17 +518,17 @@ addTopicDialog_ =
         )
     ,   cancel = CloseDialog
     ,   focus = Just "url"
+    ,   inputFields = Dict.empty
     }
 
-parameterDialog_: Actions.MatchedRule -> Dialog.Model Event
-parameterDialog_ params =
+parameterDialog_: Rules.Model -> Actions.MatchedRule -> Dialog.Model Event
+parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextBar_ (Rules.functionProperties rules)
     {   title = "Set parameters for " ++ params.title
     ,   sections =
             [{   subtitle = "Fill in the parameters"
             ,   lines = Dict.toList params.parameters
-                    |> List.map (\(key, param) -> if param.arguments == 0
-                        then [Dialog.Info {text = param.name ++ "= "}, Dialog.Text {id = param.name}, Dialog.Info {text = param.description}]
-                        else [Dialog.Function {name = key, arguments = param.arguments}, Dialog.Info {text = param.description}]
+                    |> List.map (\(key, param) ->
+                        [Dialog.MathInput {id = key, args = param.arguments, example = param.example}, Dialog.Info {text = param.description}]
                     )
             }]
             |> (\sections -> if List.length params.matches <= 1 then sections
@@ -541,6 +543,7 @@ parameterDialog_ params =
     ,   success = ApplyParameters
     ,   cancel = CloseDialog
     ,   focus = Nothing
+    ,   inputFields = Dict.empty
     }
 
 substitutionDialog_: Display.Model -> Int -> Dialog.Model Event
@@ -562,6 +565,7 @@ substitutionDialog_ dModel eqNum =
         )
     ,   cancel = CloseDialog
     ,   focus = Just "eqNum"
+    ,   inputFields = Dict.empty
     }
 
 numSubDialog_: Int -> Float -> Dialog.Model Event
@@ -577,6 +581,7 @@ numSubDialog_ root target =
         )
     ,   cancel = CloseDialog
     ,   focus = Just "expr"
+    ,   inputFields = Dict.empty
     }
 
 leaveDialog_: String -> Dialog.Model Event
@@ -589,6 +594,7 @@ leaveDialog_ url =
     ,   success = (\_ -> RedirectTo url)
     ,   cancel = CloseDialog
     ,   focus = Just "expr"
+    ,   inputFields = Dict.empty
     }
 
 {-

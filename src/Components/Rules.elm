@@ -46,8 +46,9 @@ type Javascript_ =
 
 type alias Parameter =
     {   name: String
-    ,   arguments: Int
+    ,   arguments: List String
     ,   description: String
+    ,   example: String
     }
 
 type alias Rule =
@@ -535,15 +536,17 @@ javascriptDecoder_ = Dec.map2 Tuple.pair
     )
 
 parameterDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dec.Decoder (Dict.Dict String Parameter, Dict.Dict String (Int, Bool))
-parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
-    |> Dec.andThen ( Helper.resultList (\(key, description) (others, dict) -> Math.parse Dict.empty key
+parameterDecoder_ knownFuncs =
+    Dec.dict (Dec.map2 Tuple.pair (Dec.field "description" Dec.string) (Dec.field "example" Dec.string))
+    |> Dec.andThen (Helper.resultDict (\key (description, example) (others, dict) ->
+            Math.parse Dict.empty key
             |> Result.andThen (\tree -> case tree of
                 Math.VariableNode m -> case Dict.get m.name dict of
                     Just _ -> Err "Parameters are duplicated"
                     Nothing -> case Dict.get m.name knownFuncs of
                         Just _ -> Err "Known constants cannot be used as a parameter"
                         Nothing -> Ok
-                            (   Dict.insert m.name {name = m.name, arguments = 0, description = description} others
+                            (   Dict.insert m.name {name = m.name, arguments = [], description = description, example = example} others
                             ,   Dict.insert m.name (0, False) dict
                             )
                 Math.GenericNode m -> case Dict.get m.name dict of
@@ -551,7 +554,7 @@ parameterDecoder_ knownFuncs = Dec.keyValuePairs Dec.string
                     Nothing -> case Dict.get m.name knownFuncs of
                         Just _ -> Err "Known function cannot be used as a parameter"
                         Nothing -> Ok
-                            (   Dict.insert m.name {name = m.name, arguments = List.length m.children, description = description} others
+                            (   Dict.insert m.name {name = m.name, arguments = List.map Math.getName m.children, description = description, example = example} others
                             ,   Dict.insert m.name (List.length m.children, False) dict
                             )
                 _ -> Err "Parameters can only be variables or functions"
