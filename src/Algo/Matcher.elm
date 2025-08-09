@@ -2,7 +2,7 @@ module Algo.Matcher exposing (
     State, StateOp, getID, getState, getName, encodeState, stateDecoder,
     Equation, parseEquation, getNode, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
-    Replacement, toReplacement, toSubstitution, encodeReplacement, replacementDecoder,
+    Replacement, toReplacement, replacementToEq, toSubstitution, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
     groupSubtree, ungroupSubtree, setChildIndex, refreshFuncProp,
     selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
@@ -182,6 +182,21 @@ toSubstitution funcProps str =
             _ -> Err "Expecting the left of the equation to be a generic variable or a generic function"
         )
     _ -> Err "Must be an equation that defines a variable or a function"
+
+replacementToEq: Replacement prop -> Equation prop (Maybe prop)
+replacementToEq = Math.map (\_ root _ -> (Math.getState root |> Tuple.first, ())) ()
+    >> Tuple.first
+    >> processID_
+        {   nextID = 0
+        ,   parent = Dict.empty
+        ,   ops =
+            {   new = \p _ -> p
+            ,   copy = \(State_ _ p) _ -> p
+            ,   update = \p _ -> (p, True)
+            ,   extract = identity
+            }
+        }
+    >> \(newRoot, tracker) -> {root = newRoot, tracker = {tracker | parent = Dict.remove 0 tracker.parent}}
 
 toReplacement: Dict.Dict String {a | property: Math.FunctionProperty prop} -> Bool -> Dict.Dict String (Int, Int) -> String -> Result String (Replacement prop)
 toReplacement funcProps strict argDict = Math.parse funcProps >> Result.andThen (toReplacement_ identity strict argDict)

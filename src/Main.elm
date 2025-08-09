@@ -36,10 +36,10 @@ import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Input as Input
 import UI.InputWithHistory as InputWithHistory
+import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
-import UI.Dialog as Dialog
 
 -- Overall Structure of the app: it's a document
 
@@ -363,7 +363,10 @@ update event core = let model = core.swappable in
             Actions.Substitute -> case model.display.selected of
                 Nothing -> submitNotification_ core "no equation is selected"
                 Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.none)
-            Actions.NumericalSubstitution root target -> ({ core | dialog = Just (numSubDialog_ root target, Nothing)}, Cmd.none)
+            Actions.NumericalSubstitution root target ->
+                (   { core | dialog = Just (numSubDialog_ model.rules root target, Nothing)}
+                ,   focusTextBar_ (Dialog.fieldID "expr-input")
+                )
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
         ApplyParameters params -> case core.dialog of
@@ -528,14 +531,27 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
             [{   subtitle = "Fill in the parameters"
             ,   lines = Dict.toList params.parameters
                     |> List.map (\(key, param) ->
-                        [Dialog.MathInput {id = key, args = param.arguments, example = param.example}, Dialog.Info {text = param.description}]
+                        [Dialog.ParameterInput {id = key, args = param.arguments, example = param.example}, Dialog.Info {text = param.description}]
                     )
             }]
             |> (\sections -> if List.length params.matches <= 1 then sections
                 else { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]
-                        ,   [Dialog.Radio {name = "_method", options = List.indexedMap (\k m -> (k, List.map (.name) m.replacements |> String.join ", ")) params.matches |> Dict.fromList}]
+                        ,   [   Dialog.Radio
+                                {   name = "_method"
+                                ,   options = List.indexedMap
+                                    (\k m ->
+                                        (   k
+                                        ,   List.map (.root >> replacementToLatex) m.replacements
+                                            |> List.intersperse (text ", ")
+                                            |> Html.span []
+                                        )
+                                    )
+                                    params.matches
+                                    |> Dict.fromList
+                                }
+                            ]
                         ]
                     }
                     :: sections
@@ -546,6 +562,9 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
     ,   inputFields = Dict.empty
     }
 
+replacementToLatex: Matcher.Replacement Rules.FunctionProp -> Html.Html msg
+replacementToLatex = Matcher.replacementToEq >> Rules.toLatex >> MathIcon.static []
+
 substitutionDialog_: Display.Model -> Int -> Dialog.Model Event
 substitutionDialog_ dModel eqNum =
     {   title = "Substitute a variable for a formula"
@@ -555,7 +574,7 @@ substitutionDialog_ dModel eqNum =
                 Dialog.Radio
                 {   name = "eqNum"
                 ,   options = Dict.filter (\k _ -> k /= eqNum) dModel.equations
-                        |> Dict.map (\_ -> .history >> History.current >> Tuple.first >> .root >> Rules.process (\_ -> String.join "") identity)
+                        |> Dict.map (\_ -> .history >> History.current >> Tuple.second >> MathIcon.static [])
                 }
             ]]
         }]
@@ -568,19 +587,19 @@ substitutionDialog_ dModel eqNum =
     ,   inputFields = Dict.empty
     }
 
-numSubDialog_: Int -> Float -> Dialog.Model Event
-numSubDialog_ root target =
+numSubDialog_: Rules.Model -> Int -> Float -> Dialog.Model Event
+numSubDialog_ rules root target = Dialog.processMathInput inputMouseCmd focusTextBar_ (Rules.functionProperties rules)
     {   title = "Expand a number into an expression"
     ,   sections =
         [{  subtitle = "The expression to replace " ++ String.fromFloat target
-        ,   lines = [[Dialog.Text {id="expr"}]]
+        ,   lines = [[Dialog.MathInput {id="expr"}]]
         }]
     ,   success = (\dict -> case Dict.get "expr" dict of
-            Just (Dialog.TextValue val) -> ConvertSubString root target val
+            Just (Dialog.MathValue val) -> ConvertSubString root target val
             _ -> NoOp
         )
     ,   cancel = CloseDialog
-    ,   focus = Just "expr"
+    ,   focus = Just "expr-input"
     ,   inputFields = Dict.empty
     }
 

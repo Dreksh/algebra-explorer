@@ -36,8 +36,9 @@ type Input msg =
     Text {id: String}
     | Button {text: String, event: msg}
     | Info {text: String}
-    | Radio {name: String, options: Dict.Dict Int String}
-    | MathInput {id: String, args: List String, example: String}
+    | Radio {name: String, options: Dict.Dict Int (Html.Html msg)}
+    | MathInput {id: String}
+    | ParameterInput {id: String, args: List String, example: String}
     | Link {url: String} -- Should open a new tab / window
 
 processMathInput: (String -> Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg)
@@ -48,7 +49,9 @@ processMathInput mouseCmd focusCmd funcDict model =
         |> List.foldl (\section dict -> section.lines
             |> List.foldl (\line dict1 -> line
                 |> List.foldl (\input dict2 -> case input of
-                    MathInput n -> let objId = "dialog-" ++ n.id in
+                    MathInput n -> let objId = fieldID n.id in
+                        Dict.insert n.id (Input.init (mouseCmd objId) focusCmd objId) dict2
+                    ParameterInput n -> let objId = fieldID n.id in
                         toInput_ funcDict n.id n.args n.example
                         |> \(scope, caret) -> Input.initWithFixed (mouseCmd objId) focusCmd objId scope caret
                         |> \res -> Dict.insert n.id res dict2
@@ -150,11 +153,13 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
                 let id = r.name ++ n |> fieldID in
                 [   Html.br [] []
                 ,   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n] []
-                ,   Html.label [Attr.for id] [text t]
+                ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
                 ]
             )
-            |> span [] |> Just
+            |> span [Attr.class "radioSelection"] |> Just
         MathInput n -> Dict.get n.id inputs
+            |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
+        ParameterInput n -> Dict.get n.id inputs
             |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
         Link l -> Just (a [Attr.class "clickable", Attr.target "_blank", Attr.href l.url] [text l.url])
     )
@@ -173,6 +178,11 @@ decoder_ model = let valueDecoder name = Decode.field "value" Decode.string |> D
                             Just num -> Decode.succeed (Dict.insert s.name (IntValue num) map)
                         )
                     MathInput n -> case Dict.get n.id model.inputFields of
+                        Nothing -> dict
+                        Just inField -> case Input.toString inField of
+                            Err errStr -> Decode.fail errStr
+                            Ok str -> Decode.map (Dict.insert n.id (MathValue str)) dict
+                    ParameterInput n -> case Dict.get n.id model.inputFields of
                         Nothing -> dict
                         Just inField -> case Input.toString inField of
                             Err errStr -> Decode.fail errStr

@@ -7,8 +7,8 @@ import Set
 -- Ours
 import Algo.Math as Math
 import Algo.Matcher as Matcher
-import UI.Animation as Animation
 import Components.Rules as Rules
+import UI.Animation as Animation
 
 -- note that there is no Model in this file
 -- it is a helper to bridge the gap between matching Rules and Display

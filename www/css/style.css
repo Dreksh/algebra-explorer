@@ -152,7 +152,7 @@ span.space {
     position: absolute;
     box-sizing: border-box;
     border: none;
-    box-shadow: none;
+    box-shadow: 0 1px grey;
     top: 0;
     left: 0;
     height: 100%;
@@ -339,6 +339,9 @@ dialog > form {
 dialog svg {
     height: 2rem;
     margin: 0 0.5rem;
+}
+.radioSelection * {
+    vertical-align: middle;
 }
 /* Draggable */
 .draggable {
