@@ -40,6 +40,7 @@ type alias Model =
     ,   selected: Maybe (Int, Set.Set Int, Set.Set Int)  -- eq, selected, staged
     ,   actions: Dict.Dict String (List Actions.Action)  -- actions a cache for displaying matched rules
     ,   createModeForEquation: Maybe Int
+    ,   recencyList: List Int
     -- Command creators
     ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
     ,   svgMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd Event
@@ -109,6 +110,7 @@ init setCapture updateQuery svgMouseCmd tracker l =
             ,   selected = Nothing
             ,   actions = Dict.empty
             ,   createModeForEquation = Nothing
+            ,   recencyList = []
             ,   setCapture = setCapture
             ,   updateQuery = updateQuery
             ,   svgMouseCmd = svgMouseCmd
@@ -401,28 +403,44 @@ refresh rules tracker model =
         model.equations
         |> \(eqs, newT) -> ({model | equations = eqs, actions = actions, selected = Nothing}, newT)
 
+updateEqOrder_: Int -> List Int -> List Int
+updateEqOrder_ num original = num :: (List.filter (\n -> n /= num) original)
+
 update: Draggable.Size -> Animation.Tracker -> Rules.Model -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker rules event model = let default = (model, tracker, Cmd.none) in case event of
     Select eq node -> updateSelected_ eq node False rules model
-        |> \newModel -> (newModel, tracker, Cmd.none)
-    Delete eq -> updatePositions_ {model | equations = Dict.remove eq model.equations} |> updateQueryCmd tracker
+        |> \newModel -> ({newModel | recencyList = updateEqOrder_ eq newModel.recencyList}, tracker, Cmd.none)
+    Delete eq -> updatePositions_
+        {model | equations = Dict.remove eq model.equations, recencyList = List.filter (\n -> n /= eq) model.recencyList}
+        |> updateQueryCmd tracker
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> default
-        Just entry -> updatePositions_ {model | equations = Dict.insert eq {entry | show = not entry.show, commuting = Nothing} model.equations} |> updateQueryCmd tracker
+        Just entry -> updatePositions_
+            {   model
+            |   equations = Dict.insert eq {entry | show = not entry.show, commuting = Nothing} model.equations
+            ,   recencyList = updateEqOrder_ eq model.recencyList
+            }
+            |> updateQueryCmd tracker
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
-        Just entry -> ({model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}, tracker, Cmd.none)
+        Just entry ->
+            (   {   model
+                |   equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations
+                ,   recencyList = updateEqOrder_ eq model.recencyList
+                }
+            , tracker, Cmd.none)
     HistoryEvent eq he ->
         let
+            newModel = {model | recencyList = updateEqOrder_ eq model.recencyList}
             resModelTracker = case he of
-                History.Stage staged -> let sel = model.selected |> Maybe.withDefault (eq, Set.empty, Set.empty) in case staged of
+                History.Stage staged -> let sel = newModel.selected |> Maybe.withDefault (eq, Set.empty, Set.empty) in case staged of
                     -- a fallback selection is needed in case no equation is selected TODO: clean up since this is a bit ugly
-                    History.Undo -> undo tracker {model | selected = Just sel}
-                    History.Redo -> redo tracker {model | selected = Just sel}
+                    History.Undo -> undo tracker {newModel | selected = Just sel}
+                    History.Redo -> redo tracker {newModel | selected = Just sel}
                     _ -> Err "Change should only be staged via Actions.Event, invariant violated"
-                History.Reset -> reset tracker model
-                History.Revert idx -> revert_ eq idx rules tracker model
-                History.Commit -> commit rules model |> Result.map (\m -> (m, tracker))
+                History.Reset -> reset tracker newModel
+                History.Revert idx -> revert_ eq idx rules tracker newModel
+                History.Commit -> commit rules newModel |> Result.map (\m -> (m, tracker))
         in
             case resModelTracker of
                 Err _ -> default
@@ -431,7 +449,10 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
         Nothing -> default
         Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
             |> \(dModel, action) ->
-                (   {model | equations = Dict.insert eq {entry | view = (True, dModel)} model.equations}
+                (   {   model
+                    |   equations = Dict.insert eq {entry | view = (True, dModel)} model.equations
+                    ,   recencyList = updateEqOrder_ eq model.recencyList
+                    }
                 ,   tracker
                 ,   Maybe.map (\a -> case a of
                         Draggable.SetCapture s v -> model.setCapture True s v
@@ -448,6 +469,7 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                     |   commuting = Just {id = root, currentIndex = index, originalIndex = index, midpoints = midpoints, moved = False}
                     }
                     model.equations
+                ,   recencyList = updateEqOrder_ eq model.recencyList
                 }
             ,   tracker
             ,   model.svgMouseCmd eq pid point
@@ -525,8 +547,17 @@ treeToString_: Math.Tree s -> String
 treeToString_ = Rules.process (\_ -> String.join "") identity
 
 views: (Event -> msg) -> (Actions.Event -> msg) -> Model -> List (String, Html msg)
-views converter actionConvert model = Dict.toList model.equations
-    |> List.filter (\(_,entry) -> entry.show)
+views converter actionConvert model =
+    let
+        orderDict = List.indexedMap (\i num -> (num, i)) model.recencyList
+            |> Dict.fromList
+        getRelativeIndex i = case Dict.get i orderDict of
+            Nothing -> 0
+            Just n -> (Dict.size orderDict) - n
+    in
+    Dict.filter (\_ entry -> entry.show) model.equations
+    |> Dict.foldl (\k v -> Dict.insert (getRelativeIndex k, k) (k,v)) Dict.empty -- Reorder
+    |> Dict.values
     |> List.map (\(eqNum, entry) ->
         let
             (_, dModel) = entry.view
@@ -663,7 +694,7 @@ encodeHistoryState_ (eq, l) = Encode.object
 
 decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
-decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing Dict.empty create setCapture svgMouseCmd updateQuery, t))
+decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing Dict.empty create [] setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (   Decode.field "nextEquationNum" Decode.int)
     -- TODO: add back .selected along with .actions
