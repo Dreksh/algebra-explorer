@@ -82,7 +82,7 @@ toInput_ funcProp name args example =
             |> Array.fromList
     in
     (   [   Input.Fixed
-            {   text = name
+            {   text = "\\" ++ name
             ,   latex =
                 (   Latex.Text () name
                 ::  case args of

@@ -570,12 +570,12 @@ toEntryString_ (Scope _ children) = Helper.resultList (\child res -> case child 
         Bracket inner -> toEntryString_ (Scope defaultScopeDetail inner)
             |> Result.map (\inStr -> res ++ "(" ++ inStr ++ ")")
         Fixed f -> if Array.isEmpty f.params
-            then Ok (res ++ "\\" ++ f.text)
+            then Ok (res ++ f.text)
             else Helper.resultArray (\index (innerScope, _) innerRes ->
                 toEntryString_ innerScope
                 |> Result.map (\str -> Array.set index str innerRes)
             ) (Array.repeat (Array.length f.params) "") f.params
-            |> Result.map (\arr -> res ++ "\\" ++ f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
+            |> Result.map (\arr -> res ++ f.text ++ "(" ++ (Array.toList arr |> String.join ",") ++ ")" )
         InnerScope inner -> toEntryString_ inner
             |> Result.map (\inStr -> res ++ inStr)
     ) "" children
@@ -597,7 +597,7 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
             ,   Html.a
                 [   class "clickable"
                 ,   HtmlEvent.onPointerCapture identity
-                    (\_ _ -> InsertFixed (fixedFrom_ key fixed Array.empty latex))
+                    (\_ _ -> InsertFixed (fixedFrom_ ("\\" ++ key) fixed Array.empty latex))
                 ]
                 [MathIcon.static [] latex]
             )
@@ -607,7 +607,7 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
     |> \list ->
         (   List.map Tuple.second list
         ,   \str -> let (fixed, latex) = funcPropToLatex_ functions str in
-                fixedFrom_ str fixed Array.empty latex
+                fixedFrom_ ("\\" ++ str) fixed Array.empty latex
         )
 
 funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model ())
@@ -791,7 +791,7 @@ nameParser_ = Parser.variable
 fixedParser_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Parser.Parser ScopeElement
 fixedParser_ funcDict = Parser.succeed
     (\name args -> let (fixed, latex) = funcPropToLatex_ funcDict name in
-        fixedFrom_ name fixed
+        fixedFrom_ ("\\" ++ name) fixed
             ((if fixed then args else [List.intersperse [StrElement ","] args |> List.concat]) |> Array.fromList)
             latex
     )
