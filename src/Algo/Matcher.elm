@@ -475,6 +475,22 @@ replaceRealNode id target subtree eq = processSubtree_ (searchPath_ eq.tracker.p
                 in
                     Ok ((Math.getState root |> getID), {root = root, tracker = setParent_ root parent nextTracker})
             )
+        Math.UnaryNode n -> if n.name /= "-" then Err "This can only be applied on numbers"
+            else case n.child of
+            Math.RealNode m -> if -target /= m.value then Err "Expression does not equal to the node's value"
+                else processID_ subEq.tracker subtree
+                |> (\(root, tracker) ->
+                    let
+                        parent = Dict.get id tracker.parent
+                        nextTracker =
+                            {   tracker
+                            |   parent = Dict.remove (getID n.state) tracker.parent
+                                |> Dict.remove (getID m.state)
+                            }
+                    in
+                        Ok ((Math.getState root |> getID), {root = root, tracker = setParent_ root parent nextTracker})
+                )
+            _ -> Err "Expression can only replace a value, not a pre-existing expression"
         _ -> Err "Node is not a number"
     )
     eq

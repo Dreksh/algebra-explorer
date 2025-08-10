@@ -472,14 +472,13 @@ dialog svg {
 }
 .historyHolder > div {
     height: 100%;
-    overflow: clip;
+    overflow-x: scroll;
 }
 div.history {
     padding: 0 0.5rem;
     display: flex;
     flex-direction: column;
     position: relative;
-    overflow: scroll;
 }
 div.history div {
     position: relative;

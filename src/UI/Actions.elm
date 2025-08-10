@@ -108,6 +108,10 @@ coreTopic_ rules numEqs selection = case selection of
                     if List.length n.children == selectedChildren || selectedChildren < 2 then ungroupRes
                     else {ungroupRes | group = Group selected.root selected.nodes |> Allowed }
             Math.RealNode n -> {result | numSubstitute = NumericalSubstitution selected.root n.value |> Allowed, substitute = Disallowed}
+            Math.UnaryNode n -> if n.name /= "-" then result
+                else case n.child of
+                    Math.RealNode m -> {result | numSubstitute = NumericalSubstitution selected.root -m.value |> Allowed, substitute = Disallowed}
+                    _ -> result
             _ -> result
 
 matchRule_: Maybe (Selection, Math.Tree (Matcher.State Animation.State)) -> Rules.Rule -> Action
