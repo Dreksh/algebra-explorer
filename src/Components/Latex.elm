@@ -1,5 +1,5 @@
 module Components.Latex exposing (
-    Model, Part(..), Symbol(..), getState, map, replace,
+    Model, Part(..), Symbol(..), getState, map, replace, getParamIndexes,
     symbolToStr, extractArgs, greekLetters,
     parse, unparse, decoder, encode
     )
@@ -86,6 +86,25 @@ replace params = List.concatMap (\part -> case part of
         Caret e -> [Caret e]
         Border e inner -> [Border e (replace params inner)]
     )
+
+getParamIndexes: Model a -> Set.Set Int
+getParamIndexes latex =
+    let
+        recursive m s = List.foldl (\part set -> case part of
+            Fraction _ top bot -> recursive top set |> recursive bot
+            Text _ _ -> set
+            SymbolPart _ _ -> set
+            Superscript _ inner -> recursive inner set
+            Subscript _ inner -> recursive inner set
+            Bracket _ inner -> recursive inner set
+            Sqrt _ inner -> recursive inner set
+            Argument _ _ -> set
+            Param _ num -> Set.insert num set
+            Caret _ -> set
+            Border _ inner -> recursive inner set
+            ) s m
+    in
+        recursive latex Set.empty
 
 {- ## Encoding, Decoding: to and from the written form of the tree structure -}
 

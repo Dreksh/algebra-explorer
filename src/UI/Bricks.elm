@@ -312,10 +312,11 @@ stackRecursive_ depth node (grid, colStart) =
                     }
                 ,   colEnd
                 )
-            children -> List.foldl (\elem ((input, prevIndex), list) ->
+            children -> filterParameters_ node children
+                |> List.foldl (\elem ((input, prevIndex), list) ->
                     let (cGrid, cEnd) = stackRecursive_ (depth+1) elem (input, prevIndex)
                     in ((cGrid, cEnd), (prevIndex, cEnd) :: list)
-                ) ((grid, colStart), []) children
+                ) ((grid, colStart), [])
                 |> \((childrenGrid, colEnd), revRange) ->
                     (   {   childrenGrid
                         |   items =
@@ -342,3 +343,17 @@ stackRecursive_ depth node (grid, colStart) =
                         }
                     ,   colEnd
                     )
+
+filterParameters_: Math.Tree (Matcher.State Animation.State)
+    -> List (Math.Tree (Matcher.State Animation.State)) -> List (Math.Tree (Matcher.State Animation.State))
+filterParameters_ root children = case Math.getState root |> Matcher.getState |> .function of
+    Nothing -> children
+    Just funcProp -> case funcProp.latex of
+        Nothing -> children
+        Just latex -> Latex.getParamIndexes latex
+            |>\set -> List.foldl (\child (index, list) ->
+                (   index + 1
+                ,   if Set.member index set then list else child :: list
+                )
+            ) (1, []) children
+            |> \(_, list) -> List.reverse list
