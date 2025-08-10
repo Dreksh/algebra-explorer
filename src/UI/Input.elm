@@ -533,7 +533,9 @@ delete_ forwards model = let (Scope detail children) = current model in
                 then
                     (   case List.head next of
                         Nothing -> prev
-                        Just (StrElement str) -> prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
+                        Just (StrElement str) -> if String.length str == 1
+                            then prev ++ List.drop 1 next
+                            else prev ++ (StrElement (String.dropLeft 1 str) :: List.drop 1 next)
                         Just (Fixed _) -> prev ++ List.drop 1 next
                         Just (Bracket _) -> prev ++ List.drop 1 next
                         Just (InnerScope _) -> prev ++ List.drop 1 next
@@ -541,12 +543,14 @@ delete_ forwards model = let (Scope detail children) = current model in
                     )
                 else let beforeLength = List.length prev - 1 in
                     case List.drop beforeLength prev of
-                        [StrElement str] ->
-                            (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
-                            ,   [List.length prev]
-                            )
+                        [StrElement str] -> if String.length str == 1
+                            then (List.take beforeLength prev ++ next, [beforeLength])
+                            else (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
+                                ,   [List.length prev]
+                                )
                         [Fixed _] -> (List.take beforeLength prev ++ next, [beforeLength])
                         [Bracket _] -> (List.take beforeLength prev ++ next, [beforeLength])
+                        [InnerScope _] -> (List.take beforeLength prev ++ next, [beforeLength])
                         _ -> (next, [0])
         )
     )

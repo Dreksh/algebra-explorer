@@ -52,7 +52,7 @@ defaultOptions_ =
     ,   Default
         (   Input.Scope Input.defaultScopeDetail
             [   Input.Fixed
-                {   text = "f"
+                {   text = "\\f"
                 ,   latex =
                     [   Latex.Text () "f"
                     ,   Latex.Bracket () [Latex.Argument () 1]
