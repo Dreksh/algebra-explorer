@@ -148,14 +148,13 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
         Button m -> Just (button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text])
         Info i -> Just (text i.text)
         Radio r -> r.options
-            |> Dict.toList
-            |> List.concatMap (\(num, t) -> let n = String.fromInt num in
-                let id = r.name ++ n |> fieldID in
+            |> Dict.foldl (\num t foldList -> let n = String.fromInt num in
+                let id = r.name ++ n |> fieldID in foldList ++
                 [   Html.br [] []
-                ,   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n] []
+                ,   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n, Attr.checked (List.isEmpty foldList)] []
                 ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
                 ]
-            )
+            ) []
             |> span [Attr.class "radioSelection"] |> Just
         MathInput n -> Dict.get n.id inputs
             |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])

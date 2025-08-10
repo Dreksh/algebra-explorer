@@ -135,7 +135,7 @@ getDivisionProps_ root = case root of
 process: (state -> List a -> a) -> (String -> a) -> Math.Tree state -> a
 process combine convert tree =
     let
-        addSubBrackets parent child =
+        addInverseBrackets parent child =
             if priority_ child > priority_ parent
             then [convert "(", process combine convert child, convert ")"]
             else [process combine convert child]
@@ -177,8 +177,8 @@ process combine convert tree =
             Math.RealNode n -> String.fromFloat n.value |> convert |> List.singleton
             Math.VariableNode n -> [convert (if String.length n.name == 1 then n.name else "\\" ++ n.name)]
             Math.UnaryNode n -> case n.name of
-                "-" -> convert "-" :: addSubBrackets tree n.child
-                "/" -> convert "1/" :: addBrackets tree n.child
+                "-" -> convert "-" :: addInverseBrackets tree n.child
+                "/" -> convert "1/" :: addInverseBrackets tree n.child
                 _ -> [convert ("\\" ++ n.name ++ "("), process combine convert n.child, convert ")"]
             _ -> case Math.getName tree of
                 "+" -> plusStr tree
@@ -227,8 +227,10 @@ toLatex_ converter complete tree =
                 |> \inner -> if priority_ n.child > priority_ tree
                     then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child) inner]
                     else Latex.Text treeState "-" :: inner
-            "/" -> bracket tree n.child
-                |> \inner -> [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division] ++ inner
+            "/" -> toLatex_ converter complete n.child
+                |> \inner -> if priority_ n.child > priority_ tree
+                    then [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division, Latex.Bracket (Math.getState n.child) inner]
+                    else [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division] ++ inner
             _ -> genericFunction tree
         Math.BinaryNode n -> case n.name of
             "*" -> n.children

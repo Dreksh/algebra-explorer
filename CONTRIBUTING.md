@@ -280,6 +280,17 @@ Matcher
   /
 Math
 
+* converting a tree back to serialised is now in Rules.process or Rules.toLatex_
+* what happens when a rule has parameters and multiple matches?
+  * the modal has BOTH sections to fill in! That's why it uses radio instead of just buttons!
+
+* Grouping and ungrouping
+  * If commuting has horizontal semantics, then grouping should be vertical
+  * grouping can be when a block is dragged above a specific sibling
+    * what about grouping 3 nodes together? if you drag above a sibling that is not directly next to you, then group all of them
+  * ungrouping can be when a block is dragged down into its parent
+  * we should use start points instead of mid points
+
 ### What to use as Rules?
 * maybe need to remove some
   * e.g. a-b = -(b+a) is actually a-b = --(a-b) = -(-a--b) = (-a+b)
