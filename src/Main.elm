@@ -350,6 +350,7 @@ update event core = let model = core.swappable in
             Actions.Commit -> commitChange_ core
             Actions.Reset -> resetChange_ core
             Actions.Apply p -> if List.length p.matches == 1 && Dict.isEmpty p.parameters
+                -- don't spawn dialog on hover if multiple matches
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m False core

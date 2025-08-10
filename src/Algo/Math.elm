@@ -250,18 +250,18 @@ expression_ funcProps = Parser.loop []
 multiple_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
 multiple_ funcProps = Parser.loop []
     (\list -> if List.isEmpty list
-        then Parser.succeed (List.singleton >> Parser.Loop) |= negatable_ funcProps |. Parser.spaces
+        then Parser.succeed (List.singleton >> Parser.Loop) |= invertable_ funcProps |. Parser.spaces
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "*"
-                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "*"))
+                |= (invertable_ funcProps |> Parser.inContext (PrevStr_ "*"))
                 |. Parser.spaces
             ,   Parser.succeed
                 (\elem -> let p = Dict.get "/" funcProps |> Maybe.map (.property >> getState) in
                     Parser.Loop (UnaryNode {state = p, name = "/", child = elem} :: list)
                 )
                 |. expectSymbol_ "/"
-                |= (negatable_ funcProps |> Parser.inContext (PrevStr_ "/"))
+                |= (invertable_ funcProps |> Parser.inContext (PrevStr_ "/"))
                 |. Parser.spaces
             ,   Parser.succeed ()
                 |> Parser.map (\_ -> Parser.Done (List.reverse list))
@@ -276,13 +276,18 @@ generateMultipleNode_ funcProps = Parser.map (\children -> case children of
         BinaryNode {state = p, name = "*", associative = True, commutative = True, identity = 1, children = children}
     )
 
-negatable_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
-negatable_ funcProps = Parser.oneOf
+invertable_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
+invertable_ funcProps = Parser.oneOf
     [   Parser.succeed
         (\x -> let p = Dict.get "-" funcProps |> Maybe.map (.property >> getState) in
             UnaryNode {state = p, name = "-", child = x}
         )
-        |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> negatable_ funcProps |> Parser.inContext (PrevStr_ "-"))
+        |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> invertable_ funcProps |> Parser.inContext (PrevStr_ "-"))
+    ,   Parser.succeed
+        (\x -> let p = Dict.get "1/" funcProps |> Maybe.map (.property >> getState) in
+            UnaryNode {state = p, name = "/", child = x}
+        )
+        |. expectSymbol_ "1/" |. Parser.spaces |= Parser.lazy (\_ -> invertable_ funcProps |> Parser.inContext (PrevStr_ "1/"))
     ,   product_ funcProps
     ]
 
