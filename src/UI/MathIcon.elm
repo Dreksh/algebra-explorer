@@ -451,11 +451,55 @@ failedFrame_ s =
 
 symbolStrokes_: state -> Latex.Symbol -> Frame state
 symbolStrokes_ s str = case str of
-    Latex.AlphaLower -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1), botRight = (1.5, 0.5)}
-    Latex.BetaLower -> failedFrame_ s
+    Latex.AlphaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.3), Curve (0.3, 0.4) (0.1, 0.5) (0.1, 0.3), Curve (0.1, 0.1) (0.3, -0.6) (0.5, -0.3), Curve (0.7, 0) (0.7, 0.4) (0.9, 0.4) ], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.BetaLower -> {data = BaseFrame {strokes =
+        [Move (0.1, 0.5), Line (0.2, -0.4), Curve (0.3, -1) (0.7, -0.8) (0.6, -0.6), Curve (0.5, -0.4) (0.3, -0.4) (0.2,-0.4), Curve (1.2, -0.3) (0.7, 0.5) (0, 0.2)
+        ], elem = s}, topLeft = (0, -1), botRight = (0.9, 0.6)}
+    Latex.ChiLower -> {data = BaseFrame {strokes = [Move (0.1, -0.3), Curve (0.3, -0.5) (0.5, 0.5) (0.7, 0.3), Move (0.1, 0.4), Line (0.7, -0.4) ], elem = s}, topLeft = (0, -0.5), botRight = (0.8, 0.5)}
+    Latex.DeltaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.6), Curve (0.1, -0.7) (0.1,-0.6) (0.5,-0.3), Curve (0.9, 0) (0.9, 0.4) (0.5, 0.4), Curve (0, 0.4) (0, -0.3) (0.7, -0.1)], elem = s}, topLeft = (0, -0.8), botRight = (1, 0.5)}
+    Latex.EpsilonLower -> {data = BaseFrame {strokes = [Move (0.9, -0.4), Curve (-0.2, -0.6) (-0.2, 0.6) (0.9, 0.4), Move (0.1, 0), Line (0.7, 0)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.EpsilonVarLower -> {data = BaseFrame {strokes = [Move (0.8, -0.4), Curve (0.2, -0.6) (0, 0) (0.7, -0.1), Curve (0, -0.3) (0, 0.7) (0.9, 0.3)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.EtaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.4), Curve (0.2, -0.3) (0.2, -0.2) (0.2,0.4), Curve (0.2,-0.3) (0.7,-0.5) (0.7,-0.2), Line (0.7,0.6), Curve (0.7,0.7) (0.7, 0.8) (0.9, 0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.GammaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.2), Curve (0.3, -0.4) (0.6, -0.5) (0.5,0.2), Curve (0.4,0.9) (0.3,1) (0.4,0.5), Curve (0.5,0) (0.7, -0.2) (0.9, -0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.IotaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.5, 0.5)}
+    Latex.KappaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.4), Line (0.1, 0.4), Move (0.7, -0.3), Curve (0.7,-0.4) (0.6,-0.4) (0.1,0), Curve (0.5,-0.1) (0.7,-0.1) (0.6,0.2), Curve (0.5,0.5) (0.7,0.4) (0.8,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.9, 0.5)}
+    Latex.LambdaLower -> {data = BaseFrame {strokes = [Move (0.1,0.4), Curve (0.3, 0.4) (0.4, 0.1) (0.5,-0.2), Move (0.2, -0.4), Curve (0.6,-0.4) (0.6,0.4) (0.9,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.MuLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.3, 0.6) (0.2, 0) (0.2,-0.3), Curve (0.3,1) (0.7,0) (0.7,-0.4), Curve (0.7,0.2) (0.8,0.3) (0.9,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.NuLower -> {data = BaseFrame {strokes = [Move (0.1,-0.3), Curve (0.3, -0.4) (0.4, 0) (0.3,0.4), Curve (0.9,0.1) (1,-0.2) (0.7,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.OmegaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.3), Curve (-0.1,0.3) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.5,0.2) (1,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1.2, 0.5)}
+    Latex.PhiLower -> {data = BaseFrame {strokes = [Move (0.5,-0.3), Curve (0,-0.3) (0,0.3) (0.5,0.3), Curve (1,0.3) (1,-0.3) (0.5,-0.3), Move (0.6,-0.7), Line (0.4,0.7)], elem = s}, topLeft = (0, -0.8), botRight = (1, 0.8)}
+    Latex.PhiVarLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0,0.2) (0.2,0.4) (0.5,0.3), Curve (0.8,0.2) (0.9,0) (0.8,-0.2), Curve (0.7,-0.4) (0.2,-0.3) (0.5,0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.PiLower -> {data = BaseFrame {strokes =
+        [ Move (0.1,-0.1), Curve (0.2,-0.3) (0.3,-0.3) (0.4,-0.3), Line (0.6,-0.3), Curve (0.8,-0.3) (0.9,-0.3) (0.9,-0.4), Move (0.4,-0.3)
+        , Curve (0.4,0.1) (0.3,0.4) (0.2,0.4), Move (0.6,-0.3), Line(0.6,0.4)
+        ], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.PsiLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0.1,0.5) (1,0.5) (0.9,-0.3), Move (0.6,-0.4), Line (0.5,0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.RhoLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.2,-1.4) (1.4,0.2) (0.2,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.8, 1)}
+    Latex.SigmaLower -> {data = BaseFrame {strokes = [Move (0.9,-0.3), Curve (0.8,-0.3) (0.7,-0.4) (0.4,-0.3), Curve (0.1,-0.2) (0.1,0.4) (0.5,0.4), Curve (0.9, 0.4) (1,-0.3) (0.4,-0.3)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.TauLower -> {data = BaseFrame {strokes = [Move (0.1,-0.1), Curve (0.2,-0.3) (0.3,-0.3) (0.4,-0.3), Line (0.9,-0.3), Move (0.5,-0.3), Curve (0.5, 0.2) (0.4,0.4) (0.7,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.ThetaLower -> {data = BaseFrame {strokes = [Move (0.5,-0.9), Curve (0,-0.9) (0,0.4) (0.5,0.4), Curve (1,0.4) (0.9,-0.9) (0.5,-0.9), Curve (0.1,-0.9) (0,0.3) (0.8,-0.3)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.UpsilonLower -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Curve (0.1,-0.4) (0.3,-0.4) (0.3,0), Curve (0.3,0.5) (0.9,0.5) (0.9,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.XiLower -> {data = BaseFrame {strokes = [Move (0.4,-0.9), Curve (0.9,-0.5) (0.9,-1) (0.4,-0.7), Curve (-0.1,-0.4) (-0.1,0.1) (0.6,-0.3), Curve (-0.1,0.1) (-0.1,0.8) (0.4,0.5), Curve (0.9, 0.2) (0.9,0.6) (0.5,0.9)], elem = s}, topLeft = (0, -1), botRight = (0.9, 1)}
+    Latex.ZetaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.9), Curve (1,-0.5) (0.9,-1) (0.5,-0.8), Curve (0,-0.6) (0,0.3) (0.5,0.1), Curve (1,-0.1) (1, 0.3) (0.4, 0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.DeltaUpper -> {data = BaseFrame {strokes = [Move (0.6,-0.8), Line (0.1,0.4), Line (1.1,0.4), Line (0.6,-0.8), Line (0.1, 0.4)], elem = s}, topLeft = (0, -1), botRight = (1.2, 0.5)}
+    Latex.GammaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.8), Line (0.1,-0.8), Line (0.1,0.4)], elem = s}, topLeft = (0, -1), botRight = (0.8, 0.5)}
+    Latex.LambdaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.5,-0.8), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.OmegaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.6,0.4), Curve (0,0.2) (0,-0.9) (0.7,-0.9), Curve (1.4,-0.9) (1.4,0.2) (0.8,0.4), Line (1.3,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+    Latex.PhiUpper -> {data = BaseFrame {strokes =
+        [   Move (0.1,-0.9), Line (0.9,-0.9), Move (0.1,0.4), Line (0.9,0.4), Move (0.5,-0.9), Line (0.5,0.4)
+        ,   Move (0.5, -0.6), Curve (0,-0.6) (0,0.1) (0.5,0.1), Curve (1,0.1) (1,-0.6) (0.5,-0.6)
+        ], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.PiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.8), Line (1.1,-0.8), Move (0.4,-0.8), Line (0.4,0.4), Move (0.8,-0.8), Line (0.8,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.2, 0.5)}
+    Latex.PsiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1, 0.1) (0.9, 0.1) (0.9,-0.7), Move (0.1, -0.9), Line (0.9,-0.9), Move (0.1,0.4), Line (0.9,0.4), Move (0.5,-0.9), Line (0.5,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.SigmaUpper -> {data = BaseFrame {strokes = [Move (0.9,-0.9), Line (0.1, -0.9), Curve (0.6,-0.2) (0.7,-0.5) (0.1,0.4), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.ThetaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.9), Curve (0,-0.9) (0,0.4) (0.7,0.4), Curve (1.4,0.4) (1.4,-0.9) (0.7,-0.9), Move (0.4,-0.3), Line (1,-0.3)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+    Latex.UpsilonUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1,-1) (0.6,-1) (0.5,0.4), Curve (0.4,-1) (0.9,-1) (0.9,-0.7), Move (0.1,0.4), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.XiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.9), Line (1.3,-0.9), Move (0.4,-0.3), Line (1,-0.3), Move (0.1,0.4), Line (1.3,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+    Latex.Infinity -> {data = BaseFrame {strokes = [Move (0.1,0), Curve (0.1,0.1) (0.3,0.2) (0.5,0), Curve (0.7,-0.2) (0.9,-0.1) (0.9,0), Curve (0.9,0.1) (0.7,0.2) (0.5,0), Curve (0.3,-0.2) (0.1,-0.1) (0.1,0)], elem = s}, topLeft = (0, -0.2), botRight = (1, 0.2)}
+    Latex.Circ -> {data = BaseFrame {strokes = [Move (0.4,-0.3), Curve (0,-0.3) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.3) (0.4,-0.3)], elem = s}, topLeft = (0, -0.4), botRight = (0.8, 0.4)}
     Latex.CrossMultiplcation -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Line(0.5,0.2), Move (0.1,0.2), Line (0.5,-0.2)], elem = s}, topLeft = (0,-0.3), botRight = (0.6, 0.3)}
     Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
-    Latex.Integration -> failedFrame_ s -- {data = BaseFrame {strokes = [], elem = s}, topLeft = (0, -1.5), botRight = (0.5, 1.5)}
+    Latex.Integration -> {data = BaseFrame {strokes = [Move (0, 0.8), Curve (0.6, 1) (0,-1.5) (0.6,-1.3)], elem = s}, topLeft = (0,-1.5), botRight = (0.6,1)}
 
 wordStrokes_: state -> String -> Frame state
 wordStrokes_ s str =
@@ -472,7 +516,7 @@ charStrokes_ c = case c of
     'c' -> ([Move (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
     'd' -> ([Move (0.7,-0.1), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.8),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -1), (1, 0.5))
     'e' -> ([Move (0.1,0), Curve (0.5,0.1) (0.8,-0.1) (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
-    'f' -> ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.9) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -0.5), (0.9, 0.5))
+    'f' -> ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.8) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -0.5), (0.9, 0.5))
     'g' -> ([Move (0.7,-0.1), Curve (0.5,-0.5) (0, -0.3) (0.1,0), Curve (0.2,0.3) (0.6,0.4) (0.7,-0.3), Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
     'h' -> ([Move (0.1,-0.9), Curve (0.2,-0.6) (0.2,-0.4) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -1), (0.9, 0.5))
     'i' -> ([Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3), Move (0.2,-0.75), Line (0.3,-0.6)], (0, -0.8), (0.5, 0.5))
@@ -489,7 +533,7 @@ charStrokes_ c = case c of
     't' -> ([Move (0.5,-0.8), Curve (0.2,0.2) (0.2,0.5) (0.7,0.2), Move (0.1,-0.3), Line (0.7,-0.4)], (0, -0.9), (0.8, 0.5))
     'u' -> ([Move (0.2,-0.4), Curve (0,1) (0.7,0.2) (0.8,-0.4), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -0.5), (1, 0.5))
     'v' -> ([Move (0.1,-0.4), Curve (0.3,-0.2) (0.4,0.2) (0.5,0.35), Curve (0.6,0.2) (0.8,-0.2) (0.9,-0.4)], (0, -0.5), (1, 0.5))
-    'w' -> ([Move (0.2,-0.3), Curve (0,0.5) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.2,0.5) (1.1,-0.4)], (0, -0.5), (1.2, 0.5))
+    'w' -> ([Move (0.1,-0.2), Curve (0.3,-0.2) (0.2,0.1) (0.2,0.3), Curve (0.2,0.5) (0.4,0.3) (0.5,0), Curve (0.3,0.5) (0.8,0.6) (0.9,-0.4)], (0, -0.5), (1, 0.5))
     'x' -> ([Move (0.1,-0.2), Curve (0.3,-0.7) (0.9,-0.1) (0.1,0.4), Move (0.9,0.2), Curve (0.7,0.7) (0.1,0.1) (0.9,-0.4)], (0, -0.5), (1, 0.5))
     'y' -> ([Move (0.1,-0.4), Curve (0.1,0.3) (0.6,0.3) (0.7,-0.4),Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
     'z' -> ([Move (0.1,-0.3), Curve (0.9,-0.5) (0.7,-0.2) (0.5,0), Curve (0.3,0.2) (-0.3,0.5) (0.9,0.3), Move (0.1,0), Line (0.9,-0.1)], (0, -0.5), (1, 0.5))
@@ -535,6 +579,7 @@ charStrokes_ c = case c of
     '+' -> ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '=' -> ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
     ' ' -> ([], (0, 0), (0.4, 0))
+    '\'' -> ([Move (0.1, -0.7), Line (0,-0.3)], (0, -0.8), (0.2, -0.2))
     _ -> ([Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], (0, -0.5), (1,0.5))
 
 rightShiftStrokes_: Float -> List Stroke -> List Stroke

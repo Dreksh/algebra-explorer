@@ -30,8 +30,47 @@ type Part elem =
     | Border elem (Model elem) --
 
 type Symbol =
+    -- Greek
     AlphaLower
     | BetaLower
+    | ChiLower
+    | DeltaLower
+    | EpsilonLower
+    | EpsilonVarLower
+    | EtaLower
+    | GammaLower
+    | IotaLower
+    | KappaLower
+    | LambdaLower
+    | MuLower
+    | NuLower
+    | OmegaLower
+    | PhiLower
+    | PhiVarLower
+    | PiLower
+    | PsiLower
+    | RhoLower
+    | SigmaLower
+    | TauLower
+    | ThetaLower
+    | UpsilonLower
+    | XiLower
+    | ZetaLower
+    | DeltaUpper
+    | GammaUpper
+    | LambdaUpper
+    | OmegaUpper
+    | PhiUpper
+    | PiUpper
+    | PsiUpper
+    | SigmaUpper
+    | ThetaUpper
+    | UpsilonUpper
+    | XiUpper
+    -- Symbols
+    | Infinity
+    | Circ
+    -- Operators
     | CrossMultiplcation
     | Division
     | Integration
@@ -150,7 +189,43 @@ strToSymbol_: String -> Result String Symbol
 strToSymbol_ str = case str of
     "alpha" -> Ok AlphaLower
     "beta" -> Ok BetaLower
-    "cross" -> Ok CrossMultiplcation
+    "chi" -> Ok ChiLower
+    "delta" -> Ok DeltaLower
+    "epsilon" -> Ok EpsilonLower
+    "varepsilon" -> Ok EpsilonVarLower
+    "eta" -> Ok EtaLower
+    "gamma" -> Ok GammaLower
+    "iota" -> Ok IotaLower
+    "kappa" -> Ok KappaLower
+    "lambda" -> Ok LambdaLower
+    "mu" -> Ok MuLower
+    "nu" -> Ok NuLower
+    "omega" -> Ok OmegaLower
+    "phi" -> Ok PhiLower
+    "varphi" -> Ok PhiVarLower
+    "pi" -> Ok PiLower
+    "psi" -> Ok PsiLower
+    "rho" -> Ok RhoLower
+    "sigma" -> Ok SigmaLower
+    "tau" -> Ok TauLower
+    "theta" -> Ok ThetaLower
+    "upsilon" -> Ok UpsilonLower
+    "xi" -> Ok XiLower
+    "zeta" -> Ok ZetaLower
+    "Delta" -> Ok DeltaUpper
+    "Gamma" -> Ok GammaUpper
+    "Lambda" -> Ok LambdaUpper
+    "Omega" -> Ok OmegaUpper
+    "Phi" -> Ok PhiUpper
+    "Pi" -> Ok PiUpper
+    "Psi" -> Ok PsiUpper
+    "Sigma" -> Ok SigmaUpper
+    "Theta" -> Ok ThetaUpper
+    "Upsilon" -> Ok UpsilonUpper
+    "Xi" -> Ok XiUpper
+    "infty" -> Ok Infinity
+    "circ" -> Ok Circ
+    "times" -> Ok CrossMultiplcation
     "div" -> Ok Division
     "int" -> Ok Integration
     _ -> Err ("symbol not found: '" ++ str ++ "'")
@@ -159,14 +234,53 @@ symbolToStr: Symbol -> String
 symbolToStr s = case s of
     AlphaLower -> "alpha"
     BetaLower -> "beta"
-    CrossMultiplcation -> "cross"
+    ChiLower -> "chi"
+    DeltaLower -> "delta"
+    EpsilonLower -> "epsilon"
+    EpsilonVarLower -> "varepsilon"
+    EtaLower -> "eta"
+    GammaLower -> "gamma"
+    IotaLower -> "iota"
+    KappaLower -> "kappa"
+    LambdaLower -> "lambda"
+    MuLower -> "mu"
+    NuLower -> "nu"
+    OmegaLower -> "omega"
+    PhiLower -> "phi"
+    PhiVarLower -> "varphi"
+    PiLower -> "pi"
+    PsiLower -> "psi"
+    RhoLower -> "rho"
+    SigmaLower -> "sigma"
+    TauLower -> "tau"
+    ThetaLower -> "theta"
+    UpsilonLower -> "upsilon"
+    XiLower -> "xi"
+    ZetaLower -> "zeta"
+    DeltaUpper -> "Delta"
+    GammaUpper -> "Gamma"
+    LambdaUpper -> "Lambda"
+    OmegaUpper -> "Omega"
+    PhiUpper -> "Phi"
+    PiUpper -> "Pi"
+    PsiUpper -> "Psi"
+    SigmaUpper -> "Sigma"
+    ThetaUpper -> "Theta"
+    UpsilonUpper -> "Upsilon"
+    XiUpper -> "Xi"
+    Infinity -> "infty"
+    Circ -> "circ"
+    CrossMultiplcation -> "times"
     Division -> "div"
     Integration -> "int"
 
 greekLetters: Dict.Dict String Symbol
 greekLetters =
-    [   AlphaLower
-    ,   BetaLower
+    [ AlphaLower, BetaLower, ChiLower, DeltaLower, EpsilonLower, EpsilonVarLower, EtaLower
+    , GammaLower, IotaLower, KappaLower, LambdaLower, MuLower, NuLower, OmegaLower, PhiLower
+    , PhiVarLower, PiLower, PsiLower, RhoLower, SigmaLower, TauLower, ThetaLower, UpsilonLower
+    , XiLower, ZetaLower, DeltaUpper, GammaUpper, LambdaUpper, OmegaUpper, PhiUpper, PiUpper
+    , PsiUpper, SigmaUpper, ThetaUpper, UpsilonUpper, XiUpper, Infinity
     ]
     |> List.map (\s -> (symbolToStr s,s))
     |> Dict.fromList

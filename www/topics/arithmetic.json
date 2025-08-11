@@ -2,7 +2,7 @@
     "name": "Arithmetic",
     "functions":{
         "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}, "latex": "+"},
-        "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\cross"},
+        "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\times"},
         "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-"},
         "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div"}
     },
@@ -12,9 +12,9 @@
             "title": "Cancel Out",
             "description": "Combining with their inverse, variables can be cancelled out",
             "matches": [
-                {"from": "a-a", "to": ["0"]},
+                {"from": "a-a+b", "to": ["b"]},
                 {"from": "a*0", "to": ["0"]},
-                {"from": "a/a", "to": ["1"]}
+                {"from": "a/a*b", "to": ["b"]}
             ]
         },
         {
@@ -64,7 +64,7 @@
             "description": "Sub-operations within an expression can be gathered across components",
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
-                {"from": "ma+mb", "to": ["m(a+b)"]},
+                {"from": "ma+mb+c", "to": ["m(a+b)+c"]},
                 {"from": "-a*b", "to": ["-(a*b)"]},
                 {"from": "1/a*1/b", "to": ["1/(a*b)"]}
             ]

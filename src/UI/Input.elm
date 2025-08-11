@@ -594,8 +594,10 @@ displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules
 displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
     Dict.keys functions
     |> List.filter (\key -> Set.member key defaultOps |> not)
-    |> List.map (\key -> let (fixed, latex) = funcPropToLatex_ functions key in
-        (   cosineCorrelation_ inputOrder (letterOrder_ key)
+    |> List.map (\key -> let (fixed, latex, numArgs) = funcPropToLatex_ functions key in
+        (   (   cosineCorrelation_ inputOrder (letterOrder_ key)
+            ,   numArgs
+            )
         ,   (   key
             -- don't use onClick, because some onBlurs get triggered first
             ,   Html.a
@@ -607,16 +609,16 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
             )
         )
     )
-    |> List.sortBy (\(corr, _) -> -corr)
+    |> List.sortBy (\((corr, args), _) -> (-corr, -args))
     |> \list ->
         (   List.map Tuple.second list
-        ,   \str -> let (fixed, latex) = funcPropToLatex_ functions str in
+        ,   \str -> let (fixed, latex, _) = funcPropToLatex_ functions str in
                 fixedFrom_ ("\\" ++ str) fixed Array.empty latex
         )
 
-funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model ())
+funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model (), Int)
 funcPropToLatex_ funcDict key = case Dict.get key funcDict of
-    Nothing -> (False, [Latex.Text () key, Latex.Bracket () [Latex.Argument () 1]])
+    Nothing -> (False, [Latex.Text () key, Latex.Bracket () [Latex.Argument () 1]], 1)
     Just value ->
         let
             createLatex name args =
@@ -627,20 +629,21 @@ funcPropToLatex_ funcDict key = case Dict.get key funcDict of
         in
         case value.property of
         Math.VariableNode n -> case n.state.latex of
-            Just l -> (True, l)
-            Nothing -> let l = createLatex key 1 in (False, l)
+            Just l -> (True, l, 0)
+            Nothing -> let l = createLatex key 1 in (False, l, 0)
         Math.UnaryNode n -> case n.state.latex of
-            Just l -> (True, l)
-            Nothing -> let l = createLatex key 1 in (True, l)
+            Just l -> (True, l, 1)
+            Nothing -> let l = createLatex key 1 in (True, l, 1)
         Math.BinaryNode n -> case n.state.latex of
-            Just l -> (not n.associative, l)
+            Just l -> (not n.associative, l, 2)
             Nothing -> if n.associative
-                then let l = createLatex key 1 in (False, l)
-                else let l = createLatex key 2 in (True, l)
-        Math.GenericNode n -> case n.state.latex of
-            Just l -> (True, l)
-            Nothing -> let l = createLatex key (Maybe.withDefault 0 n.arguments) in (True, l)
-        _ -> let l = createLatex key 1 in (False, l)
+                then let l = createLatex key 1 in (False, l, 2)
+                else let l = createLatex key 2 in (True, l, 2)
+        Math.GenericNode n -> let numArgs = Maybe.withDefault 0 n.arguments in
+            case n.state.latex of
+            Just l -> (True, l, numArgs)
+            Nothing -> let l = createLatex key numArgs in (True, l, numArgs)
+        _ -> let l = createLatex key 1 in (False, l, 1)
 
 fixedFrom_: String -> Bool -> Array.Array (List ScopeElement) -> Latex.Model () -> ScopeElement
 fixedFrom_ text fixed args latex =
@@ -794,7 +797,7 @@ nameParser_ = Parser.variable
 
 fixedParser_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Parser.Parser ScopeElement
 fixedParser_ funcDict = Parser.succeed
-    (\name args -> let (fixed, latex) = funcPropToLatex_ funcDict name in
+    (\name args -> let (fixed, latex, _) = funcPropToLatex_ funcDict name in
         fixedFrom_ ("\\" ++ name) fixed
             ((if fixed then args else [List.intersperse [StrElement ","] args |> List.concat]) |> Array.fromList)
             latex
