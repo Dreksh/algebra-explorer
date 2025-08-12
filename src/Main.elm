@@ -302,6 +302,7 @@ update event core = let model = core.swappable in
                 Ok rModel -> let (dModel, t) = Display.refresh rModel core.animation model.display in
                     (   {   core
                         |   swappable = { model | rules = rModel, display = dModel }
+                        ,   dialog = Nothing -- Most likely triggered from a dialog
                         ,   animation = t
                         }
                     , Cmd.none

@@ -12,7 +12,6 @@ import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.Icon as Icon
-import UI.Animation as Animation
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -431,9 +430,9 @@ symbolsToFrames_ ref elem = case elem of
                             }
                         ]
                     ,   topLeft = newTL
-                    ,   botRight = newBR
+                    ,   botRight = newBR |> Animation.addVector2 (0.1, 0) -- Add padding on the right
                     }
-                ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first newBR) in
+                ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first newBR + 0.1) in
                     {topX = offsetX, botX = offsetX, topY = newTL |> Tuple.second, botY = newBR |> Tuple.second}
                 )
     Latex.Caret _ -> ({data = Cursor, topLeft = (0,min -1 ref.topY), botRight = (0,max 0.5 ref.botY)}, ref)

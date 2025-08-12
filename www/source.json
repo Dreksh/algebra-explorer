@@ -21,6 +21,10 @@
         "Trigonometry": {
             "url": "topics/trigonometry.json",
             "description": "Covers the core trigonometric functions: sine, cosine and tangent."
+        },
+        "Differentiation": {
+            "url": "topics/differentiation.json",
+            "description": "Covers the basics of differentiating functions"
         }
     }
 }

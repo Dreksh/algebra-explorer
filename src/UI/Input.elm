@@ -649,28 +649,41 @@ fixedFrom_: String -> Bool -> Array.Array (List ScopeElement) -> Latex.Model () 
 fixedFrom_ text fixed args latex =
     let
         defaultStart =
-            (   {topLast = Nothing, midLast = Just -1, botLast  = Nothing}
+            (   {topLast = Nothing, midLast = Nothing, botLast  = Nothing}
             ,   Dict.singleton -1 noOverride_
             )
         updateRight now (prev, dict) =
             (   {topLast = Nothing, midLast = Just now, botLast = Nothing}
             ,   case (prev.topLast, prev.midLast, prev.botLast) of
+                -- All in the middle
                 (Nothing, Just mid, Nothing) -> Dict.insert now {noOverride_ | left = Just mid} dict
                     |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
+                -- subscript
                 (Nothing, Just mid, Just bot) -> Dict.insert now {noOverride_ | left = Just bot} dict
                     |> Dict.update mid (Maybe.map(\v -> {v | right = Just bot}))
                     |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                -- superscript
                 (Just top, Just mid, Nothing) ->  Dict.insert now {noOverride_ | left = Just top} dict
                     |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
                     |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
+                -- subscript and superscript
                 (Just top, Just mid, Just bot) ->  Dict.insert now {noOverride_ | left = Just top} dict
                     |> Dict.update mid (Maybe.map(\v -> {v | right = Just now}))
                     |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
                     |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                -- fraction
                 (Just top, Nothing, Just bot) ->  Dict.insert now {noOverride_ | left = Just top} dict
                     |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
                     |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
-                _ -> Dict.insert now noOverride_ dict
+                -- fraction with no argument on the bottom
+                (Just top, Nothing, Nothing) ->  Dict.insert now {noOverride_ | left = Just top} dict
+                    |> Dict.update top (Maybe.map(\v -> {v | right = Just now}))
+                -- fraction with no argument on the top
+                (Nothing, Nothing, Just bot) ->  Dict.insert now {noOverride_ | left = Just bot} dict
+                    |> Dict.update bot (Maybe.map(\v -> {v | right = Just now}))
+                -- start of the latex
+                (Nothing, Nothing, Nothing) -> Dict.insert now {noOverride_ | left = Nothing} dict
+                    |> Dict.update -1 (Maybe.map(\v -> {v | right = Just now}))
             )
         getLastest ref = case ref.topLast of
             Just _ -> ref.topLast
@@ -690,18 +703,17 @@ fixedFrom_ text fixed args latex =
                     prev = getLastest ref
                     (topFirst, newTop) = getFirstAndUpdate prev topDict
                     (botFirst, newBot) = getFirstAndUpdate prev botDict
-                    first = case topFirst of
-                        Just _ -> topFirst
-                        Nothing -> botFirst
+                    withFallback b a = case a of
+                        Just _ -> a
+                        Nothing -> b
                 in
                 (   {   topLast = getLastest topRef
                     ,   midLast = Nothing
                     ,   botLast = getLastest botRef
                     }
-                ,   Maybe.map (\p -> Dict.update p (Maybe.map (\v -> {v | right = first})) dict) prev
-                    |> Maybe.withDefault dict
-                    |> \dict1 -> Dict.foldl (\k v -> Dict.insert k {v | down = botFirst}) dict1 newTop
-                    |> \dict2 -> Dict.foldl (\k v -> Dict.insert k {v | up = topFirst}) dict2 newBot
+                ,   Dict.update (Maybe.withDefault -1 prev) (Maybe.map (\v -> {v | right = topFirst |> withFallback botFirst})) dict
+                    |> \dict1 -> Dict.foldl (\k v -> Dict.insert k {v | down = v.down |> withFallback botFirst}) dict1 newTop
+                    |> \dict2 -> Dict.foldl (\k v -> Dict.insert k {v | up = v.up |> withFallback topFirst}) dict2 newBot
                 )
             Latex.Superscript _ inner -> let (newRef, newDict) = recursive (ref, dict) inner in
                 ({ref | topLast = newRef.midLast}, newDict)

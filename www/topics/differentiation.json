@@ -1,0 +1,52 @@
+{
+    "name": "Differentiation",
+    "functions":{
+        "differentiate": {"arguments": 2, "commutative": false, "associative": false, "latex": "\\frac{d}{d\\param{1}}\\arg{2}"},
+        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"},
+        "sine": {"arguments": 1, "latex": "sin\\arg{1}"},
+        "cosine": {"arguments": 1, "latex": "cos\\arg{1}"}
+    },
+    "constants": {
+        "e": "Math.E"
+    },
+    "actions": [
+        {
+            "title": "Resolve",
+            "description": "resolve the differentiation",
+            "matches": [
+                {"from": "\\differentiate(a,a)", "to": ["1"]},
+                {"from": "\\differentiate(a,\\power(a,n))", "to": ["n*\\power(a,n-1)"]},
+                {"from": "\\differentiate(a,\\power(e,a))", "to": ["\\power(e,a)"]},
+                {"from": "\\differentiate(a,\\sine(a))", "to": ["\\cosine(a)"]},
+                {"from": "\\differentiate(a,\\cosine(a))", "to": ["-\\sine(a)"]}
+            ]
+        },
+        {
+            "title": "Chain Rule",
+            "description": "To differentiate ",
+            "parameters": {
+                "b": {
+                    "description": "The intermediate variable to split the differentation into.",
+                    "example": "x"
+                }
+            },
+            "matches": [
+                {"from": "\\differentiate(a,f)", "to": ["\\differentiate(b,f)*\\differentiate(a,b)"]}
+            ]
+        },
+        {
+            "title": "Expand",
+            "description": "Differentiation is linear, so we can expand out the terms",
+            "matches": [
+                {"from": "\\differentiate(a,b+c)", "to": ["\\differentiate(a,b)+\\differentiate(a,c)"]}
+            ]
+        },
+        {
+            "title": "Product Rule",
+            "description": "differentating things that are multiplied together",
+            "matches": [
+                {"from": "\\differentiate(a,b*c)", "to": ["\\differentiate(a,b)*c+b*\\differentiate(a,c)"]}
+            ]
+        }
+    ]
+}
