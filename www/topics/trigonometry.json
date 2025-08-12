@@ -1,0 +1,91 @@
+{
+    "name": "Trigonometry",
+    "functions":{
+        "degree": {"arguments": 1, "latex": "\\arg{1}^\\circ"},
+        "sine": {"arguments": 1, "latex": "sin\\arg{1}"},
+        "cosine": {"arguments": 1, "latex": "cos\\arg{1}"},
+        "tangent": {"arguments": 1, "latex": "tan\\arg{1}"},
+        "sqrt": {"arguments": 1, "latex": "\\sqrt{\\arg{1}}"}
+    },
+    "constants": {
+        "pi": "Math.PI",
+        "infty": "Number.POSITIVE_INFINITY"
+    },
+    "actions": [
+        {
+            "title": "To Radians",
+            "description": "Convert an angle in degrees to radians",
+            "matches": [
+                {"from": "\\degree(a)", "to": ["a*\\pi/180"]}
+            ]
+        },
+        {
+            "title": "Wrap around",
+            "description": "Angles keep looping",
+            "matches": [
+                {"from": "\\degree(360+a)", "to": ["\\degree(a)"]},
+                {"from": "\\degree(2\\pi+a)", "to": ["\\degree(a)"]}
+            ]
+        },
+        {
+            "title": "Negative Angles",
+            "description": "Trig identities with negative angles",
+            "matches": [
+                {"from": "\\sine(a)", "to": ["-\\sine(-a)"]},
+                {"from": "\\cosine(a)", "to": ["\\cosine(-a)"]},
+                {"from": "\\tangent(a)", "to": ["-\\tangent(-a)"]}
+            ]
+        },
+        {
+            "title": "Pythagorus",
+            "description": "Applying pythagorus to the right-angle triangle",
+            "matches": [{"from": "\\sine(a)\\sine(a)+\\cosine(a)\\cosine(a)", "to": ["1"]}]
+        },
+        {   "title": "Compound Angle",
+            "description": "When you add angles",
+            "matches": [
+                {"from": "\\sine(a+b)", "to": ["\\sine(a)\\cosine(b)+\\cosine(a)\\sine(b)"]},
+                {"from": "\\cosine(a+b)", "to": ["\\cosine(a)\\cosine(b)-\\sine(a)\\sine(b)"]},
+                {"from": "\\tangent(a+b)", "to": ["(\\tangent(a)+\\tangent(b))/(1-\\tangent(a)\\tangent(b))"]}
+            ]
+        },
+        {   "title": "Resolve",
+            "description": "Some values can be resolved to known numbers",
+            "matches": [
+                {"from": "\\sine(0)", "to": ["0"]},
+                {"from": "\\cosine(0)", "to": ["1"]},
+                {"from": "\\tangent(0)", "to": ["0"]},
+                {"from": "\\sine(\\pi/6)", "to": ["1/2"]},
+                {"from": "\\cosine(\\pi/6)", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\tangent(\\pi/6)", "to": ["1/\\sqrt(3)"]},
+                {"from": "\\sine(\\degree(30))", "to": ["1/2"]},
+                {"from": "\\cosine(\\degree(30))", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\tangent(\\degree(30))", "to": ["1/\\sqrt(3)"]},
+                {"from": "\\sine(\\pi/4)", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\cosine(\\pi/4)", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\tangent(\\pi/4)", "to": ["1"]},
+                {"from": "\\sine(\\degree(45))", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\cosine(\\degree(45))", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\tangent(\\degree(45))", "to": ["1"]},
+                {"from": "\\sine(\\pi/3)", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\cosine(\\pi/3)", "to": ["1/2"]},
+                {"from": "\\tangent(\\pi/3)", "to": ["\\sqrt(3)"]},
+                {"from": "\\sine(\\degree(60))", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\cosine(\\degree(60))", "to": ["1/2"]},
+                {"from": "\\tangent(\\degree(60))", "to": ["\\sqrt(3)"]},
+                {"from": "\\sine(\\pi/2)", "to": ["1"]},
+                {"from": "\\cosine(\\pi/2)", "to": ["0"]},
+                {"from": "\\tangent(\\pi/2)", "to": ["\\infty"]},
+                {"from": "\\sine(\\degree(90))", "to": ["1"]},
+                {"from": "\\cosine(\\degree(90))", "to": ["0"]},
+                {"from": "\\tangent(\\degree(90))", "to": ["\\infty"]},
+                {"from": "\\sine(\\pi)", "to": ["0"]},
+                {"from": "\\cosine(\\pi)", "to": ["-1"]},
+                {"from": "\\tangent(\\pi)", "to": ["0"]},
+                {"from": "\\sine(\\degree(180))", "to": ["0"]},
+                {"from": "\\cosine(\\degree(180))", "to": ["-1"]},
+                {"from": "\\tangent(\\degree(180))", "to": ["0"]}
+            ]
+        }
+    ]
+}

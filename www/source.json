@@ -17,6 +17,10 @@
         "Logarithm": {
             "url": "topics/logarithm.json",
             "description": "Covers logarithms, which is an inverse for powers. This needs the 'Power' topic for completeness."
+        },
+        "Trigonometry": {
+            "url": "topics/trigonometry.json",
+            "description": "Covers the core trigonometric functions: sine, cosine and tangent."
         }
     }
 }

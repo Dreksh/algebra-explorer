@@ -64,6 +64,7 @@
             "description": "Sub-operations within an expression can be gathered across components",
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
+                {"from": "a+a", "to": ["2a"]},
                 {"from": "ma+mb+c", "to": ["m(a+b)+c"]},
                 {"from": "-a*b", "to": ["-(a*b)"]},
                 {"from": "1/a*1/b", "to": ["1/(a*b)"]}

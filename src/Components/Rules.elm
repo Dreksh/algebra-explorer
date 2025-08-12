@@ -488,16 +488,26 @@ topicDecoder: Dec.Decoder Topic
 topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
     (Dec.field "functions" (Dec.dict (functionDecoder_ |> Dec.map (\func -> {property = func}))))
-    (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str -> if String.left 5 str /= "Math."
-        then Dec.fail "Only constants from Math are allowed"
-        else if String.dropLeft 5 str |> String.all Char.isAlphaNum then Dec.succeed str
-        else Dec.fail "Unknown characters after 'Math.'"
+    (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str ->
+        (   if String.left 5 str == "Math." then String.dropLeft 5 str |> Dec.succeed
+            else if String.left 7 str == "Number." then String.dropLeft 7 str |> Dec.succeed
+            else Dec.fail "Only constants from Math or Number are allowed"
+        )
+        |> Dec.andThen (\children -> if String.all (\c -> Char.isAlpha c || c == '_') children
+            then Dec.succeed str
+            else Dec.fail "Unknown characters after 'Math.' / 'Number.'"
+        )
     ))))
     |> Dec.andThen ( \(name, functions, vars) ->
         if Dict.size (Dict.diff vars functions) /= Dict.size vars then Dec.fail "Can't have a variable named as a function as well"
         else
             let
-                knownProps = Dict.foldl (\k _ inner -> Math.createConstant {javascript = FuncOp k |> Just, latex = Just [Latex.Text () k] } k
+                knownProps = Dict.foldl (\k _ inner ->  Math.createConstant
+                        {   javascript = FuncOp k |> Just
+                        ,   latex = case Dict.get k Latex.greekLetters of
+                            Nothing -> Just [Latex.Text () k]
+                            Just symb -> Just [Latex.SymbolPart () symb]
+                        } k
                         |> \entry -> Dict.insert k {property = entry} inner
                     ) functions vars
             in
