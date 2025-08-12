@@ -133,12 +133,12 @@ equalPart_: Part -> Part -> Bool
 equalPart_ left right = left.id == right.id && left.str == right.str
 
 type alias Iterator =
-    {   remaining: Latex.Model (State, Bool) -- The boolean stands for whether the special symbol has been seen
+    {   remaining: Latex.Model (State, Int) -- The boolean stands for whether the special symbols have been seen
     ,   lastIndex: Dict.Dict Int Int
     }
 
 latexIterator_: Latex.Model State -> Iterator
-latexIterator_ origin = {remaining= Latex.map (\s -> (s, False)) origin, lastIndex = Dict.empty}
+latexIterator_ origin = {remaining= Latex.map (\s -> (s, 0)) origin, lastIndex = Dict.empty}
 
 iteratorToPart_: Iterator -> (Iterator, Maybe Part)
 iteratorToPart_ it =
@@ -156,31 +156,31 @@ iteratorToPart_ it =
     case it.remaining of
         [] -> (it, Nothing)
         (current::next) -> case current of
-            Latex.Fraction (s, seen) top bot -> if seen
+            Latex.Fraction (s, seen) top bot -> if seen >= 1
                 then if List.isEmpty bot then result next s " )"
                     else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
-                else if List.isEmpty top then result (Latex.Fraction (s, True) top bot :: next) s " /"
+                else if List.isEmpty top then result (Latex.Fraction (s, 1) top bot :: next) s " /"
                     else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
                         |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
             Latex.Text (s, _) text -> result next s text
             Latex.SymbolPart (s, _) symbol -> result next s (" " ++ Latex.symbolToStr symbol)
             Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript (s, False) innerIt.remaining :: next}, part)
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript (s, 0) innerIt.remaining :: next}, part)
             Latex.Subscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript (s, False) innerIt.remaining :: next}, part)
-            Latex.Bracket (s, seen) inner -> if seen then
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript (s, 0) innerIt.remaining :: next}, part)
+            Latex.Bracket (s, seen) inner -> if seen >= 1 then
                     if List.isEmpty inner then result next s " )"
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
-                else result (Latex.Bracket (s, True) inner :: next) s " ("
-            Latex.Sqrt (s, seen) inner -> if seen then
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, 1) innerIt.remaining :: next}, part)
+                else result (Latex.Bracket (s, 1) inner :: next) s " ("
+            Latex.Sqrt (s, seen) inner -> if seen >= 3 then
                     if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, True) innerIt.remaining :: next}, part)
-                else result (Latex.Sqrt (s, True) inner :: next) s " sqrt"
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Sqrt (s, 3) innerIt.remaining :: next}, part)
+                else result (Latex.Sqrt (s, seen + 1) inner :: next) s (" sqrt" ++ String.fromInt seen)
             Latex.Border s inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                     |> \(innerIt, part) -> ({innerIt | remaining = Latex.Border s innerIt.remaining :: next} , part)
@@ -367,14 +367,28 @@ symbolsToFrames_ ref elem = case elem of
             ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 2*shift in
                 {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
             )
-    Latex.Sqrt _ inner -> latexToFrames inner
+    Latex.Sqrt s inner -> latexToFrames inner
         |> \new ->
-            (   {   data = Position [{frame = new, origin = (0.75, 0), scale = 1}] -- TODO: Add the sqrt line
-                ,   topLeft = new.topLeft |> Animation.addVector2 (0, 1)
-                ,   botRight = new.botRight |> Animation.addVector2 (1, 0)
+            let
+                ((_, top), (right, bot)) = (new.topLeft, new.botRight)
+                verticalScale = (bot - top) * 1.1 -- Add 0.1 on top of the height
+                xOffset = 0.3*verticalScale
+                yOffset = top - 0.1 * (bot - top) -- Where the top of the sqrt should reach
+            in
+            (   {   data = Position
+                    [   {frame = new, origin = (xOffset, 0), scale = 1}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0.7), Line (0.1, 0.9), Line (0.3, 0)], elem = s}, topLeft = (0, 0), botRight = (0.3, 0.9)}
+                        ,   origin = (0,yOffset), scale = verticalScale}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (1, 0)], elem = s}, topLeft = (0, 0), botRight = (1, 0)}
+                        ,   origin = (xOffset,yOffset), scale = right}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (0, 0.2)], elem = s}, topLeft = (0, 0), botRight = (0, 0.2)}
+                        ,   origin = (xOffset + right,yOffset), scale = verticalScale}
+                    ]
+                ,   topLeft = (0, yOffset - 0.1) -- Add 0.1 padding at the top
+                ,   botRight = (right + xOffset + 0.1, bot) -- add 0.1 padding on the right
                 }
-            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 1 in
-                {topX = offsetX, botX = offsetX, topY = (new.topLeft |> Tuple.second) + 1, botY = new.botRight |> Tuple.second}
+            ,   let totalXOffset = (max ref.topX ref.botX) + (right + xOffset + 0.1) in
+                {topX = totalXOffset, botX = totalXOffset, topY = yOffset, botY = bot}
             )
     Latex.Argument s _ ->
         (   {   data = BaseFrame
