@@ -60,7 +60,7 @@ type alias Rule =
 
 type alias Topic =
     {   name: String
-    ,   constants: Dict.Dict String String
+    ,   constants: Dict.Dict String (Maybe String)
     ,   functions: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
     ,   rules: List Rule
     }
@@ -70,7 +70,7 @@ type alias Topic =
 -}
 type alias Model =
     {   functions: Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
-    ,   constants: Dict.Dict String (String, Int) -- Number of topics that rely on the constant
+    ,   constants: Dict.Dict String (Maybe String, Int) -- Number of topics that rely on the constant
     ,   topics: Dict.Dict String (LoadState_ Topic)
     }
 
@@ -107,7 +107,7 @@ init =
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
 functionProperties model = model.constants
     |> Dict.foldl
-        (\k (javascript, count) d -> Math.createConstant {javascript = PrefixOp javascript |> Just , latex = Just [Latex.Text () k] } k
+        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text () k] } k
             |> \entry -> Dict.insert k {property = entry, count = count} d
         ) model.functions
     |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart () symbol]} name
@@ -403,7 +403,7 @@ evaluateStr_ model root = (
         Math.RealNode s -> Ok (String.fromFloat s.value)
         Math.VariableNode s -> case Dict.get s.name model.constants of
             Nothing -> Err "Unable to evaluate an unknown variable"
-            Just (str, _) -> Ok str
+            Just (str, _) -> str |> Result.fromMaybe ("javascript value is not provided for '" ++ s.name ++ "'")
         Math.UnaryNode s -> evaluateStr_ model s.child |> Result.andThen (\child -> toJavascriptString_ model s.name [child])
         Math.BinaryNode s -> Helper.resultList (\child list -> evaluateStr_ model child |> Result.map (\c -> c::list)) [] s.children
             |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
@@ -489,12 +489,13 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "name" Dec.string)
     (Dec.field "functions" (Dec.dict (functionDecoder_ |> Dec.map (\func -> {property = func}))))
     (Dec.field "constants" (Dec.dict (Dec.string |> Dec.andThen (\str ->
-        (   if String.left 5 str == "Math." then String.dropLeft 5 str |> Dec.succeed
+        (   if String.isEmpty str then Dec.succeed ""
+            else if String.left 5 str == "Math." then String.dropLeft 5 str |> Dec.succeed
             else if String.left 7 str == "Number." then String.dropLeft 7 str |> Dec.succeed
             else Dec.fail "Only constants from Math or Number are allowed"
         )
         |> Dec.andThen (\children -> if String.all (\c -> Char.isAlpha c || c == '_') children
-            then Dec.succeed str
+            then Dec.succeed (if String.isEmpty str then Nothing else Just str)
             else Dec.fail "Unknown characters after 'Math.' / 'Number.'"
         )
     ))))
@@ -650,7 +651,7 @@ replacementDecoder_ knownFunc args = Dec.string
 encode: Model -> Enc.Value
 encode model = Enc.object
     [   ("functions", Enc.dict identity (\prop -> Enc.object [("properties", encodeFProp_ prop.property), ("count", Enc.int prop.count)] ) model.functions)
-    ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", Enc.string name), ("count", Enc.int count)]) model.constants)
+    ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", encMaybeString name), ("count", Enc.int count)]) model.constants)
     ,   ("topics", Enc.dict identity (\loadState -> case loadState of
             NotInstalled_ source -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string source.url),("description", Enc.string source.description)]
             Installed_ source topic -> Enc.object
@@ -688,10 +689,15 @@ functionPropDecoder = Dec.map2 FunctionProp
 encodeTopic_: Topic -> Enc.Value
 encodeTopic_ topic = Enc.object
     [   ("name", Enc.string topic.name)
-    ,   ("constants", Enc.dict identity Enc.string topic.constants)
+    ,   ("constants", Enc.dict identity encMaybeString topic.constants)
     ,   ("functions", Enc.dict identity (.property >> encodeFProp_) topic.functions)
     ,   ("actions", Enc.list encodeRule_ topic.rules)
     ]
+
+encMaybeString: Maybe String -> Enc.Value
+encMaybeString mStr = case mStr of
+    Nothing -> Enc.null
+    Just n -> Enc.string n
 
 -- WARNING: This does not print out all of the inner state, especailly for expressions (only the name/string form is returned)
 encodeRule_: Rule -> Enc.Value
@@ -705,7 +711,7 @@ encodeRule_ rule = Enc.object
 decoder: Dec.Decoder Model
 decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
     (Dec.field "functions" <| Dec.dict <| Dec.map2 (\p c -> {property = p, count = c}) (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
-    (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
+    (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.maybe <| Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
     (Dec.field "topics" <| Dec.dict <| Dec.andThen (\s -> case s of
         "notInstalled" -> Dec.map NotInstalled_ sourceDecoder
         "installed" -> Dec.map2 Installed_ (Dec.maybe <| sourceDecoder) (Dec.field "topic" topicDecoder)

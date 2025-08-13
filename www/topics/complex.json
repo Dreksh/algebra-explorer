@@ -1,0 +1,23 @@
+{
+    "name": "Complex Numbers",
+    "functions": {},
+    "constants": {
+        "i": ""
+    },
+    "actions": [
+        {
+            "title": "Resolve",
+            "description": "Apply the definition of i*i = -1",
+            "matches": [
+                {"from": "ii", "to": ["-1"]}
+            ]
+        },
+        {
+            "title": "Expand",
+            "description": "Insert complex numbers",
+            "matches": [
+                {"from": "-a", "to": ["iia"]}
+            ]
+        }
+    ]
+}

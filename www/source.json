@@ -25,6 +25,14 @@
         "Differentiation": {
             "url": "topics/differentiation.json",
             "description": "Covers the basics of differentiating functions"
+        },
+        "Complex Numbers": {
+            "url": "topics/complex.json",
+            "description": "Introduction to the imaginary number"
+        },
+        "Play": {
+            "url": "topics/build.json",
+            "description": "Example of custom rules where the rules of algebra are not followed."
         }
     }
 }
