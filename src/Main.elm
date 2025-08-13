@@ -169,7 +169,7 @@ init flags url key =
         , animation = finalT
         , input = InputWithHistory.init newScreen (inputMouseCmd "mainInput") focusTextBar_
         , svgDragMap = Dict.fromList
-            [   ("equation-view-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.Commute eqNum event |> DisplayEvent)))
+            [   ("equation-view-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.PointerDrag eqNum event |> DisplayEvent)))
             ,   ("Equation-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Draggable.Drag event |> Display.DraggableEvent eqNum |> DisplayEvent)))
             ,   ("mainInput", (\_ -> Input.Shift >> InputWithHistory.InputEvent >> InputEvent >> Just ))
             ]
@@ -358,12 +358,6 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m False core
                 else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.none)
-            Actions.Group root children -> case Display.groupChildren core.animation root children model.display of
-                Err errStr -> submitNotification_ core errStr
-                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
-            Actions.Ungroup root -> case Display.ungroupChildren core.animation root model.display of
-                Err errStr -> submitNotification_ core errStr
-                Ok (dModel, animation) -> ({core | swappable = {model | display = dModel}, animation = animation}, Cmd.none)
             Actions.Substitute -> case model.display.selected of
                 Nothing -> submitNotification_ core "no equation is selected"
                 Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.none)

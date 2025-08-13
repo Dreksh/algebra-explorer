@@ -23,8 +23,30 @@ type alias Rect =
     ,   bottomLeft: Animation.EaseState Animation.Vector2
     ,   topRight: Animation.EaseState Animation.Vector2
     ,   opacity: Animation.EaseState Float
-    ,   commutable: Maybe (Int, List Float)  -- sibling order, siblings midpoints
+    ,   commutable: Maybe (Int, List Float)  -- nthChild index, siblings midpoints
+    ,   groupable: Maybe (Float, Float)  -- midpoint x, top y
+    ,   ungroupable: Maybe Float  -- bottom y
     }
+
+{-
+Diagram for commutable and associable drag semantics, where we are dragging the upper middle block:
+
+               .         .         .
+               .  group  .  group  .
+               .  left   .  right  .
+            ___.___...___.___...___.___
+           |   .   | |       | |   .   |
+  commute  |   .   | dead zone |   .   |  commute
+  left     |___.___|_|_______|_|___.___|  right
+           |   .                   .   |
+           |   .      ungroup      .   |
+           |___.___________________.___|
+               .                   .
+
+for commutable we therefore need the midpoints of all siblings
+for associable we need the midpoint and upper and lower bounds
+-}
+
 
 type alias Model =
     {   rects: Dict.Dict (Int, Int) Rect  -- the key here needs to be two Ints because DeclarativeNodes map to multiple rects
@@ -59,7 +81,7 @@ advanceTime millis model =
     in
         { model | rects = newRects, viewBox = newViewBox }
 
-view: (Int -> Maybe (Int, List Float) -> List (Html.Attribute e)) -> Model -> Html e
+view: (Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute e)) -> Model -> Html e
 view createAttrs model =
     -- TODO: allow blocks to share a border to make it look like mitosis
     -- TODO: can pass in some extra params here to allow dragging to move the node with cursor
@@ -71,7 +93,7 @@ view createAttrs model =
 
         bricks = invisible ++ visible |> List.map (\((id, _), rect) ->
             let
-                attrs = createAttrs id rect.commutable
+                attrs = createAttrs id rect.commutable rect.groupable rect.ungroupable
                 (blX, blY) = Animation.current rect.bottomLeft
                 (trX, trY) = Animation.current rect.topRight
             in
@@ -132,7 +154,7 @@ calculateTree_ animation root rects =
                             (Animation.newEaseVector2 smoothTime_ blTarget)
                             (Animation.newEaseVector2 smoothTime_ trTarget)
                             (Animation.newEaseFloat (smoothTime_/2) 0)
-                            Nothing
+                            Nothing Nothing Nothing
                         ,   (-1, -1)
                         ,   newA
                         )
@@ -141,9 +163,16 @@ calculateTree_ animation root rects =
                 (tr, a3) = Animation.setEase a2 trTarget old.topRight
                 (op, a4) = Animation.setEase a3 opTarget old.opacity
 
+                midpoint colStart colEnd = (getColX colStart grid.lines + getColX colEnd grid.lines) / 2
                 commutable = item.commutable
                     |> Maybe.map (\(index, list) ->
-                        (index, List.map (\(sCol,eCol) -> (getColX sCol grid.lines + getColX eCol grid.lines)/2 ) list)
+                        (index, List.map (\(s,e) -> midpoint s e) list)
+                    )
+                (groupable, ungroupable) = item.associable
+                    |> (\(g, u) ->
+                        (   if g then Just (midpoint item.colStart item.colEnd, toFloat item.rowEnd) else Nothing
+                        ,   if u then Just (toFloat item.rowStart) else Nothing
+                        )
                     )
                 new = (
                     {   old
@@ -153,6 +182,8 @@ calculateTree_ animation root rects =
                     ,   topRight = tr
                     ,   opacity = op
                     ,   commutable = commutable
+                    ,   groupable = groupable
+                    ,   ungroupable = ungroupable
                     })
             in
                 (Dict.insert (id, id2) new foldRects, a4, Set.insert easedId foldEased)
@@ -212,6 +243,7 @@ type alias GridItem =
     ,   rowStart: Int
     ,   rowEnd: Int
     ,   commutable: Maybe (Int, List (Int, Int))  -- nth-child index, siblings' (colStart, colEnd)
+    ,   associable: (Bool, Bool)  -- groupable, ungroupable
     }
 
 type alias Grid =
@@ -269,28 +301,44 @@ stack root = let initialGrid = (Grid Dict.empty Array.empty Nothing, -1) in
             |> (\((grid, colEnd), _, revRange) ->
                 let
                     childRanges = List.reverse revRange
-                    newItems = updateCommutativeChildren grid.items childRanges n.children
+                    newItems = updateCommutableAssociable grid.items childRanges root
                     declarative = Just
                         (   GridItem
                             (n.state |> Matcher.getState |> .prevID)
                             text 0 (colEnd-1) 0 1
-                            (Just (n.state |> Matcher.getID, childRanges))
-                            -- reuse the commutable field because it fits our use case perfectly
+                            (Just (n.state |> Matcher.getID, childRanges))  -- reuse the commutable field because it fits our use case perfectly
+                            (False, False)
                         )
                 in
                     { grid | items = newItems, declarative = declarative }
                 )
         _ -> stackRecursive_ 0 root initialGrid |> Tuple.first
 
-updateCommutativeChildren: Dict.Dict Int GridItem -> List (Int, Int) -> List (Math.Tree (Matcher.State Animation.State)) -> Dict.Dict Int GridItem
-updateCommutativeChildren items siblingRanges children =
-    children |> List.foldl (\child (foldGrid, nthChild) ->
-        let childId = Math.getState child |> Matcher.getID
-        in  (   Dict.update childId (Maybe.map (\entry -> {entry | commutable = Just (nthChild, siblingRanges)})) foldGrid
-            ,   nthChild + 1
-            )
-    ) (items, 0)
-    |> Tuple.first
+updateCommutableAssociable: Dict.Dict Int GridItem -> List (Int, Int) -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict Int GridItem
+updateCommutableAssociable items siblingRanges parent =
+    let
+        parentName = Math.getName parent
+        (commutative, associative) = case parent of
+            Math.BinaryNode n -> (n.commutative, n.associative /= Nothing)
+            Math.DeclarativeNode n -> (True, False)  -- Assume it's commutative for now (until we introduce inequalities)
+            _ -> (False, False)
+        children = Math.getChildren parent
+        nChildren = List.length children
+    in
+        children |> List.foldl (\child (foldGrid, nthChild) ->
+            let
+                childId = Math.getState child |> Matcher.getID
+                childName = Math.getName child
+            in  (   Dict.update childId (Maybe.map (\entry ->
+                        {   entry
+                        |   commutable = if commutative then Just (nthChild, siblingRanges) else Nothing
+                        ,   associable = if associative then (nChildren >= 3, childName == parentName) else (False, False)
+                        }
+                        )) foldGrid
+                ,   nthChild + 1
+                )
+            ) (items, 0)
+        |> Tuple.first
 
 stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int) -> (Grid, Int)
 stackRecursive_ depth node (grid, colStart) =
@@ -299,7 +347,7 @@ stackRecursive_ depth node (grid, colStart) =
         insertItem colEnd dict =
             GridItem
             (Math.getState node |> Matcher.getState |> .prevID)
-            text colStart colEnd depth (depth + 1) Nothing
+            text colStart colEnd depth (depth + 1) Nothing (False, False)
             |> \item -> Dict.insert (Math.getState node |> Matcher.getID) item dict
     in
         case Math.getChildren node of
@@ -320,13 +368,8 @@ stackRecursive_ depth node (grid, colStart) =
                 |> \((childrenGrid, colEnd), revRange) ->
                     (   {   childrenGrid
                         |   items =
-                                let
-                                    added = insertItem colEnd childrenGrid.items
-                                    updateChildren = updateCommutativeChildren added (List.reverse revRange)
-                                in case node of
-                                    Math.BinaryNode n -> if n.commutative then updateChildren n.children else added
-                                    Math.DeclarativeNode n -> updateChildren n.children -- Assume it's commutative for now (until we introduce inequalities)
-                                    _ -> added
+                                let added = insertItem colEnd childrenGrid.items
+                                in updateCommutableAssociable added (List.reverse revRange) node
                         ,   lines =
                                 let
                                     childrenXMin = (getColX colStart childrenGrid.lines)

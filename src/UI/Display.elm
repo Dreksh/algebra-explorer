@@ -57,8 +57,23 @@ type alias Entry =
     ,   showHistory: Bool
     ,   show: Bool
     ,   ui: UIModel
-    ,   commuting: Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
+    ,   dragging: Maybe Drag
     }
+
+type alias Drag =
+    {   id: Int
+    ,   commutable: Maybe (Int, List Float)
+    ,   groupable: Maybe (Float, Float)
+    ,   ungroupable: Maybe Float
+    ,   moved: DragState
+    }
+
+type DragState =
+    Initial
+    | NoOp
+    | Commuting Int  -- new nthChild index
+    | Grouping Bool  --  left or Right
+    | Ungrouping
 
 type Event =
     Select Int Int
@@ -67,8 +82,8 @@ type Event =
     | ToggleHistory Int
     | HistoryEvent Int (History.Event (FullEquation, Latex.Model State))
     | DraggableEvent Int Draggable.Event
-    | PointerDown Int Int Int (List Float) Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
-    | Commute Int SvgDrag.Event
+    | PointerDown Int Drag Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
+    | PointerDrag Int SvgDrag.Event
 
 newEntry_: Animation.Tracker -> Int -> Int -> FullEquation -> (Entry, Animation.Tracker)
 newEntry_ tracker size index eq =
@@ -82,7 +97,7 @@ newEntry_ tracker size index eq =
         ,   showHistory = False
         ,   show = True
         ,   ui = (b, m)
-        ,   commuting = Nothing
+        ,   dragging = Nothing
         }
     ,   newT
     )
@@ -294,7 +309,7 @@ commit rules model = selectedEquation_ model
         let
             newHis = History.update History.Commit entry.history
             -- do not need to call updateBricks because it should already be 'previewed'
-            newEquations = Dict.insert eq {entry | history = newHis} model.equations
+            newEquations = Dict.insert eq {entry | history = newHis, dragging = Nothing} model.equations
             newSelected = let staged = model.selected |> Maybe.map (\(_, _, s) -> s) |> Maybe.withDefault Set.empty
                 in Just (eq, staged, Set.empty)
             newActions = updateActions_ newSelected rules newEquations
@@ -444,7 +459,7 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
         Nothing -> default
         Just entry -> updatePositions_
             {   model
-            |   equations = Dict.insert eq {entry | show = not entry.show, commuting = Nothing} model.equations
+            |   equations = Dict.insert eq {entry | show = not entry.show, dragging = Nothing} model.equations
             ,   recencyList = updateEqOrder_ eq model.recencyList
             }
             |> updateQueryCmd tracker
@@ -483,68 +498,94 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                 ,   Maybe.map (\v -> model.setCapture v.id v.pID) action
                     |> Maybe.withDefault Cmd.none
                 )
-    PointerDown eq root index midpoints pid point -> case Dict.get eq model.equations of
+    PointerDown eq drag pid point -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->
             (   {   model
-                |   equations = Dict.insert eq
-                    {   entry
-                    |   commuting = Just {id = root, currentIndex = index, originalIndex = index, midpoints = midpoints, moved = False}
-                    }
-                    model.equations
+                |   equations = Dict.insert eq { entry | dragging = Just drag } model.equations
                 ,   recencyList = updateEqOrder_ eq model.recencyList
                 }
             ,   tracker
             ,   model.svgMouseCmd eq pid point
             )
-    Commute eqNum dragEvent -> case dragEvent of
+    PointerDrag eqNum dragEvent -> case dragEvent of
         SvgDrag.Start _ -> default -- Handled in MouseDown
-        SvgDrag.Move _ (x, _) -> case Dict.get eqNum model.equations of
+        SvgDrag.Move _ (x, y) -> case Dict.get eqNum model.equations of
             Nothing -> default
-            Just entry -> case entry.commuting of
-                Nothing -> default
-                -- Maybe {id: Int, currentIndex: Int, originalIndex: Int, moved: Bool, midpoints: List Float}
-                Just n -> if n.originalIndex == -1
-                    then default  -- It is not draggable, and we've detected a drag
-                    else let newIndex = indexFromMidpoints_ n.originalIndex n.midpoints x in
-                        if newIndex == n.currentIndex
-                        then default
-                        else let (b, m) = entry.ui in
-                            History.next entry.history
-                            |> \(currentEq, currentLatex) -> (Matcher.setChildIndex n.id newIndex currentEq, currentLatex)
-                            |> \(newEq, newL) -> case newEq of
-                                Err _ -> default
-                                Ok commutedEq ->
-                                    let
-                                        commutedL = Rules.toLatex commutedEq
-                                        commutingEntry = { entry | commuting = Just {n | moved = True, currentIndex = newIndex} }
-                                        newHis = History.update (History.Stage (History.Change (commutedEq, commutedL))) commutingEntry.history
-                                        ids = model.selected |> Maybe.map (\(_, s, _) -> s) |> Maybe.withDefault Set.empty
-                                        (newModel, newTracker) = stageChange tracker eqNum ids newHis commutingEntry model
-                                    in
-                                        (newModel, newTracker, Cmd.none)
+            Just entry -> case commuteOrAssociate x y entry of
+                Err e -> default
+                Ok (newDragging, draggedEq) ->
+                    let
+                        draggingEntry = { entry | dragging = Just newDragging }
+                        draggedL = Rules.toLatex draggedEq
+                        newHis = History.update (History.Stage (History.Change (draggedEq, draggedL))) draggingEntry.history
+                        newSel = Just (eqNum, Set.singleton newDragging.id, Set.singleton newDragging.id)
+                        -- don't use stageChange because it updates the selected nodes
+                        (newEntry, newT) = updateBricks tracker {draggingEntry | history = newHis}
+                    in
+                        ({model | equations = Dict.insert eqNum newEntry model.equations, selected = newSel}, newT, Cmd.none)
 
-        SvgDrag.End time (x, _) -> case Dict.get eqNum model.equations of
+        SvgDrag.End time _ -> case Dict.get eqNum model.equations of
             Nothing -> default
-            Just entry -> case entry.commuting of
+            Just entry -> case entry.dragging of
                 Nothing -> default
-                Just n -> if n.moved
-                    then if n.originalIndex /= n.currentIndex
-                        then update size tracker rules (HistoryEvent eqNum History.Commit) model
-                        else default
+                Just drag -> case drag.moved of
                     -- TODO: either check distance mouse moved before or if mouse is still over block before selecting
-                    else updateSelected_ eqNum n.id (time > longClickThreshold) rules model
-                        |> \newModel -> (newModel, tracker, Cmd.none)
+                    Initial -> updateSelected_ eqNum drag.id (time > longClickThreshold) rules model
+                            |> \newModel -> (newModel, tracker, Cmd.none)
+                    NoOp -> default
+                    _ -> update size tracker rules (HistoryEvent eqNum History.Commit) model
+
+commuteOrAssociate: Float -> Float -> Entry -> Result String (Drag, FullEquation)
+commuteOrAssociate x y entry = case entry.dragging of
+    Nothing -> Err "node is not dragging, invariant violated!"
+    Just drag -> (case drag.commutable of
+        Nothing -> Err "node is not commutable"
+        Just (nthChildIndex, midpoints) -> let newIndex = indexFromMidpoints_ nthChildIndex midpoints x in
+            if newIndex == nthChildIndex
+            then Err "node is not commuting"
+            else Ok (Commuting newIndex)
+        )
+        |> (\commuted -> case commuted of
+            Ok c -> Ok c
+            Err _ -> case drag.groupable of
+                Nothing -> Err "node is not groupable"
+                Just (midpoint, top) -> if -y < top  -- need negative because svg y-axis goes downwards
+                    then Err "not dragging above selected block"
+                    else Ok (Grouping (x<midpoint))
+            )
+        |> (\grouped -> case grouped of
+            Ok g -> g
+            Err _ -> case drag.ungroupable of
+                Nothing -> NoOp
+                Just bottom -> if -y > bottom  -- need negative because svg y-axis goes downwards
+                    then NoOp
+                    else Ungrouping
+            )
+        |> (\newState ->
+            let
+                newMoved = if drag.moved == Initial && newState == NoOp then Initial else newState
+            in (if drag.moved == newMoved
+                then Err "drag state has not changed"
+                else let (currentEq, _) = History.current entry.history in case newMoved of
+                    Initial -> Err "state returned to Initial, invariant violated!"
+                    NoOp -> Ok currentEq
+                    Commuting newIndex -> Matcher.setChildIndex drag.id newIndex currentEq
+                    Grouping left -> Matcher.groupSibling drag.id left currentEq |> Result.map (\(_, newEq) -> newEq)
+                    Ungrouping -> Matcher.ungroupSubtree drag.id currentEq |> Result.map (\(_, newEq) -> newEq)
+                )
+                |> Result.map (\newEq -> ({drag | moved = newMoved}, newEq))
+            )
 
 indexFromMidpoints_: Int -> List Float -> Float -> Int
-indexFromMidpoints_ original midpoints value =
+indexFromMidpoints_ original midpoints val =
     let
         segmentIndex m v = case m of
             [] -> 0
             (x::next) -> if v >= x
                 then 1 + segmentIndex next v
                 else 0
-        sIndex = segmentIndex midpoints value
+        sIndex = segmentIndex midpoints val
     in
         if sIndex <= original then sIndex else sIndex - 1
 
@@ -666,18 +707,16 @@ historyEntry_ converter current eqNum index inner = Html.a
     )
     [inner]
 
-brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> List (Html.Attribute Event)
-brickAttr_ highlight eqNum id commutable =
-    (   case commutable of
-            Nothing ->
-                [   HtmlEvent.onPointerCapture identity (PointerDown eqNum id -1 [])
-                ]
-            Just (originalIndex, midpoints) ->
-                [   Svg.Attributes.class "commutable"
-                ,   HtmlEvent.onPointerCapture identity (PointerDown eqNum id originalIndex midpoints)
-                ]
-    )
-    |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
+brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute Event)
+brickAttr_ highlight eqNum id commutable groupable ungroupable =
+    let
+        drag = Drag id commutable groupable ungroupable Initial
+    in
+        List.filterMap identity
+        [   HtmlEvent.onPointerCapture identity (PointerDown eqNum drag) |> Just
+        ,   Svg.Attributes.class "commutable" |> Helper.maybeGuard (commutable /= Nothing || groupable /= Nothing || ungroupable /= Nothing)
+        ]
+        |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
 
 encode: Model -> Encode.Value
 encode model = Encode.object
@@ -738,7 +777,7 @@ addDefaultPositions_ orig =
                 ,   ui = (b, m)
                 ,   showHistory = tEntry.showHistory
                 ,   show = tEntry.show
-                ,   commuting = Nothing
+                ,   dragging = Nothing
                 }
             ,   newT
             )

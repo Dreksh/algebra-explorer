@@ -465,18 +465,6 @@ menuTopics converter model = Dict.foldl (\k t -> (::)
                 ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurrences with one by the other."]
                 ]
             ]
-        ,   Menu.Section {name = "Group", icon = Nothing}
-            [   Menu.Content []
-                [   h3 [] [text "Focus on a specific part"]
-                ,   p [] [text "Associative operators can be done in any order. These include Addition and Multiplication. The parts that are in focus will be brought together."]
-                ]
-            ]
-        ,   Menu.Section {name = "Ungroup", icon = Nothing}
-            [   Menu.Content []
-                [   h3 [] [text "Return the group with the rest"]
-                ,   p [] [text "Associative operators can be done in any order. These include Additional and Multiplication. The parts that were in focus will be back with the other to see "]
-                ]
-            ]
         ]
     ]
     model.topics

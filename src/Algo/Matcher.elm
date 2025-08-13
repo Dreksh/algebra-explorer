@@ -4,7 +4,7 @@ module Algo.Matcher exposing (
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
     Replacement, toReplacement, replacementToEq, toSubstitution, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
-    groupSubtree, ungroupSubtree, setChildIndex, refreshFuncProp,
+    groupSubtree, groupSibling, ungroupSubtree, setChildIndex, refreshFuncProp,
     selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
     )
 
@@ -370,6 +370,32 @@ groupPartition_ check = List.foldl
         else (pre, group, elem::post)
     )
     ([],[],[])
+
+groupSibling: Int -> Bool -> Equation prop state -> Result String (Int, Equation prop state)
+groupSibling id useLeftSibling eq = processSubtree_
+    (searchPath_ eq.tracker.parent id |> \list -> List.take (List.length list - 1) list)
+    (\subEq ->
+        let
+            parentID = subEq.root |> Math.getState |> getID
+            children = Math.getChildren subEq.root
+            fold = if useLeftSibling then List.foldr else List.foldl
+            sibling = children |> fold (\child (prevSiblingID, chosenSiblingID) -> case chosenSiblingID of
+                Just _ -> (prevSiblingID, chosenSiblingID)
+                Nothing -> let childID = (child |> Math.getState |> getID) in case prevSiblingID of
+                    Nothing -> (Just childID, Nothing)
+                    Just siblingID -> if siblingID == id
+                        then (Nothing, Just childID)
+                        else (Just childID, Nothing)
+                ) (Nothing, Nothing)
+                |> Tuple.second
+
+        in case sibling of
+            Nothing -> Err "could not find sibling"
+            Just siblingID -> Ok (groupSubtree parentID (Set.fromList [id, siblingID]) eq, subEq)
+    )
+    eq
+    |> Result.andThen Tuple.first
+
 
 -- ## ungroupSubtree: merge children back into the parent
 ungroupSubtree: Int -> Equation prop state -> Result String (Int, Equation prop state)
