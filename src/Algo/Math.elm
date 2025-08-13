@@ -288,7 +288,7 @@ invertable_ funcProps = Parser.oneOf
         )
         |. expectSymbol_ "-" |. Parser.spaces |= Parser.lazy (\_ -> invertable_ funcProps |> Parser.inContext (PrevStr_ "-"))
     ,   Parser.succeed
-        (\x -> let p = Dict.get "1/" funcProps |> Maybe.map (.property >> getState) in
+        (\x -> let p = Dict.get "/" funcProps |> Maybe.map (.property >> getState) in
             UnaryNode {state = p, name = "/", child = x}
         )
         |. expectSymbol_ "1/" |. Parser.spaces |= Parser.lazy (\_ -> invertable_ funcProps |> Parser.inContext (PrevStr_ "1/"))

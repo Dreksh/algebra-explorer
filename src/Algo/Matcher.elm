@@ -218,7 +218,7 @@ toReplacement_ converter strict argDict =
             Math.GenericNode s -> case Dict.get s.name argDict of
                 Just (args, index) -> if args /= List.length s.children then Err (s.name ++ " has the wrong number of inputs")
                     else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
-                        |> Result.map (\children -> Math.GenericNode {state = (Nothing, Just index), name = "", arguments = Nothing, children = children})
+                        |> Result.map (\children -> Math.GenericNode {state = (converter s.state, Just index), name = "", arguments = Nothing, children = children})
                 Nothing -> case s.arguments of
                     Nothing -> if strict then Err ("Cannot construct the function " ++ s.name)
                         else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children

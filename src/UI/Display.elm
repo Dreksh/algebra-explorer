@@ -29,7 +29,6 @@ import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 import UI.SvgDrag as SvgDrag
 import UI.Actions as Actions
-import UI.ActionView as ActionView
 
 type alias State = Matcher.State Animation.State
 type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
@@ -619,7 +618,7 @@ views converter actionConvert model =
                                         Nothing ->[historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
                                         Just after -> historyEntry_ converter current eqNum index (MathIcon.static [] latex)
                                             ::  (
-                                                List.map (Html.div []) (List.take middle children)
+                                                List.map (div []) (List.take middle children)
                                                 ++ after
                                             )
                                     ) entry.history
@@ -640,7 +639,7 @@ views converter actionConvert model =
                                 ]
                                 else [class "contextualDisabled"]
                             )
-                            [text "Undo"]  -- TODO: make these icons instead
+                            [div [class "contextualActionLabel"] [text "Undo"]]  -- TODO: make these icons instead
                         ,   div
                             (   class "contextualAction" :: if History.canRedo entry.history then
                                 [   class "clickable"
@@ -650,9 +649,9 @@ views converter actionConvert model =
                                 ]
                                 else [class "contextualDisabled"]
                             )
-                            [text "Redo"]
+                            [div [class "contextualActionLabel"] [text "Redo"]]
                         ]
-                        :: if Set.isEmpty highlight then [] else ActionView.contextualActions actionConvert model.actions
+                        :: if Set.isEmpty highlight then [] else Actions.viewContextual actionConvert model.actions
                     )
                 ]
             )
