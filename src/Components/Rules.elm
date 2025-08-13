@@ -90,8 +90,8 @@ type Event =
 
 coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
 coreFunctions_ = Dict.fromList
-    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = True, commutative = True, identity = 0, children = []}})
-    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = True, commutative = True, identity = 1, children = []}})
+    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = Just 0, commutative = True, children = []}})
+    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = Just 1, commutative = True, children = []}})
     ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}})
     ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}})
     ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text () "="]}, name = "", children = []}})

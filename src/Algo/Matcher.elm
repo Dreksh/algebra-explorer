@@ -214,7 +214,7 @@ toReplacement_ converter strict argDict =
             Math.UnaryNode s -> convert s.child
                 |> Result.map (\child -> Math.UnaryNode {state = (converter s.state, Nothing), name = s.name, child = child})
             Math.BinaryNode s -> Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
-                |> Result.map (\children -> Math.BinaryNode {state = (converter s.state, Nothing), name = s.name, associative = s.associative, commutative = s.commutative, identity = s.identity, children = List.reverse children})
+                |> Result.map (\children -> Math.BinaryNode {state = (converter s.state, Nothing), name = s.name, associative = s.associative, commutative = s.commutative, children = List.reverse children})
             Math.GenericNode s -> case Dict.get s.name argDict of
                 Just (args, index) -> if args /= List.length s.children then Err (s.name ++ " has the wrong number of inputs")
                     else Helper.resultList (\child list -> convert child |> Result.map (\c -> c :: list)) [] s.children
@@ -243,7 +243,7 @@ type alias InternalReplacement_ state = Math.Tree (State state, Maybe Int)
 type Value_ prop state =
     ExternalValue_ (Replacement prop)
     | InternalValue_ (InternalReplacement_ state)
-    | MultiValue_ {op: String, arguments: Int, associative: Bool, commutative: Bool, identity: Float, state: State state, pre: List (InternalReplacement_ state), post: List (InternalReplacement_ state)}
+    | MultiValue_ {op: String, arguments: Int, associative: Maybe Float, commutative: Bool, state: State state, pre: List (InternalReplacement_ state), post: List (InternalReplacement_ state)}
     | AsIsValue_ Bool (Math.Tree (State state)) -- 'used' and then 'tree'
 
 newResult: MatchResult prop state
@@ -346,8 +346,8 @@ processSubtree_ path processor eq =
 groupSubtree: Int -> Set.Set Int -> Equation prop state -> Result String (Int, Equation prop state)
 groupSubtree id nodes eq = processSubtree_ (searchPath_ eq.tracker.parent id)
     (\subEq -> case subEq.root of
-        Math.BinaryNode n -> if not n.associative then Err "Node is not associative"
-            else if not n.commutative then Err "Not implemented for non-commutative"
+        Math.BinaryNode n -> if n.associative == Nothing then Err "Node is not associative"
+            else if not n.commutative then Err "Not implemented for non-commutative" -- TODO: For when we have associative but not commutative (i.e. matrix multiplication)
             else let (pre,group,post) = groupPartition_ (\c -> Set.member (Math.getState c |> getID) nodes) n.children in
                 if (List.length pre + List.length post == 0) || List.isEmpty group then Err "Grouping all or none does nothing"
                 else let (newS, newT) = addNode_ (Just n.state) Nothing (getID n.state) subEq.tracker in
@@ -381,7 +381,7 @@ ungroupSubtree id eq = processSubtree_
 ungroupChild_: Tracker_ prop state -> Int -> Equation prop state -> Result String (Int, Equation prop state)
 ungroupChild_ tracker id subEq = case subEq.root of
     Math.BinaryNode n ->
-        if not n.associative then Err "Parent node is not associative"
+        if n.associative == Nothing then Err "Parent node is not associative"
         else
             let
                 traverseRemaining next = case next of
@@ -554,9 +554,10 @@ extractPattern_ priority from root token = case from of
 priorityList_: Set.Set Int -> List (Math.Tree (State state)) -> List (Math.Tree (State state))
 priorityList_ set = List.partition (\n -> Set.member (Math.getState n |> getID) set) >> (\(a,b) -> a++b)
 
-otherMatchEvaluator_: String -> {a | associative: Bool, commutative: Bool, identity: Float, state: State state} -> String -> Backtrack.Evaluator (MatchResult prop state) (Int, Math.Tree (State state))
+otherMatchEvaluator_: String -> {a | associative: Maybe Float, commutative: Bool, state: State state} -> String -> Backtrack.Evaluator (MatchResult prop state) (Int, Math.Tree (State state))
 otherMatchEvaluator_ op props key nodes = Backtrack.return (\result -> if List.isEmpty nodes
-    then Just {result | var = Dict.insert key (Math.RealNode {value = props.identity, state = (Nothing, Nothing)}|> ExternalValue_) result.var}
+    then props.associative
+        |> Maybe.map (\identity -> {result | var = Dict.insert key (Math.RealNode {value = identity, state = (Nothing, Nothing)}|> ExternalValue_) result.var})
     else if List.length nodes == 1 then List.head nodes
         |> Maybe.map (\(_, node) -> {result | var = Dict.insert key (toInternalReplacement_ Dict.empty node |> InternalValue_) result.var})
     else List.sortBy Tuple.first nodes
@@ -565,7 +566,7 @@ otherMatchEvaluator_ op props key nodes = Backtrack.return (\result -> if List.i
         |> (\(a,b)-> let processChildren = List.map (\(_, (_, n)) -> toInternalReplacement_ Dict.empty n) in
             Just
             {   result
-            |   var = Dict.insert key (MultiValue_ {arguments = 0, op = op, associative = props.associative, commutative = props.commutative, identity = props.identity, state = props.state, pre = processChildren a, post = processChildren b}) result.var
+            |   var = Dict.insert key (MultiValue_ {arguments = 0, op = op, associative = props.associative, commutative = props.commutative, state = props.state, pre = processChildren a, post = processChildren b}) result.var
             }
         )
     )
@@ -607,19 +608,19 @@ type alias ArgResult_ prop state =
     }
 type Replaced_ state =
     SingleNodeReplaced_ (Math.Tree (State state))
-    | MultiNodeReplaced_ {name: String, associative: Bool, commutative: Bool, identity: Float, state: State state} (List (Math.Tree (State state))) (List (Math.Tree (State state)))
+    | MultiNodeReplaced_ {name: String, associative: Maybe Float, commutative: Bool, state: State state} (List (Math.Tree (State state))) (List (Math.Tree (State state)))
 
 replacedToTree_: Int -> Tracker_ prop state -> Replaced_ state -> (Math.Tree (State state), Tracker_ prop state)
 replacedToTree_ parent tracker repl = case repl of
     SingleNodeReplaced_ tree -> (tree, tracker)
     MultiNodeReplaced_ f pre post -> let (st, newT) = addNode_ Nothing (f.state |> getState |> tracker.ops.extract) parent tracker in
-        (   Math.BinaryNode {state = st, name = f.name, associative = f.associative, commutative = f.commutative, identity = f.identity, children = pre ++ post}
+        (   Math.BinaryNode {state = st, name = f.name, associative = f.associative, commutative = f.commutative, children = pre ++ post}
         ,   {newT | parent = List.foldl (\child -> Dict.insert (Math.getState child |> getID) tracker.nextID) newT.parent (pre ++ post) }
         )
 
 type ReplacementList_ state =
     RList_ (List (Math.Tree (State state)))
-    | FList_ {name: String, associative: Bool, commutative: Bool, identity: Float, state: State state} (List (Math.Tree (State state))) (List (Math.Tree (State state)))
+    | FList_ {name: String, associative: Maybe Float, commutative: Bool, state: State state} (List (Math.Tree (State state))) (List (Math.Tree (State state)))
 
 setParent_: Math.Tree (State state) -> Maybe Int -> Tracker_ prop state -> Tracker_ prop state
 setParent_ root parent tracker = let id = Math.getState root |> getID in
@@ -665,8 +666,8 @@ constructFromReplacement_ parent tracker arguments replaceNode =
                 constructChildren n.name t a n.children
                 |> Result.map (\(res, newT, newArg) ->
                     (   case res of
-                        RList_ children -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
-                        FList_ _ pre post -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = pre ++ post})
+                        RList_ children -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, children = children})
+                        FList_ _ pre post -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, children = pre ++ post})
                     ,   newT, newArg)
                 )
             Math.DeclarativeNode n -> let (s, t, a) = createState n.state n.name in
@@ -730,8 +731,8 @@ constructFromInternalReplacement_ parent tracker arguments replaceNode =
             Math.BinaryNode n -> constructChildren n.name t n.children
                 |> Result.map (\(res, newT, newArg) ->
                     (   case res of
-                        RList_ children -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
-                        FList_ _ pre post -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = pre ++ post})
+                        RList_ children -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, children = children})
+                        FList_ _ pre post -> SingleNodeReplaced_ (Math.BinaryNode {state = s, name = n.name, associative = n.associative, commutative = n.commutative, children = pre ++ post})
                     ,   newT, newArg)
                 )
             Math.DeclarativeNode n -> constructChildren n.name t n.children
@@ -777,15 +778,15 @@ toReplacementList_ parent name tracker = List.foldl (\child (list, oT) -> case (
         (Nothing, SingleNodeReplaced_ tree) -> (Just (RList_ [tree]), oT)
         (Nothing, MultiNodeReplaced_ p pre post) -> if p.name == name then (Just (FList_ p pre post), oT)
             else addNode_ (Just p.state) Nothing parent oT
-                |> \(s, t) -> (Just (RList_ [Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, identity = p.identity, children = pre ++ post}]), t)
+                |> \(s, t) -> (Just (RList_ [Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, children = pre ++ post}]), t)
         (Just (RList_ n), SingleNodeReplaced_ tree) -> (Just (RList_ (tree :: n)), oT)
         (Just (RList_ n), MultiNodeReplaced_ p pre post) -> if p.name == name then (Just (FList_ p pre (post ++ n)), oT)
             else addNode_ (Just p.state) Nothing parent oT
-                |> \(s, t) -> (Just (RList_ (Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, identity = p.identity, children = pre ++ post}::n)), t)
+                |> \(s, t) -> (Just (RList_ (Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, children = pre ++ post}::n)), t)
         (Just (FList_ n preOp postOp), SingleNodeReplaced_ tree) -> (Just (FList_ n preOp (tree :: postOp)), oT)
         (Just (FList_ n preOp postOp), MultiNodeReplaced_ p pre post) -> if p.name == name then (Just (FList_ n preOp (pre ++ post ++ postOp)), oT)
             else addNode_ (Just p.state) Nothing parent oT
-                |> \(s, t) -> (Just (FList_ n preOp (Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, identity = p.identity, children = pre ++ post}:: postOp)), t)
+                |> \(s, t) -> (Just (FList_ n preOp (Math.BinaryNode {state = s, name = p.name, associative = p.associative, commutative = p.commutative, children = pre ++ post}:: postOp)), t)
     )
     (Nothing, tracker)
     >> (\(replacement, t) -> case replacement of
@@ -806,7 +807,7 @@ constructFromValue_ parent tracker args value = case value of
         in
             Helper.resultList processChildren ([], tracker, args) p.pre
             |> Result.andThen (\(newPre, nextT, nextArgs) -> Helper.resultList processChildren ([], nextT, nextArgs) p.post
-                |> Result.map (\(newPost, finalT, _) -> (MultiNodeReplaced_ {name = p.op, associative = p.associative, commutative = p.commutative, identity = p.identity, state = p.state} (List.reverse newPre) (List.reverse newPost), finalT, value))
+                |> Result.map (\(newPost, finalT, _) -> (MultiNodeReplaced_ {name = p.op, associative = p.associative, commutative = p.commutative, state = p.state} (List.reverse newPre) (List.reverse newPost), finalT, value))
             )
     AsIsValue_ used tree -> if used then duplicateTree_ parent tracker tree |> \(newRoot, newTree) -> Ok (SingleNodeReplaced_ newRoot, newTree, value)
         else Ok (SingleNodeReplaced_ tree, {tracker | parent = Dict.insert (Math.getState tree |> getID) parent tracker.parent}, AsIsValue_ True tree)

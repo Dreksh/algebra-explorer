@@ -33,6 +33,10 @@
         "Play": {
             "url": "topics/build.json",
             "description": "Example of custom rules where the rules of algebra are not followed."
+        },
+        "Rock, Paper, Scissors": {
+            "url": "topics/rps.json",
+            "description": "Example of a function that is not associative, but commutative"
         }
     }
 }

@@ -94,7 +94,7 @@ coreTopic_ rules numEqs selection = case selection of
             result = CoreTopicAction_ substituteAction Disallowed Disallowed Disallowed evaluateAction
         in
         case root of
-            Math.BinaryNode n -> if not n.associative then result
+            Math.BinaryNode n -> if n.associative == Nothing then result
                 else
                     let
                         sameBinaryNode = case Dict.get selected.root selected.tree.tracker.parent of

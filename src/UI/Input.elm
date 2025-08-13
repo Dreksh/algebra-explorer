@@ -635,10 +635,10 @@ funcPropToLatex_ funcDict key = case Dict.get key funcDict of
             Just l -> (True, l, 1)
             Nothing -> let l = createLatex key 1 in (True, l, 1)
         Math.BinaryNode n -> case n.state.latex of
-            Just l -> (not n.associative, l, 2)
-            Nothing -> if n.associative
-                then let l = createLatex key 1 in (False, l, 2)
-                else let l = createLatex key 2 in (True, l, 2)
+            Just l -> (n.associative == Nothing, l, 2)
+            Nothing -> if n.associative == Nothing
+                then let l = createLatex key 2 in (True, l, 2)
+                else let l = createLatex key 1 in (False, l, 2)
         Math.GenericNode n -> let numArgs = Maybe.withDefault 0 n.arguments in
             case n.state.latex of
             Just l -> (True, l, numArgs)

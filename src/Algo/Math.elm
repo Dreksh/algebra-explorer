@@ -17,7 +17,7 @@ type Tree s =
     RealNode {state: s, value: Float}
     | VariableNode {state: s, constant: Bool, name: String}
     | UnaryNode {state: s, name: String, child: Tree s}
-    | BinaryNode {state: s, name: String, associative: Bool, commutative: Bool, identity: Float, children: List (Tree s)}
+    | BinaryNode {state: s, name: String, associative: Maybe Float, commutative: Bool, children: List (Tree s)} -- associative functions must provide an identity, for when 0 children are left
     | GenericNode {state: s, name: String, arguments: Maybe Int, children: List (Tree s)} -- Order matters
     | DeclarativeNode {state: s, name: String, children: List (Tree s)} -- Can be strung together, but cannot be nested, assumed to be commutative for now
 
@@ -63,7 +63,7 @@ map_ transition parent glob root =
             UnaryNode n -> map_ transition (Just finS) nextG n.child
                 |> \(finChild, finGlob) -> (UnaryNode {state = finS, name = n.name, child = finChild}, finGlob)
             BinaryNode n -> processChildren nextG n.children
-                |> \(finChildren, finGlob) -> (BinaryNode {state = finS, name = n.name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = List.reverse finChildren}, finGlob)
+                |> \(finChildren, finGlob) -> (BinaryNode {state = finS, name = n.name, associative = n.associative, commutative = n.commutative, children = List.reverse finChildren}, finGlob)
             GenericNode n -> processChildren nextG n.children
                 |> \(finChildren, finGlob) -> (GenericNode {state = finS, name = n.name, arguments = n.arguments, children = List.reverse finChildren}, finGlob)
             DeclarativeNode n -> processChildren nextG n.children
@@ -109,9 +109,10 @@ functionPropertyDecoder propDec = propDec
                 |> Decode.andThen (\(c, a, i) ->
                     if not c && not a
                     then Decode.succeed (GenericNode {state = state, name = "", arguments = Just arguments, children = []})
+                    else if not a then Decode.succeed (BinaryNode {state = state, name="", associative = Nothing, commutative = c, children = []})
                     else case i of
                         Nothing -> Decode.fail "Missing identity for binary function"
-                        Just iden -> Decode.succeed (BinaryNode {state = state, name="", associative = a, commutative = c, identity = iden, children = []})
+                        Just _ -> Decode.succeed (BinaryNode {state = state, name="", associative = i, commutative = c, children = []})
                 )
             else Decode.succeed (GenericNode {state = state, name = "", arguments = Just arguments, children = []})
         )
@@ -122,10 +123,13 @@ encodeFunctionProperty stateEnc fp =
     (   case fp of
             UnaryNode n -> ("arguments", Encode.int 1) :: stateEnc n.state
             BinaryNode n ->
+                (   case n.associative of
+                    Nothing -> [("associative", Encode.bool False)]
+                    Just identity -> [("associative", Encode.bool True), ("identity", Encode.float identity)]
+                )
+                ++
                 [   ("arguments", Encode.int 2)
                 ,   ("commutative", Encode.bool n.commutative)
-                ,   ("associative", Encode.bool n.associative)
-                ,   ("identity", Encode.float n.identity)
                 ]
                 ++ stateEnc n.state
             GenericNode n ->
@@ -244,7 +248,7 @@ expression_ funcProps = Parser.loop []
     ) |> Parser.map (\children -> case children of
         [x] -> x
         _ -> let p = Dict.get "+" funcProps |> Maybe.map (.property >> getState) in
-            BinaryNode {state = p, name = "+", associative = True, commutative = True, identity = 0, children = children}
+            BinaryNode {state = p, name = "+", associative = Just 0, commutative = True, children = children}
     )
 
 multiple_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
@@ -273,7 +277,7 @@ generateMultipleNode_: Dict.Dict String {a | property: FunctionProperty prop} ->
 generateMultipleNode_ funcProps = Parser.map (\children -> case children of
     [x] -> x
     _ -> let p = Dict.get "*" funcProps |> Maybe.map (.property >> getState) in
-        BinaryNode {state = p, name = "*", associative = True, commutative = True, identity = 1, children = children}
+        BinaryNode {state = p, name = "*", associative = Just 1, commutative = True, children = children}
     )
 
 invertable_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
@@ -325,7 +329,7 @@ term_ funcProps = Parser.oneOf
                     Just args -> if args /= List.length children then Parser.problem (ArgMismatch_ {name = name, got = List.length children, expect = args})
                         else Parser.succeed (GenericNode {state = Just n.state, name = name, arguments = Just args, children = children})
                 BinaryNode n -> if List.length children < 2 then Parser.problem (ArgMismatch_ {name = name, got = List.length children, expect = 2})
-                    else Parser.succeed (BinaryNode {state = Just n.state, name = name, associative = n.associative, commutative = n.commutative, identity = n.identity, children = children})
+                    else Parser.succeed (BinaryNode {state = Just n.state, name = name, associative = n.associative, commutative = n.commutative, children = children})
                 _ -> Parser.problem (ExpectingConstant_ name)
         )
     ,   Parser.andThen (\name -> case Dict.get name funcProps of
@@ -416,9 +420,11 @@ encode converter root = case root of
     BinaryNode s -> Encode.object
         [   ("state", converter s.state)
         ,   ("name", Encode.string s.name)
-        ,   ("associative", Encode.bool s.associative)
+        ,   ("associative", case s.associative of
+                Nothing -> Encode.null
+                Just identity -> Encode.float identity
+            )
         ,   ("commutative", Encode.bool s.commutative)
-        ,   ("identity", Encode.float s.identity)
         ,   ("children", Encode.list (encode converter) s.children)
         ,   ("type", Encode.string "binary")
         ]
@@ -431,9 +437,9 @@ decoder stateDecoder = Decode.field "type" Decode.string
             "variable" -> Decode.map3 (\s n c -> VariableNode {state = s, constant = c, name = n}) sDec (Decode.field "name" Decode.string) (Decode.field "constant" Decode.bool)
             "unary" -> Decode.map3 (\s n c -> UnaryNode {state = s, name = n, child = c})
                 sDec (Decode.field "name" Decode.string) (Decode.field "child" <| Decode.lazy (\_ -> decoder stateDecoder))
-            "binary" -> Decode.map6 (\s n a c i children -> BinaryNode {state = s, name = n, associative = a, commutative = c, identity = i, children = children})
-                sDec (Decode.field "name" Decode.string) (Decode.field "associative" Decode.bool)
-                (Decode.field "commutative" Decode.bool) (Decode.field "identity" Decode.float)
+            "binary" -> Decode.map5 (\s n a c children -> BinaryNode {state = s, name = n, associative = a, commutative = c, children = children})
+                sDec (Decode.field "name" Decode.string) (Decode.maybe <| Decode.field "associative" Decode.float)
+                (Decode.field "commutative" Decode.bool)
                 (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
             "generic" -> Decode.map4 (\s n c a -> GenericNode {state = s, name = n, arguments = a, children = c} )
                 sDec (Decode.field "name" Decode.string) (Decode.field "children" <| Decode.list <| Decode.lazy (\_ -> decoder stateDecoder))
