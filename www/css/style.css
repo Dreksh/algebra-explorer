@@ -523,6 +523,11 @@ div.history a {
     padding-left: 1rem;
     height: 1rem;
 }
+div.history div {
+    position: relative;
+    display: block;
+    padding-left: 0.5rem;
+}
 div.history a > svg {
     height: 100%;
 }
