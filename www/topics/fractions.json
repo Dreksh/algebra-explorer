@@ -31,7 +31,7 @@
         {
             "title": "To Fraction",
             "description": "Change a number into a fraction",
-            "matches": [{"from": "a", "to": ["\\fraction(a,1)"]}]
+            "matches": [{"from": "a/b", "to": ["\\fraction(a,b)"]}]
         },
         {
             "title": "Split",
@@ -43,8 +43,8 @@
             "description": "Multiplication and division can be put into the fraction",
             "matches": [
                 {"from": "\\fraction(a,b)*\\fraction(c,d)*e", "to": ["\\fraction(a*c,b*d)*e"]},
-                {"from": "\\fraction(b,c)/a*d", "to": ["\\fraction(b,a*c)*d"]},
-                {"from": "a*\\fraction(b,c)*d", "to": ["\\fraction(a*b,c)*d"]}
+                {"from": "\\fraction(b,c)/a*d", "to": ["\\fraction(b,c*a)*d"]},
+                {"from": "\\fraction(b,c)*a*d", "to": ["\\fraction(b*a,c)*d"]}
             ]
         },
         {

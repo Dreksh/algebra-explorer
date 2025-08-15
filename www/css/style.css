@@ -4,7 +4,8 @@
     --color-highlight: yellow;
     --color-hovered: lightblue;
     --color-menu: grey;
-    --color-notification: pink;
+    --color-error: pink;
+    --color-info: lightblue;
     --color-submit: green;
     --color-text: black;
     --color-textbox: white;
@@ -18,9 +19,15 @@ html, body {
     padding: 0;
     font: sans-serif;
 }
+* {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
 body {
     height: 100vh;
     width: 100vw;
+    overflow: hidden;
     background-color: var(--color-background);
 }
 #body, #body > div {
@@ -313,6 +320,7 @@ span.space {
     align-items: center;
 }
 .notificationMessage {
+    position: relative;
     display: block;
     width: 80vw;
     overflow-y: scroll;
@@ -320,13 +328,25 @@ span.space {
     margin: 0.2rem 0;
     padding: 0 0.2rem;
     border-radius: 0.5rem;
-    background-color: var(--color-notification);
     pointer-events: auto;
+}
+.notificationError {
+    background-color: var(--color-error);
+}
+.notificationError svg {
+    color: var(--color-cancel);
+}
+.notificationInfo {
+    background-color: var(--color-info);
+}
+.notificationInfo svg {
+    color: var(--color-menu);
 }
 .notificationMessage > svg {
     float: right;
-    margin-top: 0.5rem;
-    height: 1rem;
+    padding: auto 0;
+    width: 1rem;
+    height: 100%;
 }
 .notificationMessage >pre {
     float: left;

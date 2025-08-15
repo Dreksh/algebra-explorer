@@ -126,6 +126,7 @@ add tracker eq model = let (newEntry, newTracker) = newEntry_ tracker (model.nex
     (   {   model
         |   nextEquationNum = model.nextEquationNum + 1
         ,   equations = Dict.insert model.nextEquationNum newEntry model.equations
+        ,   recencyList = model.nextEquationNum :: model.recencyList
         }
         |> updatePositions_
     ,   newTracker

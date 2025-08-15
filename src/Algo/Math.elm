@@ -214,6 +214,7 @@ equation_ funcProps = Parser.loop []
         else Parser.oneOf
             [   Parser.succeed (\elem -> Parser.Loop (elem :: list))
                 |. expectSymbol_ "="
+                |. Parser.spaces
                 |= (expression_ funcProps |> Parser.inContext (PrevStr_ "="))
                 |. Parser.spaces
             ,   Parser.succeed ()

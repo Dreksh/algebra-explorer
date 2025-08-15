@@ -54,7 +54,9 @@
             "description": "Operations on an expression can be distributed amongst components",
             "matches": [
                 {"from": "-(a+b)", "to": ["-a-b"]},
+                {"from": "-(a+b)+c", "to": ["-a-b+c"]},
                 {"from": "m(a+b)", "to": ["ma+mb"]},
+                {"from": "m(a+b)+c", "to": ["ma+mb+c"]},
                 {"from": "-(a*b)", "to": ["-a*b"]},
                 {"from": "1/(a*b)", "to": ["1/a*1/b"]}
             ]
@@ -65,7 +67,7 @@
             "matches": [
                 {"from": "-a-b", "to": ["-(a+b)"]},
                 {"from": "a+a", "to": ["2a"]},
-                {"from": "ma+mb+c", "to": ["m(a+b)+c"]},
+                {"from": "ma+mb", "to": ["m(a+b)"]},
                 {"from": "-a*b", "to": ["-(a*b)"]},
                 {"from": "1/a*1/b", "to": ["1/(a*b)"]}
             ]

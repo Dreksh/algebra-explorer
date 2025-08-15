@@ -292,13 +292,22 @@ update event core = let model = core.swappable in
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok topic -> case Rules.addTopic (Just url) topic model.rules of
                 Err errStr -> submitNotification_ core errStr
-                Ok rModel -> let (dModel, t) = Display.refresh rModel core.animation model.display in
+                Ok rModel ->
+                    let
+                        (dModel, t) = Display.refresh rModel core.animation model.display
+                        (nModel, t1, nCmd) = Notification.displayInfo ("Loaded topic: " ++ topic.name) (model.notification, t)
+                    in
                     (   {   core
-                        |   swappable = { model | rules = rModel, display = dModel }
+                        |   swappable =
+                            {   model
+                            |   rules = rModel
+                            ,   display = dModel
+                            ,   notification = nModel
+                            }
                         ,   dialog = Nothing -- Most likely triggered from a dialog
-                        ,   animation = t
+                        ,   animation = t1
                         }
-                    , Cmd.none
+                    ,   Cmd.map NotificationEvent nCmd
                     )
         ProcessSource url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
@@ -632,9 +641,6 @@ sourceDecoder = Decode.map Source
 triplet: a -> b -> c -> (a,b,c)
 triplet x y z = (x,y,z)
 
-quarter: a -> b -> c -> d -> ((a,b),(c,d))
-quarter w x y z = ((w,x),(y,z))
-
 swappableDecoder: (List Display.FullEquation -> Cmd Display.Event) -> Decode.Decoder (Swappable, Animation.Tracker)
 swappableDecoder updateQuery = Decode.map3 triplet
     (   Decode.map3 triplet
@@ -642,8 +648,7 @@ swappableDecoder updateQuery = Decode.map3 triplet
         (Decode.field "rules" Rules.decoder)
         (Decode.field "tutorial" Tutorial.decoder)
     )
-    (   Decode.map3 triplet
-        (Decode.field "notification" Notification.decoder)
+    (   Decode.map2 Tuple.pair
         (Decode.field "menu" Menu.decoder)
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
     )
@@ -651,8 +656,8 @@ swappableDecoder updateQuery = Decode.map3 triplet
         (Decode.field "showMenu" Decode.bool)
         (Decode.field "showActions" Decode.bool)
     )
-    |> Decode.map (\(((display, tracker), rules, tutorial),(notification,menu,evaluator),(showMenu, showActions)) ->
-       (Swappable display rules tutorial notification menu evaluator showMenu showActions, tracker)
+    |> Decode.map (\(((display, tracker), rules, tutorial),(menu,evaluator),(showMenu, showActions)) ->
+       (Swappable display rules tutorial Notification.init menu evaluator showMenu showActions, tracker)
     )
 
 evalTypeDecoder_: Decode.Decoder EvalType
