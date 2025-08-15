@@ -15,10 +15,6 @@
         });
         /* Add commands / subscriptions onto the app below */
         app.ports.evaluateString.subscribe(function (val) { app.ports.evaluateResult.send({"id": val["id"], "value": eval(val["str"])}); });
-        app.ports.capture.subscribe(function (val) {
-            if (val["set"]) document.getElementById(val["eId"]).setPointerCapture(val["pId"]);
-            else document.getElementById(val["eId"]).releasePointerCapture(val["pId"]);
-        });
         window.document.addEventListener("keydown", function(e) {
             // Only send Undo, Redo and Escape
             if ((e.ctrlKey || e.metaKey) && e.key == "z" || e.key == "Escape") {
@@ -28,18 +24,22 @@
         });
         app.ports.svgMouseBegin.subscribe(function (val) {
             let id = val["id"];
-            let target = document.getElementById(id).getElementsByClassName("bricks");
-            if (target.length != 1) target = document.getElementById(id).getElementsByTagName("svg")
-            if (target.length < 1) return;
-            let start = Date.now();
-            let svgTarget = target[0];
-            let convertPoint = function(x, y) {
-                // https://stackoverflow.com/a/20958980
-                let p = svgTarget.createSVGPoint();
-                p.x = x;
-                p.y = y;
-                return p.matrixTransform(svgTarget.getScreenCTM().inverse());
+            let convertPoint = function(x, y) { return {"x": x, "y": y}; };
+            if (val["svg"]) {
+                let target = document.getElementById(id).getElementsByClassName("bricks");
+                if (target.length != 1) target = document.getElementById(id).getElementsByTagName("svg")
+                if (target.length < 1) return;
+                let svgTarget = target[0];
+                convertPoint = function(x, y) {
+                    // https://stackoverflow.com/a/20958980
+                    let p = svgTarget.createSVGPoint();
+                    p.x = x;
+                    p.y = y;
+                    return p.matrixTransform(svgTarget.getScreenCTM().inverse());
+                }
             }
+            let target = document.getElementById("draggableListener");  // This is our global drag event listener
+            let start = Date.now();
             let startP = convertPoint(val["x"], val["y"]);
             var cancelFunc;
             let onMove = function() {
@@ -56,15 +56,15 @@
                 }
             }();
             cancelFunc = function() {
-                svgTarget.removeEventListener("pointermove", onMove);
-                svgTarget.removeEventListener("pointerup", onFinish);
-                svgTarget.removeEventListener("pointercancel", onFinish);
-                svgTarget.releasePointerCapture(val["pointerID"]);
+                target.removeEventListener("pointermove", onMove);
+                target.removeEventListener("pointerup", onFinish);
+                target.removeEventListener("pointercancel", onFinish);
+                target.releasePointerCapture(val["pointerID"]);
             }
-            svgTarget.addEventListener("pointermove", onMove);
-            svgTarget.addEventListener("pointerup", onFinish);
-            svgTarget.addEventListener("pointercancel", onFinish);
-            svgTarget.setPointerCapture(val["pointerID"]);
+            target.addEventListener("pointermove", onMove);
+            target.addEventListener("pointerup", onFinish);
+            target.addEventListener("pointercancel", onFinish);
+            target.setPointerCapture(val["pointerID"]);
             // TODO: start timer for activating hold semantic
             // Send the start version
             app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});

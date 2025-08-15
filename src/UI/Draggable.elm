@@ -1,12 +1,12 @@
-module UI.Draggable exposing (Action(..), Model, Event, Size, init, div, update, encode, decoder)
+module UI.Draggable exposing (Action, Model, Event(..), Size, init, div, update, encode, decoder)
 
-import Dict
 import Html exposing (span)
 import Html.Attributes exposing (class, id, style)
 import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
-import UI.HtmlEvent exposing (onPointerCapture, onPointerMove)
+import UI.HtmlEvent exposing (onPointerCapture)
+import UI.SvgDrag as SvgDrag
 
 -- These will be in raw pixel amounts (technically ints)
 type alias Size = (Float, Float)
@@ -15,14 +15,14 @@ type alias Point = Size
 
 type alias Model =
     {   coordinates: Coordinates
-    ,   drags: Dict.Dict String {direction: Direction, original: Coordinates, from: Point}
+    ,   drag: Maybe {direction: Direction, original: Coordinates, from: Point}
     ,   id: String
     }
 
 init: String -> Point -> Size -> Model
 init id (left, top) (width, height) =
     {   coordinates = {left = left, right = left + width, top = top, bottom = top + height}
-    ,   drags = Dict.empty
+    ,   drag = Nothing
     ,   id = id
     }
 
@@ -38,19 +38,14 @@ type Direction =
     | BottomLeft
     | BottomRight
 
-type Action =
-    SetCapture String Encode.Value
-    | ReleaseCapture String Encode.Value
+type alias Action = {id: String, pID: Encode.Value}
 
--- Events are in raw px units
 type Event =
     DragStart Direction Encode.Value Point
-    | Drag Encode.Value Point
-    | DragEnd Encode.Value
-    | NoOp
+    | Drag SvgDrag.Event
 
 div: (Event -> msg) -> Model -> List (Html.Attribute msg) -> List (Html.Html msg) -> Html.Html msg
-div converter model attrs children = Html.div (divAttrs_ converter model)
+div converter model attrs children = Html.div (divAttrs_ model)
     [  span
         [ class "border", onPointerCapture converter (DragStart Top)
         , style "left" "0", style "top" "0", style "width" "100%", style "height" "1rem", style "cursor" "move"
@@ -95,8 +90,8 @@ div converter model attrs children = Html.div (divAttrs_ converter model)
     ,   Html.div attrs children
     ]
 
-divAttrs_: (Event -> msg) -> Model -> List (Html.Attribute msg)
-divAttrs_ converter model =
+divAttrs_: Model -> List (Html.Attribute msg)
+divAttrs_ model =
     [   style "left" (String.fromFloat model.coordinates.left ++ "dvw")
     ,   style "top" (String.fromFloat model.coordinates.top ++ "dvh")
     ,   style "width" (String.fromFloat (model.coordinates.right - model.coordinates.left) ++ "dvw")
@@ -106,35 +101,39 @@ divAttrs_ converter model =
     ,   id model.id
     ,   class "draggable"
     ]
-    ++ (if Dict.isEmpty model.drags then [] else onPointerMove converter Drag DragEnd )
 
 update: Size -> Event -> Model -> (Model, Maybe Action)
-update (screenX, screenY) e model = case e of
+update size e model = case e of
     DragStart d pid p ->
-        ({model | drags = Dict.insert (Encode.encode 0 pid) {direction = d, original = model.coordinates, from = p} model.drags}, Just (SetCapture model.id pid))
-    Drag pid to -> case Dict.get (Encode.encode 0 pid) model.drags of
-        Nothing -> (model, Nothing)
-        Just start ->
-            let
-                (diffX, diffY) = diff start.from to
-                (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
-                orig = start.original
-            in case start.direction of
-                Top ->
-                    (   {   model
-                        | coordinates = {left = orig.left + dx, right = orig.right + dx, top = orig.top + dy, bottom = orig.bottom + dy }
-                        }
-                    ,   Nothing
-                    )
-                Left -> ({ model | coordinates = {orig |left = orig.left + dx |> min (orig.right - 2) } }, Nothing)
-                Right -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2)} }, Nothing)
-                Bottom -> ({ model | coordinates = {orig | bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
-                TopLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
-                TopRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)} }, Nothing)
-                BottomLeft -> ({ model | coordinates = {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }}, Nothing)
-                BottomRight -> ({ model | coordinates = {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) } }, Nothing)
-    DragEnd pid -> ({model | drags = Dict.remove (Encode.encode 0 pid) model.drags }, Just (ReleaseCapture model.id pid))
-    NoOp -> (model, Nothing)
+        (   {   model
+            |   drag = Just {direction = d, original = model.coordinates, from = p}
+            }
+        ,   Just {id = model.id, pID = pid}
+        )
+    Drag dragEvent -> case dragEvent of
+        SvgDrag.Start _ -> (model, Nothing)
+        SvgDrag.Move _ to -> case model.drag of
+            Nothing -> (model, Nothing)
+            Just start -> ({ model | coordinates = updateCoordinate_ size start to}, Nothing)
+        SvgDrag.End _ to -> case model.drag of
+            Nothing -> ({model | drag = Nothing}, Nothing)
+            Just start -> ({model | drag = Nothing, coordinates = updateCoordinate_ size start to}, Nothing)
+
+updateCoordinate_: Point -> {direction: Direction, original: Coordinates, from: Point} -> Point -> Coordinates
+updateCoordinate_ (screenX, screenY) start to =
+    let
+        (diffX, diffY) = diff start.from to
+        (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
+        orig = start.original
+    in case start.direction of
+        Top -> {left = orig.left + dx, right = orig.right + dx, top = orig.top + dy, bottom = orig.bottom + dy }
+        Left -> {orig |left = orig.left + dx |> min (orig.right - 2) }
+        Right -> {orig | right = orig.right + dx |> max (orig.left + 2)}
+        Bottom -> {orig | bottom = orig.bottom + dy |> max (orig.top + 2)}
+        TopLeft -> {orig | left = orig.left + dx |> min (orig.right - 2), top = orig.top + dy |> min (orig.bottom - 2)}
+        TopRight -> {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)}
+        BottomLeft -> {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
+        BottomRight -> {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
 
 diff: Point -> Point -> Point
 diff (fromX, fromY) (toX, toY) = (toX - fromX, toY - fromY)
@@ -149,7 +148,7 @@ encode model = Encode.object
     ]
 
 decoder: Decode.Decoder Model
-decoder = Decode.map5 (\l r t b id -> Model (Coordinates l r t b) Dict.empty id)
+decoder = Decode.map5 (\l r t b id -> Model (Coordinates l r t b) Nothing id)
     (Decode.field "left" Decode.float)
     (Decode.field "right" Decode.float)
     (Decode.field "top" Decode.float)

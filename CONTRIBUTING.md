@@ -1,4 +1,4 @@
-How to run:
+How to build:
 -----------
 
 1. Download elm
@@ -6,12 +6,15 @@ How to run:
 ...
 3. Profit
 
-Load the index file on a web browser, probably by right-clicking the file, and selecting a web browser to
-open it
+How to Run:
+----------
 
-(Or on a Mac: `open -a Safari.app index.html`)
+There are a few ways of running this:
+1. With hot reloading: `elm-live src/Main.elm --open -d www -- --output=www/js/elm.js`
+1. With static viewing: `elm reactor`. (The link is http://localhost:8000)
 
-(Or for hot reloading `elm-live src/Main.elm --open -d www -- --output=www/js/elm.js`)
+Viewing it directly by opening the file on a web browser doesn't work, since Elm's browser library
+does not handle filesystem urls.
 
 # Jonny's noob notes
 ## Elm

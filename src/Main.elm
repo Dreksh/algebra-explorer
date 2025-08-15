@@ -54,19 +54,18 @@ main = Browser.application
 
 port evaluateString: {id: Int, str: String} -> Cmd msg
 port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
-port capture: {set: Bool, eId: String, pId: Encode.Value} -> Cmd msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
-port svgMouseBegin: {id: String, x: Float, y: Float, pointerID: Encode.Value} -> Cmd msg
+port svgMouseBegin: {id: String, x: Float, y: Float, pointerID: Encode.Value, svg: Bool} -> Cmd msg
 port svgMouseEvent: (SvgDrag.Raw -> msg) -> Sub msg
 
-setCapture: Bool -> String -> Encode.Value -> Cmd msg
-setCapture s e p = capture {set = s, eId = e, pId = p}
+setCapture: String -> Encode.Value -> Cmd msg
+setCapture e p = svgMouseBegin {id = e, x = 0 , y = 0, pointerID = p, svg = False}
 
 displayMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd msg
-displayMouseCmd id pId (x, y) = svgMouseBegin {id = "Equation-" ++ String.fromInt id, x = x, y = y, pointerID = pId}
+displayMouseCmd id pId (x, y) = svgMouseBegin {id = "equation-view-" ++ String.fromInt id, x = x, y = y, pointerID = pId, svg = True}
 
 inputMouseCmd: String -> Encode.Value -> (Float, Float) -> Cmd msg
-inputMouseCmd name pId (x, y) = svgMouseBegin {id = name, x=x, y=y, pointerID = pId}
+inputMouseCmd name pId (x, y) = svgMouseBegin {id = name, x=x, y=y, pointerID = pId, svg = True}
 
 -- Types
 
@@ -170,7 +169,8 @@ init flags url key =
         , animation = finalT
         , input = InputWithHistory.init newScreen (inputMouseCmd "mainInput") focusTextBar_
         , svgDragMap = Dict.fromList
-            [   ("Equation-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.Commute eqNum event |> DisplayEvent)))
+            [   ("equation-view-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.Commute eqNum event |> DisplayEvent)))
+            ,   ("Equation-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Draggable.Drag event |> Display.DraggableEvent eqNum |> DisplayEvent)))
             ,   ("mainInput", (\_ -> Input.Shift >> InputWithHistory.InputEvent >> InputEvent >> Just ))
             ]
             |> SvgDrag.init
@@ -471,7 +471,8 @@ view core = let model = core.swappable in
     { title = "Maths"
     , body =
         Html.Keyed.node "div" [id "body"]
-        (   Display.views DisplayEvent ActionEvent model.display
+        (   ("draggableListener", div [id "draggableListener"] [])
+        ::   Display.views DisplayEvent ActionEvent model.display
         ++  List.filterMap identity
             [   ("actions", Actions.view ActionEvent model.display.actions) |> Helper.maybeGuard model.showActions
             ,   ("inputPane", div [id "inputPane"]

@@ -1,6 +1,6 @@
 module UI.HtmlEvent exposing (
     onClick, onPointerEnter, onPointerLeave, onSubmit, onFocus, onBlur, onSubmitForm,
-    onPointerCapture, onPointerMove, onKeyChange, onKeyDown)
+    onPointerCapture, onKeyChange, onKeyDown)
 
 -- Event is needed to block the js events from propagating upwards
 
@@ -46,13 +46,6 @@ onPointerCapture converter activate = on "pointerdown"
         (field "pointerId" value)
         clientPos_
     )
-
-onPointerMove: (event -> msg) -> (Value -> (Float, Float) -> event) -> (Value -> event) -> List (Html.Attribute msg)
-onPointerMove converter move cancel = let pointerId = field "pointerId" value in
-    [   custom "pointermove" (map2 (\pid input -> {message = move pid input |> converter, stopPropagation = True, preventDefault = True}) pointerId clientPos_)
-    ,   custom "pointerup" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
-    ,   custom "pointercancel" (map (\pid -> {message = cancel pid |> converter, stopPropagation = True, preventDefault = True}) pointerId)
-    ]
 
 propagatableEvents_: Set.Set String
 propagatableEvents_ = Set.fromList ["Tab", "Escape", "Enter"]

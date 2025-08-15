@@ -519,6 +519,7 @@ div.history {
 }
 div.history a {
     position: relative;
+    display: block;
     padding-left: 1rem;
     height: 1rem;
 }

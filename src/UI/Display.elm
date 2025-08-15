@@ -41,7 +41,7 @@ type alias Model =
     ,   createModeForEquation: Maybe Int
     ,   recencyList: List Int
     -- Command creators
-    ,   setCapture: Bool -> String -> Encode.Value -> Cmd Event
+    ,   setCapture: String -> Encode.Value -> Cmd Event
     ,   svgMouseCmd: Int -> Encode.Value -> (Float, Float) -> Cmd Event
     ,   updateQuery: List FullEquation -> Cmd Event
     }
@@ -90,7 +90,7 @@ newEntry_ tracker size index eq =
 anyVisible: Model -> Bool
 anyVisible model = Dict.foldl (\_ value -> (||) value.show) False model.equations
 
-init: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event)
+init: (String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event)
     -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event)
     -> Animation.Tracker -> List FullEquation -> (Model, Animation.Tracker)
 init setCapture updateQuery svgMouseCmd tracker l =
@@ -480,10 +480,7 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                     ,   recencyList = updateEqOrder_ eq model.recencyList
                     }
                 ,   tracker
-                ,   Maybe.map (\a -> case a of
-                        Draggable.SetCapture s v -> model.setCapture True s v
-                        Draggable.ReleaseCapture s v -> model.setCapture False s v
-                    ) action
+                ,   Maybe.map (\v -> model.setCapture v.id v.pID) action
                     |> Maybe.withDefault Cmd.none
                 )
     PointerDown eq root index midpoints pid point -> case Dict.get eq model.equations of
@@ -598,7 +595,7 @@ views converter actionConvert model =
         in
             (   dModel.id
             ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
-                [   div [class "equation"]
+                [   div [class "equation", Svg.Attributes.id ("equation-view-" ++ String.fromInt eqNum)]
                     [   MathIcon.view (\id -> List.filterMap identity
                             [   HtmlEvent.onClick (Select eqNum id) |> Just
                             ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
@@ -709,7 +706,7 @@ encodeHistoryState_ (eq, l) = Encode.object
     ,   ("latex", Latex.encode (Matcher.encodeState Animation.encodeState) l)
     ]
 
-decoder: (Bool -> String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
+decoder: (String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
 decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing [] create [] setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
