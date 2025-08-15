@@ -12,6 +12,7 @@ import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.Icon as Icon
+import Svg.Attributes exposing (strokeLinecap)
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -672,7 +673,7 @@ static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "1", fill "none"]
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round"]
                 []
                 :: list
             _ -> list -- Ignore cursor, border and position
@@ -686,7 +687,7 @@ staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 staticWithCursor attrs model = let frames = latexToFrames model in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "1", fill "none"]
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round"]
                 []
                 :: list
             Cursor -> Svg.path

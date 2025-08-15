@@ -464,7 +464,8 @@ dialog svg {
     dominant-baseline: central;
     fill: none;
     stroke: black;
-    stroke-width: 0.05;
+    stroke-width: 0.075;
+    stroke-linecap: round;
     user-select: none;
 }
 .brick:hover > .brickRect {
@@ -482,7 +483,8 @@ dialog svg {
 }
 .stroke {
     stroke: var(--color-text);
-    stroke-width: 1;
+    stroke-width: 2;
+    stroke-linecap: round;
     fill: none;
 }
 .stroke:not(.selected):hover {
