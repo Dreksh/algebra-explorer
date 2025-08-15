@@ -169,7 +169,7 @@ toLatex border parentPos pos (Scope _ children) =
         noCaret state scopeElem = case scopeElem of
             StrElement text -> [Latex.Text state text]
             Fixed n -> Latex.map (\_ -> state ) n.latex
-                |> Latex.replace (Array.map (Tuple.first >> toLatex True state []) n.params)
+                |> Latex.replace (Array.indexedMap (\i (p, _) -> toLatex True (state ++ [i]) [] p) n.params)
             Bracket inner -> toLatex True state [] (Scope defaultScopeDetail inner)
                 |> \newInner -> [Latex.Bracket state newInner]
             InnerScope inScope -> toLatex True state [] inScope
@@ -195,10 +195,10 @@ toLatex border parentPos pos (Scope _ children) =
                                 (\i -> Tuple.first >> toLatex True (childPos ++ [i]) (if i /= y then [] else other))
                                 n.params
                             )
-                    Bracket inner -> if x /= index then noCaret childPos elem
+                    Bracket inner -> if x /= index then noCaret (childPos ++ [0]) elem
                         else toLatex True (childPos ++ [0]) other (Scope defaultScopeDetail inner)
                             |> \newInner -> [ Latex.Bracket (childPos ++ [0]) newInner]
-                    InnerScope inner -> if x /= index then noCaret childPos elem
+                    InnerScope inner -> if x /= index then noCaret (childPos ++ [0]) elem
                         else toLatex True (childPos ++ [0]) other inner
         ,   index + 1
         )
@@ -431,7 +431,7 @@ type TraversalError_  =
 traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (List ScopeElement, CaretPosition))
     -> Scope -> CaretPosition -> Result TraversalError_ (List ScopeElement, CaretPosition)
 traverse process (Scope detail children) caret = case caret of
-    [] -> Err BrokenCaret
+    [] -> IntermediateCase [] children |> process detail
     [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process detail
     (x::y::others) -> let (prev, next) = (List.take x children, List.drop x children) in
         case next of

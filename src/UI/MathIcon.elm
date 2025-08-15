@@ -5,14 +5,15 @@ module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime
 import Dict
 import Html
 import Svg
-import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeWidth, viewBox, width, x, y)
+import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeLinecap, strokeWidth, viewBox, width, x, y)
 -- Ours
 import Algo.BFS as BFS
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.Icon as Icon
-import Svg.Attributes exposing (strokeLinecap)
+import UI.Animation as Animation
+import UI.Animation as Animation
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -253,7 +254,7 @@ type FrameData state =
     BaseFrame {strokes: List Stroke, elem: state}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
     | Cursor
-    | Border
+    | Border state
 type alias Frame state =
     {   data: FrameData state
     ,   topLeft: Vector2
@@ -426,7 +427,7 @@ symbolsToFrames_ ref elem = case elem of
             |> \new -> let (newTL, newBR) = (Animation.minVector2 (0,-1) new.topLeft, Animation.maxVector2 (0.4,0.5) new.botRight) in
                 (   {   data = Position
                         [   {frame = new, origin = (0,0), scale = 1}
-                        ,   {frame = {data = Border, topLeft = newTL, botRight = newBR}
+                        ,   {frame = {data = Border s, topLeft = newTL, botRight = newBR}
                             , origin = (0,0), scale = 1
                             }
                         ]
@@ -617,8 +618,8 @@ clickedRecursive_ point frame = case frame.data of
                     |> Animation.descaleVector2 subFrame.scale
             in
             (   distanceFromFrame_ subFrame.frame scaledPoint
+                |> Animation.scaleVector2 subFrame.scale
                 |> distanceSquared_
-                |> \d -> d*subFrame.scale*subFrame.scale
             ,   (scaledPoint, subFrame.frame)
             )
         ) l
@@ -629,8 +630,7 @@ clickedRecursive_ point frame = case frame.data of
         ) Nothing
     BaseFrame n -> Just (n.elem, point)
     Cursor -> Nothing
-    Border -> Nothing
-
+    Border s -> Just (s, point)
 
 distanceSquared_: Vector2 -> Float
 distanceSquared_ (x, y) = x*x + y*y
@@ -638,8 +638,8 @@ distanceSquared_ (x, y) = x*x + y*y
 distanceFromFrame_: {s | topLeft: Vector2, botRight: Vector2} -> Vector2 -> Vector2
 distanceFromFrame_ frame (x, y) =
     let
-        (top, left) = frame.topLeft
-        (bot, right) = frame.botRight
+        (left, top) = frame.topLeft
+        (right, bot) = frame.botRight
     in
     (   if x < left then x - left
         else if x > right then x - right
@@ -652,15 +652,15 @@ distanceFromFrame_ frame (x, y) =
 closestChar: String -> Vector2 -> (Int, Vector2)
 closestChar str point = String.foldl (\c (res, index, p) ->
         let
-            (_, topLeft, botRight) = charStrokes_ c
-            diff = distanceFromFrame_ {topLeft = topLeft, botRight = botRight} p
-            distance = distanceSquared_ diff
+            (_, (left, top), (right, bot)) = charStrokes_ c
+            diffFromCenter = Animation.subVector2 ((left + right) / 2, (top + bot)/2) p
+            distance = distanceSquared_ diffFromCenter
         in
         (   case res of
-            Nothing -> Just (distance, index, diff)
-            Just (d, i, v) -> if distance < d then Just (distance, index, diff) else res
+            Nothing -> Just (distance, index, diffFromCenter)
+            Just (d, _, _) -> if distance < d then Just (distance, index, diffFromCenter) else res
         ,   index + 1
-        ,   Animation.subVector2 (Tuple.first botRight, 0) p
+        ,   Animation.subVector2 (right, 0) p
         )
     ) (Nothing, 0, point) str
     |> \(res, _, _) -> case res of
@@ -695,7 +695,7 @@ staticWithCursor attrs model = let frames = latexToFrames model in
                 ,   stroke "currentColor", strokeWidth "1", fill "none", class "cursor"]
                 []
                 :: list
-            Border ->
+            Border _ ->
                 let
                     shift = Animation.scaleVector2 scale >> Animation.addVector2 origin
                     ((left, top), (right, bot)) = (shift frame.topLeft, shift frame.botRight)
