@@ -14,12 +14,32 @@
             "matches": [
                 {"from": "a-a+b", "to": ["b"]},
                 {"from": "a*0", "to": ["0"]},
-                {"from": "a/a*b", "to": ["b"]}
+                {"from": "a/a*b", "to": ["b"]},
+                {"from": "a+0", "to": ["a"]},
+                {"from": "a-0", "to": ["a"]},
+                {"from": "a*1", "to": ["a"]},
+                {"from": "a/1", "to": ["a"]},
+                {"from": "--a", "to": ["a"]},
+                {"from": "1/1/a", "to": ["a"]}
             ]
         },
         {
-            "title": "Apply Identity",
-            "description": "Applying identity does not change the value",
+            "title": "Uncancel",
+            "description": "Introduce _term_s without changing the value",
+            "parameters": {
+                "a": {
+                    "description": "The _term_ to introduce",
+                    "example": "1"
+                }
+            },
+            "matches": [
+                {"from": "x", "to": ["x+a-a"]},
+                {"from": "x", "to": ["x*a/a"]}
+            ]
+        },
+        {
+            "title": "Uncancel",
+            "description": "Reintroducing double inversion, or inserting nothing",
             "matches": [
                 {"from": "a", "to": ["a+0"]},
                 {"from": "a", "to": ["a-0"]},
@@ -27,18 +47,6 @@
                 {"from": "a", "to": ["a/1"]},
                 {"from": "a", "to": ["--a"]},
                 {"from": "a", "to": ["1/1/a"]}
-            ]
-        },
-        {
-            "title": "Remove Identity",
-            "description": "Removing the identity does not affect the value",
-            "matches": [
-                {"from": "a+0", "to": ["a"]},
-                {"from": "a-0", "to": ["a"]},
-                {"from": "a*1", "to": ["a"]},
-                {"from": "a/1", "to": ["a"]},
-                {"from": "--a", "to": ["a"]},
-                {"from": "1/1/a", "to": ["a"]}
             ]
         },
         {
