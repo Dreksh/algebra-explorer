@@ -5,7 +5,7 @@ module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime
 import Dict
 import Html
 import Svg
-import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeLinecap, strokeWidth, viewBox, width, x, y)
+import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeLinecap, strokeLinejoin, strokeWidth, viewBox, width, x, y)
 -- Ours
 import Algo.BFS as BFS
 import Algo.Matcher as Matcher
@@ -673,7 +673,7 @@ static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round"]
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round", strokeLinejoin "round"]
                 []
                 :: list
             _ -> list -- Ignore cursor, border and position
@@ -687,7 +687,7 @@ staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 staticWithCursor attrs model = let frames = latexToFrames model in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round"]
+                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round", strokeLinejoin "round"]
                 []
                 :: list
             Cursor -> Svg.path
