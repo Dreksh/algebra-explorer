@@ -29,8 +29,6 @@ type Event =
     Commit
     | Reset
     | Apply MatchedRule
-    | Group Int (Set.Set Int) -- root children
-    | Ungroup Int -- root
     | NumericalSubstitution Int Float -- root matching value
     | Substitute
     | Evaluate Int String -- root evalString
@@ -77,8 +75,6 @@ matchRules rules numEqs selected =
 -- just a helper class to make code more succinct
 type alias CoreTopicAction_ =
     {   substitute: (String -> Action)
-    ,   group: (String -> Action)
-    ,   ungroup: (String -> Action)
     ,   numSubstitute: (String -> Action)
     ,   evaluate: (String -> Action)
     }
@@ -88,13 +84,11 @@ coreToList_ actions =
     [   actions.evaluate "Evaluate"
     ,   actions.numSubstitute "Expand"
     ,   actions.substitute "Substitution"
-    ,   actions.group "Group"
-    ,   actions.ungroup "Ungroup"
     ]
 
 coreTopic_: Rules.Model -> Int -> Maybe (Selection, Math.Tree (Matcher.State Animation.State)) -> CoreTopicAction_
 coreTopic_ rules numEqs selection = case selection of
-    Nothing -> CoreTopicAction_ DisplayOnly DisplayOnly DisplayOnly DisplayOnly DisplayOnly
+    Nothing -> CoreTopicAction_ DisplayOnly DisplayOnly DisplayOnly
     Just (selected, root) ->
         let
             evaluateAction = case Rules.evaluateStr rules root of
@@ -103,22 +97,9 @@ coreTopic_ rules numEqs selection = case selection of
             substituteAction = if numEqs > 1
                 then Substitute |> Allowed
                 else Disallowed
-            result = CoreTopicAction_ substituteAction Disallowed Disallowed Disallowed evaluateAction
+            result = CoreTopicAction_ substituteAction Disallowed evaluateAction
         in
         case root of
-            Math.BinaryNode n -> if n.associative == Nothing then result
-                else
-                    let
-                        sameBinaryNode = case Dict.get selected.root selected.tree.tracker.parent of
-                            Nothing -> False
-                            Just parent -> case Matcher.getNode parent selected.tree of
-                                Just (Math.BinaryNode m) -> m.name == n.name
-                                _ -> False
-                        selectedChildren = List.filter (\child -> Set.member (Math.getState child |> Matcher.getID) selected.nodes) n.children |> List.length
-                    in
-                    let ungroupRes = if sameBinaryNode then {result | ungroup = Ungroup selected.root |> Allowed} else result in
-                    if List.length n.children == selectedChildren || selectedChildren < 2 then ungroupRes
-                    else {ungroupRes | group = Group selected.root selected.nodes |> Allowed }
             Math.RealNode n -> {result | numSubstitute = NumericalSubstitution selected.root n.value |> Allowed, substitute = Disallowed}
             Math.UnaryNode n -> if n.name /= "-" then result
                 else case n.child of
@@ -228,6 +209,7 @@ viewContextual converter topics = topics
 
 -- TODO: look at the event, change behaviour depending on how many matches
 --   also might need to keep track of long click
+--   or better yet, show the selections below the contextual toolbar like chinese input?
 displayContextualAction_: (Event -> msg) -> Action -> Html.Html msg
 displayContextualAction_ converter action = let inner n = [Html.div [class "contextualActionLabel"] [Html.text n]] in case action of
     DisplayOnly name -> Html.div [] [Html.div [] [Html.text name]]
