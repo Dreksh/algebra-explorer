@@ -55,7 +55,11 @@ type alias Rule =
     {   title: String
     ,   description: String
     ,   parameters: Dict.Dict String Parameter
-    ,   matches: List {from: {name: String, root: Matcher.Matcher}, to: List {name: String, root: Matcher.Replacement FunctionProp}}
+    ,   matches: List Pattern
+    }
+type alias Pattern =
+    {   from: {name: String, root: Matcher.Matcher, latex: Latex.Model ()}
+    ,   to: List {name: String, root: Matcher.Replacement FunctionProp, latex: Latex.Model ()}
     }
 
 type alias Topic =
@@ -192,20 +196,23 @@ process combine convert tree =
         |> combine (Math.getState tree)
 
 toLatex: Matcher.Equation FunctionProp s -> Latex.Model (Matcher.State s)
-toLatex eq = toLatex_ eq.tracker.ops.extract True eq.root
+toLatex eq = toLatex_
+    (Matcher.getState >> eq.tracker.ops.extract)
+    identity
+    True eq.root
 
-toLatex_: (state -> Maybe FunctionProp) -> Bool -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
-toLatex_ converter complete tree =
+toLatex_: (a -> Maybe FunctionProp) -> (a -> b) -> Bool -> Math.Tree a -> Latex.Model b
+toLatex_ extractor converter complete tree =
     let
-        treeState = Math.getState tree
-        funcLatex = Math.getState tree |> Matcher.getState |> converter |> Maybe.andThen .latex
+        treeState = Math.getState tree |> converter
+        funcLatex = Math.getState tree |> extractor |> Maybe.andThen .latex
         genericFunction root = case funcLatex of
-            Nothing -> List.foldl (\n list -> toLatex_ converter complete n |> \new -> new :: list) [] (Math.getChildren root)
+            Nothing -> List.foldl (\n list -> toLatex_ extractor converter complete n |> \new -> new :: list) [] (Math.getChildren root)
                 |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.reverse |> List.concat) ]
-            Just l -> substituteArgs_ converter complete treeState (Math.getChildren root) l
-        bracket parent child = toLatex_ converter complete child
+            Just l -> substituteArgs_ extractor converter complete treeState (Math.getChildren root) l
+        bracket parent child = toLatex_ extractor converter complete child
             |> \inner -> if priority_ child >= priority_ parent
-                then [Latex.Bracket (Math.getState child) inner]
+                then [Latex.Bracket (Math.getState child |> converter) inner]
                 else inner
         infixFunction root = case funcLatex of
             Nothing -> genericFunction root
@@ -223,13 +230,13 @@ toLatex_ converter complete tree =
             Nothing -> [Latex.Text treeState n.name]
             Just symb -> [Latex.SymbolPart treeState symb]
         Math.UnaryNode n -> case n.name of
-            "-" -> toLatex_ converter complete n.child
+            "-" -> toLatex_ extractor converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child) inner]
+                    then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child |> converter) inner]
                     else Latex.Text treeState "-" :: inner
-            "/" -> toLatex_ converter complete n.child
+            "/" -> toLatex_ extractor converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division, Latex.Bracket (Math.getState n.child) inner]
+                    then [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division, Latex.Bracket (Math.getState n.child |> converter) inner]
                     else [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division] ++ inner
             _ -> genericFunction tree
         Math.BinaryNode n -> case n.name of
@@ -238,9 +245,9 @@ toLatex_ converter complete tree =
                     then bracket tree elem
                     else case getDivisionProps_ elem of
                     Just p -> bracket (Math.UnaryNode p) p.child
-                        |> \inner -> res ++ (Latex.SymbolPart p.state Latex.Division :: inner)
+                        |> \inner -> res ++ (Latex.SymbolPart (converter p.state) Latex.Division :: inner)
                     Nothing -> bracket tree elem
-                        |> \newList -> res ++ (Latex.SymbolPart n.state Latex.CrossMultiplcation :: newList)
+                        |> \newList -> res ++ (Latex.SymbolPart (converter n.state) Latex.CrossMultiplcation :: newList)
                 ) []
             "+" -> n.children
                 |> List.foldl (\elem res -> if List.isEmpty res
@@ -253,24 +260,24 @@ toLatex_ converter complete tree =
         Math.DeclarativeNode _ -> infixFunction tree
         _ -> genericFunction tree
 
-substituteArgs_: (state -> Maybe FunctionProp) -> Bool -> Matcher.State state -> List (Math.Tree (Matcher.State state)) -> Latex.Model () -> Latex.Model (Matcher.State state)
-substituteArgs_ convert complete state args = List.concatMap (\elem -> case elem of
+substituteArgs_: (a -> Maybe FunctionProp) -> (a -> b) -> Bool -> b -> List (Math.Tree a) -> Latex.Model () -> Latex.Model b
+substituteArgs_ extractor convert complete state args = List.concatMap (\elem -> case elem of
     Latex.Fraction _ top bottom ->
-        [Latex.Fraction state (substituteArgs_ convert complete state args top) (substituteArgs_ convert complete state args bottom)]
-    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ convert complete state args inner)]
-    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ convert complete state args inner)]
-    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ convert complete state args inner)]
-    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ convert complete state args inner)]
-    Latex.Border _ inner -> [Latex.Border state (substituteArgs_ convert complete state args inner)]
+        [Latex.Fraction state (substituteArgs_ extractor convert complete state args top) (substituteArgs_ extractor convert complete state args bottom)]
+    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ extractor convert complete state args inner)]
+    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ extractor convert complete state args inner)]
+    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ extractor convert complete state args inner)]
+    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ extractor convert complete state args inner)]
+    Latex.Border _ inner -> [Latex.Border state (substituteArgs_ extractor convert complete state args inner)]
     Latex.Argument _ n -> if complete
         then (case getN_ (n-1) args of
                 Nothing -> [Latex.Argument state n] -- Display missing info
-                Just t -> toLatex_ convert True t
+                Just t -> toLatex_ extractor convert True t
             )
         else [Latex.Argument state n] -- Display missing info
     Latex.Param _ n -> case getN_ (n-1) args of
         Nothing -> [Latex.Argument state n] -- Display missing info
-        Just t -> toLatex_ convert True t
+        Just t -> toLatex_ extractor convert True t
     Latex.Text _ str ->  [Latex.Text state str]
     Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
     Latex.Caret _  -> [Latex.Caret state]
@@ -287,7 +294,7 @@ toSymbol convert root = let treeState = Math.getState root in
         Nothing -> if Math.getChildren root |> List.isEmpty
             then [Latex.Text treeState (Math.getName root)]
             else [Latex.Text treeState (Math.getName root), Latex.Bracket treeState [] ]
-        Just l -> substituteArgs_ convert False treeState (Math.getChildren root) l
+        Just l -> substituteArgs_ (Matcher.getState >> convert) identity False treeState (Math.getChildren root) l
 
 {-
 ## Topics
@@ -576,8 +583,16 @@ ruleDecoder_ knownFuncs = Dec.map3 (\a b c -> (a,b,c))
             |> Dec.andThen (\(from, newArgs) ->
                 Dec.field "to"
                 (replacementDecoder_ knownFuncs newArgs |> Dec.list)
-                |> Dec.map (\to -> let otherSet = Dict.toList newArgs |> List.filter (\(_, (_, oneUse)) -> oneUse) |> List.map Tuple.first |> Set.fromList in
-                    {from = {from | root = setOthers_ otherSet from.root}, to = to}
+                |> Dec.map (\to ->
+                    let
+                        otherSet = Dict.toList newArgs
+                            |> List.filter (\(_, (_, oneUse)) -> oneUse)
+                            |> List.map Tuple.first
+                            |> Set.fromList
+                    in
+                        {   from = {from | root = setOthers_ otherSet from.root}
+                        ,   to = to
+                        }
                 )
             )
         )
@@ -608,7 +623,8 @@ setOthers_ others m = case m of
                     }
             )
 
-expressionDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool) -> Dec.Decoder ({name: String, root: Matcher.Matcher}, Dict.Dict String (Int, Bool))
+expressionDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool)
+    -> Dec.Decoder ({name: String, root: Matcher.Matcher, latex: Latex.Model ()}, Dict.Dict String (Int, Bool))
 expressionDecoder_ funcProps args =
     let
         checkUnknowns name numArgs dict = case Dict.get name dict of
@@ -618,19 +634,23 @@ expressionDecoder_ funcProps args =
                 else Err "Functions has different number of inputs"
     in
     Dec.andThen
-    (\str -> case Matcher.parseMatcher checkUnknowns funcProps args str of
+    (\str -> case Math.parse funcProps str of
         Err errStr -> Dec.fail ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
-        Ok (matcher, newArgs) -> Dec.succeed ({name = str, root = matcher}, newArgs)
+        Ok tree -> case Matcher.parseMatcher checkUnknowns args tree of
+            Err errStr -> Dec.fail ("'" ++ str ++ "' is not a valid expression: " ++ errStr)
+            Ok (matcher, newArgs) -> Dec.succeed ({name = str, root = matcher, latex = toLatex_ identity (\_ -> ()) True tree}, newArgs)
     )
     Dec.string
 
-replacementDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement FunctionProp}
+replacementDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp} -> Dict.Dict String (Int, Bool) -> Dec.Decoder {name: String, root: Matcher.Replacement FunctionProp, latex: Latex.Model ()}
 replacementDecoder_ knownFunc args = Dec.string
     |> Dec.andThen (\str ->
         Dict.toList args
         |> List.indexedMap (\index (var, (argNum, _)) -> (var, (argNum, index)))
-        |> \argMap -> Matcher.toReplacement knownFunc True (Dict.fromList argMap) str
-        |> Result.map (\replacement -> {name = str, root = replacement})
+        |> \argMap -> Math.parse knownFunc str
+            |> Result.andThen (\tree -> Matcher.toReplacement identity True (Dict.fromList argMap) tree
+                |> Result.map (\replacement -> {name = str, root = replacement, latex = toLatex_ identity (\_ -> ()) True tree})
+            )
         |> Helper.resultToDecoder
     )
 

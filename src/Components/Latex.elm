@@ -70,6 +70,7 @@ type Symbol =
     -- Symbols
     | Infinity
     | Circ
+    | RightArrow
     -- Operators
     | CrossMultiplcation
     | Division
@@ -225,6 +226,7 @@ strToSymbol_ str = case str of
     "Xi" -> Ok XiUpper
     "infty" -> Ok Infinity
     "circ" -> Ok Circ
+    "rightarrow" -> Ok RightArrow
     "times" -> Ok CrossMultiplcation
     "div" -> Ok Division
     "int" -> Ok Integration
@@ -270,6 +272,7 @@ symbolToStr s = case s of
     XiUpper -> "Xi"
     Infinity -> "infty"
     Circ -> "circ"
+    RightArrow -> "rightarrow"
     CrossMultiplcation -> "times"
     Division -> "div"
     Integration -> "int"

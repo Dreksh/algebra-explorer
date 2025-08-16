@@ -36,6 +36,7 @@ type Input msg =
     Text {id: String}
     | Button {text: String, event: msg}
     | Info {text: String}
+    | FormattedInfo (Html.Html msg)
     | Radio {name: String, options: Dict.Dict Int (Html.Html msg)}
     | MathInput {id: String}
     | ParameterInput {id: String, args: List String, example: String}
@@ -130,8 +131,10 @@ view convert funcProp model =
     [   h1 [] [text model.title]
     ,   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
-                (   h2 [] [text section.subtitle]
-                ::  List.map (listView_ convert funcProp model.inputFields) section.lines
+                (   List.concat
+                    [   if String.isEmpty section.subtitle then [] else [h2 [] [text section.subtitle]]
+                    ,   List.map (listView_ convert funcProp model.inputFields) section.lines
+                    ]
                 )
             )
             model.sections
@@ -147,6 +150,7 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
         Text t -> Just (label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []])
         Button m -> Just (button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text])
         Info i -> Just (text i.text)
+        FormattedInfo i -> Just i
         Radio r -> r.options
             |> Dict.foldl (\num t foldList -> let n = String.fromInt num in
                 let id = r.name ++ n |> fieldID in foldList ++

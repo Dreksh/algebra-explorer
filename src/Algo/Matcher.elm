@@ -2,7 +2,7 @@ module Algo.Matcher exposing (
     State, StateOp, getID, getState, getName, encodeState, stateDecoder,
     Equation, parseEquation, getNode, encodeEquation, equationDecoder,
     Matcher(..), parseMatcher, countChildren, encodeMatcher, matcherDecoder,
-    Replacement, toReplacement, replacementToEq, toSubstitution, encodeReplacement, replacementDecoder,
+    Replacement, toReplacement, toSubstitution, encodeReplacement, replacementDecoder,
     MatchResult, newResult, addMatch, matchNode,
     groupSubtree, groupSibling, ungroupSubtree, setChildIndex, refreshFuncProp,
     selectedSubtree, matchSubtree, replaceSubtree, replaceRealNode, replaceAllOccurrences
@@ -102,9 +102,8 @@ countChildren m = case m of
     CommutativeMatcher s -> List.length s.arguments + (Maybe.map (\_ -> 1) s.others |> Maybe.withDefault 0)
     DeclarativeMatcher s -> List.length s.arguments
 
-parseMatcher: (String -> Int -> b -> Result String b) -> Dict.Dict String {a | property: Math.FunctionProperty c} -> b -> String -> Result String (Matcher, b)
-parseMatcher checker knownProps state = Math.parse knownProps
-    >> Result.andThen (treeToMatcher_ checker Dict.empty state)
+parseMatcher: (String -> Int -> b -> Result String b) -> b -> Math.Tree a -> Result String (Matcher, b)
+parseMatcher checker = treeToMatcher_ checker Dict.empty
 
 treeToMatcher_: (String -> Int -> b -> Result String b) -> Dict.Dict String (Int, Int) -> b -> Math.Tree a -> Result String (Matcher, b)
 treeToMatcher_ checker argMap state root =
@@ -173,36 +172,20 @@ toSubstitution funcProps str =
             else Ok (Set.insert name set)
     in
     case String.split "=" str of
-    [x, y] -> parseMatcher checkUniqueName funcProps Set.empty x
+    [x, y] -> Math.parse funcProps x
+        |> Result.andThen (parseMatcher checkUniqueName Set.empty)
         |> Result.andThen (\(matcherRoot, _) -> case matcherRoot of
             AnyMatcher n -> List.indexedMap (\i arg -> (arg, (0, i))) n.arguments
                 |> Dict.fromList
-                |> \argDict -> toReplacement funcProps False argDict y
+                |> \argDict -> Math.parse funcProps y
+                    |> Result.andThen(toReplacement identity False argDict)
                 |> Result.map (\replacement -> (n.name, replacement))
             _ -> Err "Expecting the left of the equation to be a generic variable or a generic function"
         )
     _ -> Err "Must be an equation that defines a variable or a function"
 
-replacementToEq: Replacement prop -> Equation prop (Maybe prop)
-replacementToEq = Math.map (\_ root _ -> (Math.getState root |> Tuple.first, ())) ()
-    >> Tuple.first
-    >> processID_
-        {   nextID = 0
-        ,   parent = Dict.empty
-        ,   ops =
-            {   new = \p _ -> p
-            ,   copy = \(State_ _ p) _ -> p
-            ,   update = \p _ -> (p, True)
-            ,   extract = identity
-            }
-        }
-    >> \(newRoot, tracker) -> {root = newRoot, tracker = {tracker | parent = Dict.remove 0 tracker.parent}}
-
-toReplacement: Dict.Dict String {a | property: Math.FunctionProperty prop} -> Bool -> Dict.Dict String (Int, Int) -> String -> Result String (Replacement prop)
-toReplacement funcProps strict argDict = Math.parse funcProps >> Result.andThen (toReplacement_ identity strict argDict)
-
-toReplacement_: (a -> Maybe prop) -> Bool -> Dict.Dict String (Int, Int) -> Math.Tree a -> Result String (Replacement prop)
-toReplacement_ converter strict argDict =
+toReplacement: (a -> Maybe prop) -> Bool -> Dict.Dict String (Int, Int) -> Math.Tree a -> Result String (Replacement prop)
+toReplacement converter strict argDict =
     let
         convert node = case node of
             Math.RealNode s -> Ok (Math.RealNode {state = (converter s.state, Nothing), value = s.value})
@@ -861,9 +844,9 @@ createMatcherPair_ extract left right =
         extractor = getState >> extract
         toMatcherPair (from, to) = case treeToMatcher_ (\_ _ -> Ok) Dict.empty () from of
             Ok (AnyMatcher n, _) -> let args = List.indexedMap (\index var -> (var, (0, index))) n.arguments |> Dict.fromList in
-                toReplacement_ extractor False args to
+                toReplacement extractor False args to
                 |> Result.map (\toR -> treeToMatcher_ (\_ _ -> Ok) args () to
-                    |> Result.andThen (\(toM, _) -> toReplacement_ extractor False args from
+                    |> Result.andThen (\(toM, _) -> toReplacement extractor False args from
                         |> Result.map (\fromR -> [(toM, fromR)])
                     )
                     |> Result.toMaybe |> Maybe.withDefault []

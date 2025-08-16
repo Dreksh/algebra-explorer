@@ -512,6 +512,7 @@ symbolStrokes_ s str = case str of
     Latex.XiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.9), Line (1.3,-0.9), Move (0.4,-0.3), Line (1,-0.3), Move (0.1,0.4), Line (1.3,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
     Latex.Infinity -> {data = BaseFrame {strokes = [Move (0.1,0), Curve (0.1,0.1) (0.3,0.2) (0.5,0), Curve (0.7,-0.2) (0.9,-0.1) (0.9,0), Curve (0.9,0.1) (0.7,0.2) (0.5,0), Curve (0.3,-0.2) (0.1,-0.1) (0.1,0)], elem = s}, topLeft = (0, -0.2), botRight = (1, 0.2)}
     Latex.Circ -> {data = BaseFrame {strokes = [Move (0.4,-0.3), Curve (0,-0.3) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.3) (0.4,-0.3)], elem = s}, topLeft = (0, -0.4), botRight = (0.8, 0.4)}
+    Latex.RightArrow -> {data = BaseFrame {strokes = [Move (0.1,0), Line (0.9,0), Move (0.7, -0.3), Line (0.9,0), Line (0.7,0.3)], elem = s}, topLeft = (0, -0.4), botRight = (1, 0.4)}
     Latex.CrossMultiplcation -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Line(0.5,0.2), Move (0.1,0.2), Line (0.5,-0.2)], elem = s}, topLeft = (0,-0.3), botRight = (0.6, 0.3)}
     Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
     Latex.Integration -> {data = BaseFrame {strokes = [Move (0, 0.8), Curve (0.6, 1) (0,-1.5) (0.6,-1.3)], elem = s}, topLeft = (0,-1.5), botRight = (0.6,1)}

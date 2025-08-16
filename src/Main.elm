@@ -375,7 +375,8 @@ update event core = let model = core.swappable in
                 |> Result.fromMaybe "Unable to find the match"
                 |>  Result.andThen (\prev -> Helper.resultDict (\k v r -> if k == "_method" then Ok r
                         else case v of
-                            Dialog.TextValue val -> Matcher.toReplacement (Rules.functionProperties model.rules) False Dict.empty val
+                            Dialog.TextValue val -> Math.parse (Rules.functionProperties model.rules) val
+                                |> Result.andThen (Matcher.toReplacement identity False Dict.empty)
                                 |> Result.map (\tree -> {r | from = Matcher.addMatch k tree r.from})
                             Dialog.MathValue str -> Matcher.toSubstitution (Rules.functionProperties model.rules) str
                                 |> Result.map (\(key, replacement) -> {r | from = Matcher.addMatch key replacement r.from})
@@ -411,7 +412,7 @@ update event core = let model = core.swappable in
                     Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, Cmd.none)
 
 
-applyChange_: {from: Matcher.MatchResult Rules.FunctionProp Animation.State, replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp}} -> Bool -> Model -> (Model, Cmd Event)
+applyChange_: Actions.SingleMatch -> Bool -> Model -> (Model, Cmd Event)
 applyChange_ params commit model = let swappable = model.swappable in
     case Display.transform model.animation params.replacements params.from swappable.display of
         Err errStr -> submitNotification_ model errStr
@@ -536,14 +537,10 @@ parameterDialog_: Rules.Model -> Actions.MatchedRule -> Dialog.Model Event
 parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextBar_ (Rules.functionProperties rules)
     {   title = "Set parameters for " ++ params.title
     ,   sections =
-            [{   subtitle = "Fill in the parameters"
-            ,   lines = Dict.toList params.parameters
-                    |> List.map (\(key, param) ->
-                        [Dialog.ParameterInput {id = key, args = param.arguments, example = param.example}, Dialog.Info {text = param.description}]
-                    )
-            }]
-            |> (\sections -> if List.length params.matches <= 1 then sections
-                else { subtitle = ""
+        [   case params.matches of
+                [] -> {subtitle = "", lines = []}
+                [m] -> {subtitle = "", lines = [[Dialog.FormattedInfo (Actions.matchToLatex [] m)]]}
+                _ -> { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]
                         ,   [   Dialog.Radio
@@ -551,7 +548,7 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
                                 ,   options = List.indexedMap
                                     (\k m ->
                                         (   k
-                                        ,   Actions.replacementsToLatex m.replacements []
+                                        ,   Actions.matchToLatex [] m
                                         )
                                     )
                                     params.matches
@@ -560,8 +557,13 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
                             ]
                         ]
                     }
-                    :: sections
-            )
+        ,   {   subtitle = "Fill in the parameters"
+            ,   lines = Dict.toList params.parameters
+                    |> List.map (\(key, param) ->
+                        [Dialog.ParameterInput {id = key, args = param.arguments, example = param.example}, Dialog.Info {text = param.description}]
+                    )
+            }
+        ]
     ,   success = ApplyParameters
     ,   cancel = CloseDialog
     ,   focus = Nothing

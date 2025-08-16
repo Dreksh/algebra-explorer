@@ -1,7 +1,6 @@
 module UI.Actions exposing (
-    Event(..), MatchedRule, Action(..), Selection,
-    matchRules, replacementsToLatex,
-    view, viewContextual
+    Event(..), MatchedRule, SingleMatch, Action(..), Selection,
+    matchRules, matchToLatex, view, viewContextual
     )
 
 import Dict
@@ -12,6 +11,7 @@ import Html.Keyed exposing (node)
 -- Ours
 import Algo.Math as Math
 import Algo.Matcher as Matcher
+import Components.Latex as Latex
 import Components.Rules as Rules
 import UI.Animation as Animation
 import UI.MathIcon as MathIcon
@@ -42,7 +42,12 @@ type Action =
 type alias MatchedRule =
     {   title: String
     ,   parameters: Dict.Dict String Rules.Parameter
-    ,   matches: List {from: Matcher.MatchResult Rules.FunctionProp Animation.State, replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp}}
+    ,   matches: List SingleMatch
+    }
+type alias SingleMatch =
+    {   from: Matcher.MatchResult Rules.FunctionProp Animation.State
+    ,   fromLatex: Latex.Model ()
+    ,   replacements: List {name: String, root: Matcher.Replacement Rules.FunctionProp, latex: Latex.Model ()}
     }
 
 type alias Selection =
@@ -114,7 +119,7 @@ matchRule_ selected rule = rule.title |>
         Just (n, root) ->
             let
                 matches = List.filterMap (\m -> Matcher.matchSubtree n.nodes m.from.root root
-                    |> Maybe.map (\result -> {from = result, replacements = m.to})
+                    |> Maybe.map (\result -> {from = result, replacements = m.to, fromLatex = m.from.latex})
                     ) rule.matches
             in
                 if List.isEmpty matches then Disallowed
@@ -175,22 +180,28 @@ displayAction_ converter action = case action of
                         (matched.matches |> List.map (\match ->
                             -- only want one match per button so that hover+click is deterministic
                             Html.li [class "match"]
-                            [   replacementsToLatex
-                                match.replacements
+                            [   matchToLatex
                                 (   (Apply {matched | matches = List.singleton match})
                                     |> if noParams then hoverable else unhoverable
                                 )
+                                match
                             ]
                             )
                         )
                     ]
             _ -> [Html.h3 (hoverable event) [Html.text name]]
 
-
-replacementsToLatex: List {name: String, root: Matcher.Replacement Rules.FunctionProp} -> List (Html.Attribute msg) -> Html.Html msg
-replacementsToLatex replacements attrs =
-    let toMathIcon = Matcher.replacementToEq >> Rules.toLatex >> MathIcon.static []
-    in List.map (.root >> toMathIcon) replacements |> List.intersperse (Html.text ", ") |> Html.span attrs
+matchToLatex: List (Html.Attribute msg) -> SingleMatch -> Html.Html msg
+matchToLatex attrs match =
+    match.fromLatex
+    ++ (    Latex.SymbolPart () Latex.RightArrow
+        ::  (   List.map .latex match.replacements
+            |> List.intersperse [Latex.Text () ", "]
+            |> List.concat
+            )
+    )
+    |> MathIcon.static []
+    |> \child -> Html.span attrs [child]
 
 
 viewContextual: (Event -> msg) -> List (String, (List Action)) -> List (Html.Html msg)
