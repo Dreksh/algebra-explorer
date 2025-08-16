@@ -352,21 +352,23 @@ symbolsToFrames_ ref elem = case elem of
     Latex.Bracket s inner -> latexToFrames inner
         |> \new ->
             let
-                (top, bot) = (Tuple.second new.topLeft, Tuple.second new.botRight)
-                mid = (top + bot)/2
+                ((left, oldTop), (right, oldBot)) = (new.topLeft, new.botRight)
+                (top, bot) = if oldTop /= oldBot then (oldTop, oldBot)
+                    else if ref.topY /= ref.botY then (ref.topY, ref.botY)
+                    else (-0.5, 0.5)
                 height = bot - top
                 shift = 0.3*height
             in
             (   {   data = Position
-                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, -0.4), Curve (0, -0.2) (0, 0.2) (0.2, 0.4)], elem = s}, topLeft = (0,-0.5), botRight = (0.3,0.5)}, origin = (0,mid), scale = height}
+                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, -0.9), Curve (0.05, -0.7) (0.05, -0.3) (0.2, -0.1)], elem = s}, topLeft = (0,-1), botRight = (0.3,0)}, origin = (0,bot), scale = height}
                     ,   {frame = new, origin = (shift, 0), scale = 1}
-                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, -0.4), Curve (0.3, -0.2) (0.3, 0.2) (0.1, 0.4)], elem = s}, topLeft = (0,-0.5), botRight = (0.3,0.5)}, origin = (Tuple.first new.botRight + shift, mid), scale = height}
+                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, -0.9), Curve (0.25, -0.7) (0.25, -0.3) (0.1, -0.1)], elem = s}, topLeft = (0,-1), botRight = (0.3,0)}, origin = (Tuple.first new.botRight + shift, bot), scale = height}
                     ]
-                ,   topLeft = new.topLeft
-                ,   botRight = Animation.addVector2 (2*shift, 0) new.botRight
+                ,   topLeft = (left, top)
+                ,   botRight = (right + 2*shift, bot)
                 }
-            ,   let offsetX = (max ref.topX ref.botX) + (Tuple.first new.botRight) + 2*shift in
-                {topX = offsetX, botX = offsetX, topY = new.topLeft |> Tuple.second, botY = new.botRight |> Tuple.second}
+            ,   let offsetX = (max ref.topX ref.botX) + right + 2*shift in
+                {topX = offsetX, botX = offsetX, topY = top, botY = bot}
             )
     Latex.Sqrt s inner -> latexToFrames inner
         |> \new ->
@@ -532,7 +534,7 @@ charStrokes_ c = case c of
     'c' -> ([Move (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
     'd' -> ([Move (0.7,-0.1), Curve (0.4,-0.5) (0,0) (0.2,0.2),Curve (0.4,0.4) (0.7,0.2) (0.7,-0.8),Curve (0.7,0) (0.8,0.3) (0.95, 0.3)], (0, -1), (1, 0.5))
     'e' -> ([Move (0.1,0), Curve (0.5,0.1) (0.8,-0.1) (0.7,-0.2), Curve (0.5,-0.4) (0.1,-0.3) (0.1,0), Curve (0.1,0.3) (0.6,0.5) (0.8,0.2)], (0, -0.5), (0.9, 0.5))
-    'f' -> ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.8) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -0.5), (0.9, 0.5))
+    'f' -> ([Move (0.8,-0.6), Curve (0.5,-1) (0.4,-0.8) (0.4,-0.5), Line (0.4,0.4), Move (0.1,-0.2), Line (0.8,-0.2)], (0, -1), (0.9, 0.5))
     'g' -> ([Move (0.7,-0.1), Curve (0.5,-0.5) (0, -0.3) (0.1,0), Curve (0.2,0.3) (0.6,0.4) (0.7,-0.3), Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
     'h' -> ([Move (0.1,-0.9), Curve (0.2,-0.6) (0.2,-0.4) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -1), (0.9, 0.5))
     'i' -> ([Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3), Move (0.2,-0.75), Line (0.3,-0.6)], (0, -0.8), (0.5, 0.5))
@@ -542,14 +544,14 @@ charStrokes_ c = case c of
     'm' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4), Curve (1.1,-0.5) (1.4,-0.6) (1.4,0.4)], (0, -0.5), (1.5, 0.5))
     'n' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.5,-0.5) (0.8,-0.6) (0.8,0.4)], (0, -0.5), (0.9, 0.5))
     'o' -> ([Move (0.5,-0.4), Curve (0.3,-0.4) (0.1,-0.2) (0.1,0),Curve (0.1,0.2) (0.3,0.4) (0.5,0.4), Curve (0.7,0.4) (0.9,0.2) (0.9,0), Curve (0.9,-0.2) (0.7,-0.4) (0.5,-0.4)], (0, -0.5), (1, 0.5))
-    'p' -> ([Move (0,-0.4), Curve (0.1,-0.2) (0.1,0) (0.1,0.9), Move (0.1,-0.1), Curve (0.3,-0.5) (0.5,-0.4) (0.7,-0.2), Curve (0.9,0) (0.7,0.5) (0.1,0.1)], (0, -0.5), (1, 1))
+    'p' -> ([Move (0,-0.4), Curve (0.1,-0.2) (0.1,0) (0.1,0.9), Move (0.1,-0.1), Curve (0.3,-0.5) (0.5,-0.4) (0.7,-0.2), Curve (0.9,0) (0.7,0.5) (0.1,0.1)], (0, -0.5), (0.9, 1))
     'q' -> ([Move (0.7,-0.4), Curve (0.6,-0.2) (0.6,0.1) (0.6,0.85), Line (0.9,0.7), Move (0.65,-0.2), Curve (0.4,-0.5) (0.1,-0.2) (0.1,0), Curve (0.1,0.2) (0.4,0.3) (0.6,0.2)], (0, -0.5), (1, 1))
     'r' -> ([Move (0.1,-0.4), Curve (0.2,-0.3) (0.2,-0.1) (0.2,0.4), Curve (0.2,-0.3) (0.4,-0.5) (0.7,-0.2)], (0, -0.5), (0.8, 0.5))
-    's' -> ([Move (0.6,-0.3), Curve (0.3,-0.5) (0,-0.2) (0.5,-0.05), Curve (1,0.1) (0.5,0.7) (0.1,0.2)], (0, -0.5), (1, 0.5))
+    's' -> ([Move (0.6,-0.3), Curve (0.3,-0.5) (0,-0.2) (0.5,-0.05), Curve (1,0.1) (0.5,0.7) (0.1,0.2)], (0, -0.5), (0.8, 0.5))
     't' -> ([Move (0.5,-0.8), Curve (0.2,0.2) (0.2,0.5) (0.7,0.2), Move (0.1,-0.3), Line (0.7,-0.4)], (0, -0.9), (0.8, 0.5))
     'u' -> ([Move (0.2,-0.4), Curve (0,1) (0.7,0.2) (0.8,-0.4), Curve (0.8,0.1) (0.8,0.3) (0.9,0.4)], (0, -0.5), (1, 0.5))
     'v' -> ([Move (0.1,-0.4), Curve (0.3,-0.2) (0.4,0.2) (0.5,0.35), Curve (0.6,0.2) (0.8,-0.2) (0.9,-0.4)], (0, -0.5), (1, 0.5))
-    'w' -> ([Move (0.1,-0.2), Curve (0.3,-0.2) (0.2,0.1) (0.2,0.3), Curve (0.2,0.5) (0.4,0.3) (0.5,0), Curve (0.3,0.5) (0.8,0.6) (0.9,-0.4)], (0, -0.5), (1, 0.5))
+    'w' -> ([Move (0.1,-0.4), Curve (0.4,0.4) (0.4,0.4) (0.5,0), Curve (0.7,0.4) (0.7,0.4) (0.9,-0.4)], (0, -0.5), (1, 0.5))
     'x' -> ([Move (0.1,-0.2), Curve (0.3,-0.7) (0.9,-0.1) (0.1,0.4), Move (0.9,0.2), Curve (0.7,0.7) (0.1,0.1) (0.9,-0.4)], (0, -0.5), (1, 0.5))
     'y' -> ([Move (0.1,-0.4), Curve (0.1,0.3) (0.6,0.3) (0.7,-0.4),Line (0.7,0.5), Curve (0.7,0.9) (0.2,1) (0.1,0.6)], (0, -0.5), (0.8, 1))
     'z' -> ([Move (0.1,-0.3), Curve (0.9,-0.5) (0.7,-0.2) (0.5,0), Curve (0.3,0.2) (-0.3,0.5) (0.9,0.3), Move (0.1,0), Line (0.9,-0.1)], (0, -0.5), (1, 0.5))

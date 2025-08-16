@@ -488,7 +488,7 @@ view core = let model = core.swappable in
                                 ,   Html.span [] []
                                 ,   a [] [text "Toggle Actions Sidebar"]
                                 ]
-                            ,   Menu.Content [] [a [class "clickable", href "https://github.com/jxz12/math", target "_blank"] [text "Github Source"]]
+                            ,   Menu.Content [] [a [class "clickable", href "https://github.com/Dreksh/algebra-explorer", target "_blank"] [text "Github Source"]]
                             ]
                         ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)

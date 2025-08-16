@@ -312,7 +312,7 @@ product_ funcProps = Parser.loop []
 
 term_: Dict.Dict String {a | property: FunctionProperty prop} -> Parser_ (Tree (Maybe prop))
 term_ funcProps = Parser.oneOf
-    [   Parser.succeed identity |. expectSymbol_ "(" |= (expression_ funcProps |> Parser.inContext (PrevStr_ "(")) |. Parser.spaces |. expectSymbol_ ")"
+    [   Parser.succeed identity |. expectSymbol_ "(" |. Parser.spaces |= (expression_ funcProps |> Parser.inContext (PrevStr_ "(")) |. Parser.spaces |. expectSymbol_ ")"
     ,   tokenNumber_
     ,   Parser.succeed (\a b -> (a, b)) |. expectSymbol_ "\\" |= tokenLongName_ |= varOrFunc_ funcProps
         |> Parser.andThen (\(name, props) -> case (Dict.get name funcProps, props) of
