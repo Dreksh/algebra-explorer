@@ -22,6 +22,7 @@ import UI.Display as Display
 import UI.HtmlEvent as HtmlEvent
 import UI.MathIcon as MathIcon
 import UI.SvgDrag as SvgDrag
+import Algo.History as History
 
 -- Scope is always editable and capable of inserting & deleting. But the scope itself cannot be deleted.
 type Scope = Scope ScopeDetail (List ScopeElement)
@@ -58,7 +59,7 @@ type alias PreviousInput =
 
 type alias Model msg =
     {   history: History.Model Scope
-    ,   previousInput: Maybe PreviousInput
+    ,   previousInput: Maybe PreviousInput -- For checking when to commit / flush
     ,   functionInput: Maybe String
     ,   cursor: CaretPosition
     ,   showCursor: Bool
@@ -398,25 +399,25 @@ setCursor_ point model = toLatex False [] [] (current model)
     |> \frameRes -> case frameRes of
         Nothing -> model
         Just (newC, diff) -> traverse (\_ input -> case input of
-            TextCase prev str num next -> Ok (prev ++ (StrElement str :: next), [List.length prev, num])
+            TextCase prev str num next -> Ok (Just (prev ++ (StrElement str :: next), [List.length prev, num]))
             IntermediateCase prev next -> case List.head next of
-                Nothing -> Ok (prev ++ next, [List.length prev + List.length next])
+                Nothing -> Ok (Just (prev ++ next, [List.length prev + List.length next]))
                 Just n -> case n of
                     StrElement str -> MathIcon.closestChar str diff
                         |> \(index, vector) -> if Tuple.first vector > 0
                             then if index + 1 == String.length str
-                                then Ok (prev ++ next, [List.length prev + 1])
-                                else Ok (prev ++ next, [List.length prev, index + 1])
+                                then Ok (Just (prev ++ next, [List.length prev + 1]))
+                                else Ok (Just (prev ++ next, [List.length prev, index + 1]))
                             else if index == 0
-                                then Ok (prev ++ next, [List.length prev])
-                                else Ok (prev ++ next, [List.length prev, index])
+                                then Ok (Just (prev ++ next, [List.length prev]))
+                                else Ok (Just (prev ++ next, [List.length prev, index]))
                     _ -> if Tuple.first diff > 0
-                        then Ok (prev ++ next, [List.length prev + 1])
-                        else Ok (prev ++ next, [List.length prev])
+                        then Ok (Just (prev ++ next, [List.length prev + 1]))
+                        else Ok (Just (prev ++ next, [List.length prev]))
             ) (current model) newC
             |> \res -> case res of
-                Ok (_,c) -> {model | cursor = c}
-                Err _ -> model
+                Ok (Just (_,c)) -> {model | cursor = c}
+                _ -> model
 
 {- ## Scope traversal -}
 
@@ -428,8 +429,8 @@ type TraversalError_  =
     | CannotSplitArgument_
     | CannotModifySection_
 
-traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (List ScopeElement, CaretPosition))
-    -> Scope -> CaretPosition -> Result TraversalError_ (List ScopeElement, CaretPosition)
+traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition)))
+    -> Scope -> CaretPosition -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition))
 traverse process (Scope detail children) caret = case caret of
     [] -> IntermediateCase [] children |> process detail
     [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process detail
@@ -439,13 +440,21 @@ traverse process (Scope detail children) caret = case caret of
             (Fixed f :: after) -> case Array.get y f.params of
                 Nothing -> Err BrokenCaret
                 Just (Scope inDetail inChildren, override) -> traverse process (Scope inDetail inChildren) others
-                    |> Result.andThen (\(newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
-                        Ok (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos)
+                    |> Result.andThen (\res -> case res of
+                        Nothing -> Ok (Just (prev ++ after, [x, y]))
+                        Just (newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
+                            Ok (Just (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos))
                     )
             (Bracket kids :: after) -> traverse process (Scope detail kids) others
-                |> Result.map (\(newChildren, pos) -> (prev ++ (Bracket newChildren) :: after, x::y::pos))
+                |> Result.map (\res -> case res of
+                    Nothing -> Just (prev ++ after, [x, y])
+                    Just (newChildren, pos) -> Just (prev ++ (Bracket newChildren) :: after, x::y::pos)
+                )
             (InnerScope (Scope inD inC) :: after) -> traverse process (Scope inD inC) others
-                |> Result.map (\(newChildren, pos) -> (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos))
+                |> Result.map (\res -> case res of
+                    Nothing -> Just (prev ++ after, [x, y])
+                    Just (newChildren, pos) -> Just (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos)
+                )
             _ -> Err BrokenCaret
 
 {- ## Insertion -}
@@ -458,17 +467,17 @@ insertChar_ char model = let (Scope detail children) = current model in
         (   case input of
             TextCase prev str num next ->
                 let newStr = (String.left num str) ++String.fromChar char ++ (String.dropLeft num str) in
-                (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
+                Just (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
             IntermediateCase prev next -> case next of
-                (StrElement str::after) ->
+                (StrElement str::after) -> Just
                     (prev ++ (StrElement (String.cons char str) :: after), [List.length prev, 1])
                 _ -> let beforeLength = List.length prev - 1 in
                     case List.drop beforeLength prev of
-                        [StrElement str] ->
+                        [StrElement str] -> Just
                             (   List.take beforeLength prev ++ (StrElement (str ++ String.fromChar char) :: next)
                             ,   [List.length prev]
                             )
-                        _ ->
+                        _ -> Just
                             (   prev ++ (StrElement (String.fromChar char) :: next)
                             ,   [List.length prev + 1]
                             )
@@ -476,7 +485,7 @@ insertChar_ char model = let (Scope detail children) = current model in
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (l,c) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
 insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
@@ -484,7 +493,7 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
     traverse
     (\_ input -> Ok
         (   case input of
-                TextCase prev str num next ->
+                TextCase prev str num next -> Just
                     (   prev
                         ++  ( StrElement (String.left num str) :: element
                             :: StrElement (String.dropLeft num str) :: next
@@ -493,7 +502,7 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
                         Nothing -> [List.length prev + 2]
                         Just n -> [List.length prev + 1, n, 0]
                     )
-                IntermediateCase prev next ->
+                IntermediateCase prev next -> Just
                     (   prev ++ (element :: next)
                     ,   case firstNode of
                         Nothing -> [List.length prev + 1]
@@ -503,7 +512,7 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (l,c) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
 latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
@@ -521,16 +530,16 @@ delete_ forwards model = let (Scope detail children) = current model in
     (\scopeDetail input -> if scopeDetail.immutable then Err CannotModifySection_
         else Ok (   case input of
             TextCase prev str num next -> if forwards
-                then
+                then Just
                     (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
                     ,   if num + 1 == String.length str then [List.length prev + 1] else [List.length prev, num]
                     )
-                else
+                else Just
                     (   prev ++ (StrElement (String.left (num - 1) str ++ String.dropLeft num str) :: next)
                     ,   if num == 1 then [List.length prev] else [List.length prev, num - 1]
                     )
             IntermediateCase prev next -> if forwards
-                then
+                then Just
                     (   case List.head next of
                         Nothing -> prev
                         Just (StrElement str) -> if String.length str == 1
@@ -544,19 +553,20 @@ delete_ forwards model = let (Scope detail children) = current model in
                 else let beforeLength = List.length prev - 1 in
                     case List.drop beforeLength prev of
                         [StrElement str] -> if String.length str == 1
-                            then (List.take beforeLength prev ++ next, [beforeLength])
-                            else (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
+                            then Just (List.take beforeLength prev ++ next, [beforeLength])
+                            else Just (   List.take beforeLength prev ++ (StrElement (String.dropRight 1 str)::next)
                                 ,   [List.length prev]
                                 )
-                        [Fixed _] -> (List.take beforeLength prev ++ next, [beforeLength])
-                        [Bracket _] -> (List.take beforeLength prev ++ next, [beforeLength])
-                        [InnerScope _] -> (List.take beforeLength prev ++ next, [beforeLength])
-                        _ -> (next, [0])
+                        [Fixed _] -> Just (List.take beforeLength prev ++ next, [beforeLength])
+                        [Bracket _] -> Just (List.take beforeLength prev ++ next, [beforeLength])
+                        [InnerScope _] -> Just (List.take beforeLength prev ++ next, [beforeLength])
+                        _ -> Nothing
         )
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (l, c) -> {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (Just (l, c)) -> {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok Nothing -> {model | history = History.flushAndCommit (Scope detail []) model.history ,cursor = [0]}
         _ -> model
 
 {- ## Extraction -}
