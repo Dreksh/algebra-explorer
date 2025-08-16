@@ -1,0 +1,83 @@
+{
+    "name": "Arithmetic",
+    "functions":{
+        "+": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "+"}},
+        "*": {"arguments": 2, "associative": true, "commutative": true, "javascript": {"type":"infix", "symbol": "*"}},
+        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}},
+        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}}
+    },
+    "constants": {},
+    "actions": [
+        {
+            "title": "Cancel out",
+            "description": "Combining with their inverse, values can be cancelled out",
+            "matches": [
+                {"from": "a-a", "to": "0"},
+                {"from": "a/a", "to": "1"}
+            ]
+        },
+        {
+            "title": "<name>",
+            "description": "<descr>",
+            "parameters": {
+                "a": "The value to introduce"
+            },
+            "matches": [
+                {"from": "0", "to": "a-a"},
+                {"from": "1", "to": "a/a"}
+            ]
+        },
+        {
+            "title": "Apply identity",
+            "description": "Combining with the identity does not affect the value",
+            "matches": [
+                {"from": "a", "to": "a+0"},
+                {"from": "a", "to": "a*1"}
+            ]
+        },
+        {
+            "title": "Remove identity",
+            "description": "Removing the identity does not affect the value",
+            "matches": [
+                {"from": "a+0", "to": "a"},
+                {"from": "a-0", "to": "a"},
+                {"from": "a*1", "to": "a"},
+                {"from": "a/1", "to": "a"}
+            ]
+        },
+        {
+            "title": "Cancel inverses",
+            "description": "Doubling inverses cancels itself out",
+            "matches": [
+                {"from": "--a", "to": "a"},
+                {"from": "b/(c/a)", "to": "a*b/c"}
+            ]
+        },
+        {
+            "title": "Expand brackets",
+            "description": "Multiplying a sum can be rewritten as the sum of each term multiplied",
+            "matches": [
+                {"from": "-(a+b)", "to": "-a-b"},
+                {"from": "m(a+b)", "to": "ma+mb"}
+            ]
+        },
+        {
+            "title": "Factorise",
+            "description": "Terms with the same factor in a sum can be grouped",
+            "matches": [
+                {"from": "-a-b", "to": "-(a+b)"},
+                {"from": "ma+mb", "to": "m(a+b)"}
+            ]
+        },
+        {
+            "title": "Operate on both sides",
+            "description": "Modifying the values in the same way on both sides retain the equality",
+            "parameters": {
+                "\\f(x)": "The function to apply on both sides of the equation"
+            },
+            "matches": [
+                {"from": "a=b", "to": "\\f(a)=\\f(b)"}
+            ]
+        }
+    ]
+}
