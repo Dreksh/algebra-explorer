@@ -10,7 +10,7 @@
     --color-text: black;
     --color-textbox: white;
     --color-textbox-alternate: rgb(230,230,230);
-    --color-drag: rgb(230,230,230);
+    --color-grab: rgb(230,230,230);
     --color-selected: lightgreen;
     --color-toolbar: rgb(180,180,180);
 }
@@ -475,8 +475,8 @@ dialog svg {
 .brick.selected > .brickRect {
     fill: var(--color-selected);
 }
-.brick.commutable:active > .brickRect {
-    stroke: var(--color-drag);
+.brick.grabbed > .brickRect {
+    stroke: var(--color-grab);
     cursor: grabbing;
 }
 .brick.commutable > .brickRect {
