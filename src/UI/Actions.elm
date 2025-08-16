@@ -6,8 +6,7 @@ module UI.Actions exposing (
 import Dict
 import Set
 import Html
-import Html.Attributes exposing (id, class)
-import Html.Keyed exposing (node)
+import Html.Attributes exposing (class)
 -- Ours
 import Algo.Math as Math
 import Algo.Matcher as Matcher
@@ -37,7 +36,6 @@ type Action =
     DisplayOnly String
     | Disallowed String
     | Allowed Event String  -- TODO: probably don't need the String in this one because it can be infered from the Event
-    -- TODO: add another event here to signal the cooldown period after an action is committed
 
 type alias MatchedRule =
     {   title: String
@@ -203,51 +201,76 @@ matchToLatex attrs match =
     |> MathIcon.static []
     |> \child -> Html.span attrs [child]
 
+viewContextual: (Event -> msg) -> Bool -> List (String, (List Action)) -> List (String, Html.Html msg)
+viewContextual converter previewOnHover topics =
+    topics
+    |> List.foldl (\(_, actions) foldEvents ->
+        -- first convert to a dict so that actions across topics that share the same name can be mapped to the same button
+        actions
+        |> List.foldl (\action foldEventsInner ->
+            case action of
+                Allowed event name ->
+                    let
+                        singleMatches = case event of
+                            Apply matched -> matched.matches |> List.map (\match -> Apply {matched | matches = List.singleton match})
+                            _ -> [event]
+                    in foldEventsInner |> Dict.update name (\prev -> (prev |> Maybe.withDefault []) ++ singleMatches |> Just)
+                _ -> foldEventsInner
+            ) foldEvents
+        ) Dict.empty
+    |> Dict.toList
+    |> List.map (\(name, events) -> let key = name ++ if previewOnHover then "-hover" else "" in
+        case events of
+            [event] -> (key, displayContextualAction_ converter previewOnHover "contextualAction" (Html.text name) event)
+            _ -> (key, displayContextualActions_ converter previewOnHover name events)
+        )
 
-viewContextual: (Event -> msg) -> List (String, (List Action)) -> List (Html.Html msg)
-viewContextual converter topics = topics
-    |> List.map (\(_, actions) ->
-        (   Html.div
-            [class "contextualTopic"]
-            (   actions
-                |> List.concatMap (\action -> case action of
-                    Allowed _ _ -> [displayContextualAction_ converter action]
-                    _ -> []
-                    )
+displayContextualAction_: (Event -> msg) -> Bool -> String -> Html.Html msg -> Event -> Html.Html msg
+displayContextualAction_ converter previewOnHover cls label event =
+    let
+        classes = class cls :: if previewOnHover then [class "clickable"] else []
+        inner = [Html.div [class "contextualActionButton"] [label]]
+
+        unhoverable = Html.div
+            (HtmlEvent.onClick (converter event) :: classes)
+            inner  -- TODO: add a better symbol to indicate that there is a popup modal
+        hoverable_ = Html.div
+            ([  HtmlEvent.onPointerEnter (converter event)
+            ,   HtmlEvent.onPointerLeave (converter Reset)
+            ,   HtmlEvent.onClick (converter Commit)
+            ] ++ classes)
+            inner
+        hoverable = if previewOnHover then hoverable_ else unhoverable
+    in case event of
+        NumericalSubstitution _ _ -> unhoverable
+        Substitute -> unhoverable
+        Apply matchedRule ->
+            if Dict.isEmpty matchedRule.parameters |> not
+            then unhoverable
+            else case matchedRule.matches of
+                [_] -> hoverable
+                _ -> unhoverable  -- note that we should now only ever have one match
+        _ -> hoverable
+
+displayContextualActions_: (Event -> msg) -> Bool -> String -> List Event -> Html.Html msg
+displayContextualActions_ converter previewOnHover name events =
+    Html.div [class "contextualSelect", class "contextualAction"]
+    [   Html.div [class "contextualActionButton"]
+        [   Html.text name
+        ,   Html.div [class "contextualOptions", class "hideScrollbar"]
+            (events |> List.map (\event ->
+                let
+                    (label, cls) = case event of
+                        Apply matchedRule ->
+                            (   List.head matchedRule.matches
+                                |> Maybe.map (matchToLatex [])
+                                |> Maybe.withDefault (Html.text name)  -- note that this should never default since one match is the invariant
+                            ,   "contextualLatex"
+                            )
+                        _ -> (Html.text name, "contextualText")
+                in
+                    displayContextualAction_ converter previewOnHover cls label event
+                )
             )
-        )
-        )
-
--- TODO: look at the event, change behaviour depending on how many matches
---   also might need to keep track of long click
---   or better yet, show the selections below the contextual toolbar like chinese input?
-displayContextualAction_: (Event -> msg) -> Action -> Html.Html msg
-displayContextualAction_ converter action = let inner n = [Html.div [class "contextualActionLabel"] [Html.text n]] in case action of
-    DisplayOnly name -> Html.div [] [Html.div [] [Html.text name]]
-    Disallowed name -> Html.div [class "disallowed"] (inner name)
-    Allowed event name ->
-        let
-            unhoverable = Html.div
-                [   class "contextualAction"
-                ,   class "clickable"
-                ,   HtmlEvent.onClick (converter event)
-                ]
-                (inner name)
-            hoverable = Html.div
-                [   class "contextualAction"
-                ,   class "clickable"
-                ,   HtmlEvent.onPointerEnter (converter event)
-                ,   HtmlEvent.onPointerLeave (converter Reset)
-                ,   HtmlEvent.onClick (converter Commit)
-                ]
-                (inner name)
-        in case event of
-            NumericalSubstitution _ _ -> unhoverable
-            Substitute -> unhoverable
-            Apply matchedRule ->
-                if Dict.isEmpty matchedRule.parameters |> not
-                then unhoverable
-                else case matchedRule.matches of
-                    [_] -> hoverable
-                    _ -> unhoverable
-            _ -> hoverable
+        ]
+    ]

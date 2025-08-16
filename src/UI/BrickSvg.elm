@@ -1,8 +1,8 @@
 module UI.BrickSvg exposing (bricks, brick)
 
-import Html exposing (Html, div)
-import Svg exposing (svg, g, rect, text_, text, Attribute)
-import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform)
+import Html exposing (Html)
+import Svg exposing (svg, g, rect, Attribute)
+import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform, style)
 -- ours
 import UI.Animation as Animation
 import UI.MathIcon as MathIcon
@@ -15,8 +15,8 @@ horizontalPad_ = 0.1
 rectRadius_: Float
 rectRadius_ = 0.2
 
-bricks: Float -> Float -> List (Html event) -> Html event
-bricks xMax yMax children =
+bricks: Float -> Float -> Float -> List (Html event) -> Html event
+bricks xMax yMax backgroundOpacity children =
     svg
     [   viewBox
         (   String.fromFloat (horizontalPad_ / 2)
@@ -30,6 +30,7 @@ bricks xMax yMax children =
     ,   class "bricks"
     ,   width "100%"
     ,   height "100%"
+    ,   style ("background-color: rgba(0,255,0," ++ (String.fromFloat backgroundOpacity) ++ ")")
     ]
     children
 
