@@ -645,7 +645,7 @@ views converter actionConvert model =
                 ,   div [class "contextualToolbar"]
                     (   div [class "contextualTopic"]
                         [   div
-                            (   class "contextualAction" :: if History.canUndo entry.history then
+                            (   class "contextualSelect" :: if History.canUndo entry.history then
                                 [   class "clickable"
                                 ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
                                 ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
@@ -657,7 +657,7 @@ views converter actionConvert model =
                             )
                             [div [class "contextualActionLabel"] [text "Undo"]]  -- TODO: make these icons instead
                         ,   div
-                            (   class "contextualAction" :: if History.canRedo entry.history then
+                            (   class "contextualSelect" :: if History.canRedo entry.history then
                                 [   class "clickable"
                                 ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
                                 ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)

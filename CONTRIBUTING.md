@@ -304,3 +304,35 @@ Math
 
     "At the same time, "expand"/"simplify" has many different meanings, many different transformations, so having a grouping related to what type of action to perform might be easier than saying exactly which reversible rule it belongs to."
   * also if you reverse e.g. a-a=0 then you need parameters
+
+## blog post structure
+BODMAS/BIDMAS/PEMDAS
+
+* start with the B/P - you are already doing this for natural language!
+> I have a friend with a cat who enjoys maths
+> I have a friend (with a cat) who enjoys maths
+
+        cat  maths
+friend    enjoys
+      with
+
+friend maths
+  enjoys       cat
+         with
+
+http://localhost:8000/?eq=\with(\friend,\enjoys(\cat,\maths))
+http://localhost:8000/?eq=\with(\enjoys(\friend,\maths),\cat)
+
+* then introduce commutativity and associativity
+  * but make it clear that these are special features of + and *, it is not normal but allows us to not write the brackets
+* this lets them play with the blocks very quickly
+
+* then use this to explain 1/ and -
+  * why 3-2+1 /= 3-(2+1)
+  * and then blow the reader's mind by showing the ghost 1 in 1/
+
+* BODMAS exists in order to not have to write brackets everywhere
+  * technically we could just always write brackets, but that would be unwieldy
+  * BODMAS is shorthand, and standard notation takes it even further by allowing xy to replace *
+  * but there is overloading and therefore ambiguity everywhere! f(x) could just as well be f*x rather than a function f on x
+    * this example either overloads both the bracket symbols and factor multiplication

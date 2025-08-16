@@ -6,7 +6,7 @@ module UI.Actions exposing (
 import Dict
 import Set
 import Html
-import Html.Attributes exposing (id, class)
+import Html.Attributes exposing (id, class, value)
 import Html.Keyed exposing (node)
 -- Ours
 import Algo.Math as Math
@@ -15,6 +15,7 @@ import Components.Latex as Latex
 import Components.Rules as Rules
 import UI.Animation as Animation
 import UI.MathIcon as MathIcon
+import UI.Icon as Icon
 import UI.HtmlEvent as HtmlEvent
 
 
@@ -32,12 +33,12 @@ type Event =
     | NumericalSubstitution Int Float -- root matching value
     | Substitute
     | Evaluate Int String -- root evalString
+    -- TODO: add another event here to signal the cooldown period after an action is committed?
 
 type Action =
     DisplayOnly String
     | Disallowed String
     | Allowed Event String  -- TODO: probably don't need the String in this one because it can be infered from the Event
-    -- TODO: add another event here to signal the cooldown period after an action is committed
 
 type alias MatchedRule =
     {   title: String
@@ -203,51 +204,71 @@ matchToLatex attrs match =
     |> MathIcon.static []
     |> \child -> Html.span attrs [child]
 
-
 viewContextual: (Event -> msg) -> List (String, (List Action)) -> List (Html.Html msg)
-viewContextual converter topics = topics
-    |> List.map (\(_, actions) ->
-        (   Html.div
-            [class "contextualTopic"]
-            (   actions
-                |> List.concatMap (\action -> case action of
-                    Allowed _ _ -> [displayContextualAction_ converter action]
-                    _ -> []
-                    )
+viewContextual converter topics =
+    topics
+    |> List.foldl (\(_, actions) foldEvents ->
+        -- first convert to a dict so that actions across topics that share the same name can be mapped to the same button
+        actions
+        |> List.foldl (\action foldEventsInner ->
+            case action of
+                Allowed event name ->
+                    let
+                        singleMatches = case event of
+                            Apply matched -> matched.matches |> List.map (\match -> Apply {matched | matches = List.singleton match})
+                            _ -> [event]
+                    in foldEventsInner |> Dict.update name (\prev -> (prev |> Maybe.withDefault []) ++ singleMatches |> Just)
+                _ -> foldEventsInner
+            ) foldEvents
+        ) Dict.empty
+    |> Dict.toList
+    |> List.map (\(name, events) -> displayContextualActions_ converter name events)
+    |> Html.div [class "contextualTopic"]
+    |> List.singleton
+
+displayContextualActions_: (Event -> msg) -> String -> List Event -> Html.Html msg
+displayContextualActions_ converter name events =
+    Html.div [class "contextualSelect"]
+    [   Html.text name
+    ,   Html.div [class "contextualOptions"]
+        (events |> List.map (\event ->
+            let
+                label = case event of
+                    Apply matchedRule -> List.head matchedRule.matches
+                        |> Maybe.map (matchToLatex [class "contextualActionLatex"])
+                        |> Maybe.withDefault (Html.text name)  -- note that this should never default since one match is the invariant
+                    _ -> Html.div [class "contextualActionText"] [Html.text name]
+            in
+                displayContextualAction_ converter label event
             )
         )
-        )
+    ]
 
--- TODO: look at the event, change behaviour depending on how many matches
---   also might need to keep track of long click
---   or better yet, show the selections below the contextual toolbar like chinese input?
-displayContextualAction_: (Event -> msg) -> Action -> Html.Html msg
-displayContextualAction_ converter action = let inner n = [Html.div [class "contextualActionLabel"] [Html.text n]] in case action of
-    DisplayOnly name -> Html.div [] [Html.div [] [Html.text name]]
-    Disallowed name -> Html.div [class "disallowed"] (inner name)
-    Allowed event name ->
-        let
-            unhoverable = Html.div
-                [   class "contextualAction"
-                ,   class "clickable"
-                ,   HtmlEvent.onClick (converter event)
-                ]
-                (inner name)
-            hoverable = Html.div
-                [   class "contextualAction"
-                ,   class "clickable"
-                ,   HtmlEvent.onPointerEnter (converter event)
-                ,   HtmlEvent.onPointerLeave (converter Reset)
-                ,   HtmlEvent.onClick (converter Commit)
-                ]
-                (inner name)
-        in case event of
-            NumericalSubstitution _ _ -> unhoverable
-            Substitute -> unhoverable
-            Apply matchedRule ->
-                if Dict.isEmpty matchedRule.parameters |> not
-                then unhoverable
-                else case matchedRule.matches of
-                    [_] -> hoverable
-                    _ -> unhoverable
-            _ -> hoverable
+displayContextualAction_: (Event -> msg) -> Html.Html msg -> Event -> Html.Html msg
+displayContextualAction_ converter label event =
+    let
+        -- inner suffix = Html.div [class "contextualActionLabel"] [label, suffix]
+        unhoverable = Html.div
+            [   class "contextualAction"
+            ,   class "clickable"
+            ,   HtmlEvent.onClick (converter event)
+            ]
+            [label]  -- TODO: add a better symbol to indicate that there is a popup modal
+        hoverable = Html.div
+            [   class "contextualAction"
+            ,   class "clickable"
+            ,   HtmlEvent.onPointerEnter (converter event)
+            ,   HtmlEvent.onPointerLeave (converter Reset)
+            ,   HtmlEvent.onClick (converter Commit)
+            ]
+            [label]
+    in case event of
+        NumericalSubstitution _ _ -> unhoverable
+        Substitute -> unhoverable
+        Apply matchedRule ->
+            if Dict.isEmpty matchedRule.parameters |> not
+            then unhoverable
+            else case matchedRule.matches of
+                [_] -> hoverable
+                _ -> unhoverable  -- note that we should now only ever have one match
+        _ -> hoverable

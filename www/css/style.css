@@ -432,10 +432,7 @@ dialog svg {
     margin-right: 0.1rem;
     white-space: nowrap;
 }
-.contextualAction {
-    display: flex;
-}
-.contextualActionLabel {
+.contextualSelect {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -445,12 +442,43 @@ dialog svg {
     margin-right: 0.1rem;
     padding-left: 0.4rem;
     padding-right: 0.4rem;
-    background-color: var(--color-textbox-alternate);
+    background-color: var(--color-textbox);
     border-radius: 0.4rem;
+    position: relative;
 }
+
+/* for undo and redo */
 .contextualDisabled {
     pointer-events: none;
     color: var(--color-background);
+}
+
+/* .contextualOptions {
+    display: none;
+}
+.contextualSelect:hover .contextualOptions { */
+.contextualOptions {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    /* bottom: 0.4rem; */
+    bottom: 0;
+    background-color: var(--color-textbox);
+    opacity: 0.8;
+    border-radius: 0.4rem;
+}
+.contextualActionText {
+    margin-top: 0.2rem;
+    margin-bottom: 0.2rem;
+}
+.contextualActionLatex {
+    justify-content: center;
+    align-items: center;
+    padding-left: 0.4rem;
+    background-color: var(--color-textbox);
+}
+.contextualAction > span > svg {
+    height: 2rem;
 }
 .node {
     padding: 0.2rem;
@@ -474,7 +502,7 @@ dialog svg {
     dominant-baseline: central;
     fill: none;
     stroke: black;
-    stroke-width: 0.075;
+    stroke-width: 0.05;
     stroke-linecap: round;
     stroke-linejoin: round;
     user-select: none;
