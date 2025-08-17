@@ -58,14 +58,13 @@
             cancelFunc = function() {
                 target.removeEventListener("pointermove", onMove);
                 target.removeEventListener("pointerup", onFinish);
-                target.removeEventListener("pointercancel", onFinish);
+                target.removeEventListener("pointerout", onFinish);
                 target.releasePointerCapture(val["pointerID"]);
             }
             target.addEventListener("pointermove", onMove);
             target.addEventListener("pointerup", onFinish);
-            target.addEventListener("pointercancel", onFinish);
+            target.addEventListener("pointerout", onFinish);
             target.setPointerCapture(val["pointerID"]);
-            // TODO: start timer for activating hold semantic
             // Send the start version
             app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});
         });
