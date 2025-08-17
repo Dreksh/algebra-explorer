@@ -177,7 +177,7 @@ createView_ converter funcDict model inputNum width height =
             [   class "textbar"
             ,   HtmlEvent.onSubmit (converter Submit)
             ]
-            [   Icon.equation []
+            [   Html.img [Html.Attributes.src "img/logo.svg"] []
             ,   Input.view (InputEvent >> converter) funcDict [] model.input
             ]
         ,   Html.ul

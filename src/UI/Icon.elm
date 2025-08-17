@@ -1,4 +1,4 @@
-module UI.Icon exposing (class, download, menu, equation, tick, cancel, shown, hidden, left, right,
+module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
     verticalLine, history, default, bin)
 
 import Html
@@ -20,11 +20,6 @@ download: List (Html.Attribute msg) -> Html.Html msg
 download attr = svg (viewBox "0 0 24 24" :: attr)
     [   path [d "M12 18L6 12L10 12L10 4L14 4L14 12L18 12Z", fill "currentColor", stroke "none"] []
     ,   path [d "M4 20H20", fill "none", stroke "currentColor", strokeWidth "4"] []
-    ]
-
-equation: List (Html.Attribute msg) -> Html.Html msg
-equation attr = svg (viewBox "0 0 24 24" :: attr)
-    [   text_ [x "6", y "18"] [text "Eq"]
     ]
 
 tick: List (Html.Attribute msg) -> Html.Html msg

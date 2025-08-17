@@ -109,6 +109,8 @@ span.space {
 }
 .textbar {
     box-sizing: border-box;
+    display: block;
+    padding-right: 1.5rem;
     height: 3rem;
     width: 100%;
     background-color: var(--color-textbox);
@@ -118,7 +120,7 @@ span.space {
     align-items: center;
     justify-content: start;
 }
-.textbar svg {
+.textbar img {
     height: 2rem;
     margin: 0 0.5rem;
 }
@@ -145,9 +147,6 @@ span.space {
 }
 .textbar > .mathInput {
     height: 100%;
-}
-.textbar input {
-    border-radius: 0 1.5rem 1.5rem 0;
 }
 .mathInput {
     height: 2rem;
