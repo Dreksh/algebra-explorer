@@ -1,0 +1,9 @@
+{
+    "topics": {
+        "Rock, Paper, Scissors": {
+            "preinstall": true,
+            "url": "topics/rps.json",
+            "description": "Example of a function that is not associative, but commutative"
+        }
+    }
+}

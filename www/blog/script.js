@@ -27,10 +27,10 @@ function run() {
                 node.className = "try-it-out expand";
                 removalTime = undefined;
                 if (node.lastChild.nodeName != "IFRAME") {
-                    let elements = JSON.parse(node.dataset.target)
+                    let queries = JSON.parse(node.dataset.target).map((s) => "eq=" + s)
+                    if (node.dataset.source) queries.push("source=" + node.dataset.source);
                     let frame = document.createElement("iframe");
-                    if (elements.length == 0) frame.src = "../index.html";
-                    else frame.src = "../index.html?" + elements.map((s) => "eq=" + s).join("&");
+                    frame.src = "../index.html?" + queries.join("&");
                     node.insertAdjacentElement("beforeend",frame);
                 }
             } else {
@@ -45,4 +45,15 @@ function run() {
         });
         node.insertAdjacentElement("afterbegin", button);
     }
+    // Add title
+    let title = document.createElement("div");
+    title.innerHTML = "\
+      <h1><a href=\"index.html\">Algebra Explorer</a></h1>\
+      <p>A tool that allows people to explore both steps and rules of algebra</p>\
+      <p>The source code can be found on\
+        <a href=\"https://github.com/Dreksh/algebra-explorer\">https://github.com/Dreksh/algebra-explorer</a>\
+      </p>\
+    ";
+    title.id = "title";
+    document.body.insertAdjacentElement("afterbegin", title);
 }

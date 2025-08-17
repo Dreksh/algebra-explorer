@@ -451,12 +451,12 @@ refreshFuncProp dict eq = let (newRoot, changed) = refreshFuncPropInTree_ dict e
 refreshFuncPropInTree_: Dict.Dict String {a | property: Math.FunctionProperty prop} -> (Maybe prop -> state -> (state, Bool)) -> Math.Tree (State state) -> (Math.Tree (State state), Bool)
 refreshFuncPropInTree_ dict updater original =
     let
-        updateChildren name (State_ num s) children = List.foldl (\child (list, bool) ->
+        updateChildren children = List.foldl (\child (list, bool) ->
                 let (newChild, change) = refreshFuncPropInTree_ dict updater child in
                     (newChild :: list, change || bool)
             ) ([], False) children
-            |> \(newChildren, change) -> let (newState, thisChange) = updater (Dict.get name dict |> Maybe.map (.property >> Math.getState)) s in
-                (State_ num newState, List.reverse newChildren, change || thisChange)
+            |> \(newChildren, change) -> (List.reverse newChildren, change)
+        getProp name = Dict.get name dict |> Maybe.map (.property >> Math.getState)
     in
     case original of
         Math.RealNode _ -> (original, False)
@@ -465,12 +465,28 @@ refreshFuncPropInTree_ dict updater original =
             case n.state of
                 State_ num inner -> let (newState, thisChange) = updater (Dict.get n.name dict |> Maybe.map (.property >> Math.getState)) inner in
                     (Math.UnaryNode {n | state = State_ num newState, child = child}, change || thisChange)
-        Math.BinaryNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
-            (Math.BinaryNode {n | state = newState, children = children}, change)
-        Math.GenericNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
-            (Math.GenericNode {n | state = newState, children = children}, change)
-        Math.DeclarativeNode n -> let (newState, children, change) = updateChildren n.name n.state n.children in
-            (Math.DeclarativeNode {n | state = newState, children = children}, change)
+        Math.BinaryNode n -> let (children, change) = updateChildren n.children in
+            let (State_ num s) = n.state in
+            let (newState, nodeChange) = updater (getProp n.name) s in
+            (Math.BinaryNode {n | state = State_ num newState, children = children}, change || nodeChange)
+        Math.GenericNode n -> let (children, change) = updateChildren n.children in
+            let (State_ num s) = n.state in
+            case Dict.get n.name dict of
+                Nothing -> (Math.GenericNode {n | children = children}, change)
+                Just prop -> case prop.property of
+                    Math.BinaryNode m -> let (newState, _) = updater (Just m.state) s in
+                        (Math.BinaryNode {name = n.name, associative = m.associative, commutative = m.commutative, state = State_ num newState, children = children}, True)
+                    Math.GenericNode m -> let (newState, nodeChange) = updater (Just m.state) s in
+                        (Math.GenericNode {n | state = State_ num newState, children = children}, change || nodeChange)
+                    Math.UnaryNode m -> let (newState, _) = updater (Just m.state) s in
+                        case children of
+                            [child] -> (Math.UnaryNode {name = n.name, state = State_ num newState, child = child}, True)
+                            _ -> (original, False) -- Error detected
+                    _ -> (original, False) -- Error detected,
+        Math.DeclarativeNode n -> let (children, change) = updateChildren n.children in
+            let (State_ num s) = n.state in
+            let (newState, nodeChange) = updater (getProp n.name) s in
+            (Math.DeclarativeNode {n | state = State_ num newState, children = children}, change || nodeChange)
 
 -- ## replaceRealNode: merge children back into the parent
 replaceRealNode: Int -> Float -> Math.Tree (Maybe prop) -> Equation prop state -> Result String (Int, Equation prop state)

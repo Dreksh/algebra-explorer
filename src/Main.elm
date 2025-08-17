@@ -113,7 +113,7 @@ type Event =
     | Save
     | OpenDialog (Dialog.Model Event)
     | CloseDialog
-    | ProcessTopic String (Result Http.Error Rules.Topic)
+    | ProcessTopic Bool String (Result Http.Error Rules.Topic)
     | ProcessSource String (Result Http.Error Source)
     | FileSelect LoadableFile
     | FileSelected LoadableFile File.File
@@ -288,22 +288,18 @@ update event core = let model = core.swappable in
                 Just name -> Dialog.fieldID name |> focusTextBar_
             )
         CloseDialog -> ({core | dialog = Nothing}, Cmd.none)
-        ProcessTopic url result -> case result of
+        ProcessTopic preinstall url result -> case result of
             Err err -> httpErrorToString_ url err |> submitNotification_ core
             Ok topic -> case Rules.addTopic (Just url) topic model.rules of
                 Err errStr -> submitNotification_ core errStr
-                Ok rModel ->
-                    let
-                        (dModel, t) = Display.refresh rModel core.animation model.display
-                        (nModel, t1, nCmd) = Notification.displayInfo ("Loaded topic: " ++ topic.name) (model.notification, t)
-                    in
+                Ok rModel -> let (dModel, t) = Display.refresh rModel core.animation model.display in
+                    if preinstall then
+                        (   {core | swappable = {model | rules = rModel, display = dModel}, animation = t}
+                        ,   Cmd.none
+                        )
+                    else let (nModel, t1, nCmd) = Notification.displayInfo ("Loaded topic: " ++ topic.name) (model.notification, t) in
                     (   {   core
-                        |   swappable =
-                            {   model
-                            |   rules = rModel
-                            ,   display = dModel
-                            ,   notification = nModel
-                            }
+                        |   swappable = { model | rules = rModel, display = dModel, notification = nModel }
                         ,   dialog = Nothing -- Most likely triggered from a dialog
                         ,   animation = t1
                         }
@@ -314,7 +310,7 @@ update event core = let model = core.swappable in
             Ok source ->
                 (   updateCore {model | rules = Rules.addSources source.topics model.rules}
                 ,   Dict.toList source.topics
-                    |> List.filterMap (\(_, s) -> if s.preinstall then Just (downloadTopicCmd_ s.url) else Nothing)
+                    |> List.filterMap (\(_, s) -> if s.preinstall then Just (downloadTopicCmd_ True s.url) else Nothing)
                     |> Cmd.batch
                 )
         FileSelect fileType -> (core, FSelect.file ["application/json"] (FileSelected fileType))
@@ -347,7 +343,7 @@ update event core = let model = core.swappable in
             , Cmd.none
             )
         RuleEvent e -> case e of
-            Rules.Download url -> (core, downloadTopicCmd_ url)
+            Rules.Download url -> (core, downloadTopicCmd_ False url)
             Rules.Delete topicName -> ({core | dialog = Nothing, swappable = { model | rules = Rules.deleteTopic topicName model.rules}}, Cmd.none)
         ActionEvent e -> case e of
             Actions.Commit -> commitChange_ core
@@ -451,10 +447,10 @@ updateQuery_ = Display.updateQueryCmd 0
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
 
-downloadTopicCmd_: String -> Cmd Event
-downloadTopicCmd_ url = Http.get
+downloadTopicCmd_: Bool -> String -> Cmd Event
+downloadTopicCmd_ preinstall url = Http.get
     {   url = url
-    ,   expect = Http.expectJson (ProcessTopic url) Rules.topicDecoder
+    ,   expect = Http.expectJson (ProcessTopic preinstall url) Rules.topicDecoder
     }
 
 {-

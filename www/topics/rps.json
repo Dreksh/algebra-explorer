@@ -1,6 +1,6 @@
 {   "name": "Rock, Paper, Scissors",
     "functions": {
-        "play": {"arguments": 2, "associative": false, "commutative": true}
+        "vs": {"arguments": 2, "associative": false, "commutative": true}
     },
     "constants": {
         "rock": "",
@@ -8,12 +8,12 @@
         "scissors": ""
     },
     "actions": [
-        {   "title": "Resolve"
+        {   "title": "Play"
         ,   "description": "Reveals the winner of a game"
         ,   "matches": [
-            {"from": "\\play(\\rock,\\paper)", "to": ["\\paper"]},
-            {"from": "\\play(\\rock,\\scissors)", "to": ["\\rock"]},
-            {"from": "\\play(\\scissors,\\paper)", "to": ["\\scissors"]}
+            {"from": "\\vs(\\rock,\\paper)", "to": ["\\paper"]},
+            {"from": "\\vs(\\rock,\\scissors)", "to": ["\\rock"]},
+            {"from": "\\vs(\\scissors,\\paper)", "to": ["\\scissors"]}
             ]
         }
     ]
