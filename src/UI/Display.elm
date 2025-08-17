@@ -2,7 +2,7 @@ module UI.Display exposing (
     Model, Event(..), FullEquation, init, update, views, menu,
     anyVisible, undo, redo, updateQueryCmd, refresh,
     add, advanceTime, transform, substitute, commit, reset,
-    groupChildren, ungroupChildren, partitionNumber, evaluateToNumber,
+    partitionNumber, evaluateToNumber,
     encode, decoder
     )
 
@@ -57,18 +57,18 @@ type alias Entry =
     ,   showHistory: Bool
     ,   show: Bool
     ,   ui: UIModel
-    ,   dragging: Maybe Drag
+    ,   grabbing: Maybe Grab
     }
 
-type alias Drag =
+type alias Grab =
     {   id: Int
     ,   commutable: Maybe (Int, List Float)
     ,   groupable: Maybe (Float, Float)
     ,   ungroupable: Maybe Float
-    ,   moved: DragState
+    ,   moved: GrabState
     }
 
-type DragState =
+type GrabState =
     Initial
     | NoOp
     | Commuting Int  -- new nthChild index
@@ -82,7 +82,7 @@ type Event =
     | ToggleHistory Int
     | HistoryEvent Int (History.Event (FullEquation, Latex.Model State))
     | DraggableEvent Int Draggable.Event
-    | PointerDown Int Drag Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
+    | PointerDown Int Grab Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
     | PointerDrag Int SvgDrag.Event
 
 newEntry_: Animation.Tracker -> Int -> Int -> FullEquation -> (Entry, Animation.Tracker)
@@ -97,7 +97,7 @@ newEntry_ tracker size index eq =
         ,   showHistory = False
         ,   show = True
         ,   ui = (b, m)
-        ,   dragging = Nothing
+        ,   grabbing = Nothing
         }
     ,   newT
     )
@@ -221,30 +221,6 @@ updateQueryCmd t model =
         |> model.updateQuery
     )
 
-groupChildren: Animation.Tracker -> Int -> Set.Set Int -> Model -> Result String (Model, Animation.Tracker)
-groupChildren tracker root children model = selectedEquation_ model
-    |> Result.andThen (\(eq, ids, entry) ->
-        History.current entry.history
-        |> Tuple.first
-        |> Matcher.groupSubtree root children
-        |> Result.map (\(newSelect, newEq) ->
-            let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-            in stageChange tracker eq ids newHis entry model
-            )
-        )
-
-ungroupChildren: Animation.Tracker -> Int -> Model -> Result String (Model, Animation.Tracker)
-ungroupChildren tracker root model = selectedEquation_ model
-    |> Result.andThen (\(eq, ids, entry) ->
-        History.current entry.history
-        |> Tuple.first
-        |> Matcher.ungroupSubtree root
-        |> Result.map (\(newID, newEq) ->
-            let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-            in stageChange tracker eq ids newHis entry model
-            )
-        )
-
 partitionNumber: Animation.Tracker -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
 partitionNumber tracker root target replacement model = selectedEquation_ model
     |> Result.andThen (\(eq, ids, entry) ->
@@ -309,7 +285,7 @@ commit rules model = selectedEquation_ model
         let
             newHis = History.update History.Commit entry.history
             -- do not need to call updateBricks because it should already be 'previewed'
-            newEquations = Dict.insert eq {entry | history = newHis, dragging = Nothing} model.equations
+            newEquations = Dict.insert eq {entry | history = newHis} model.equations
             newSelected = let staged = model.selected |> Maybe.map (\(_, _, s) -> s) |> Maybe.withDefault Set.empty
                 in Just (eq, staged, Set.empty)
             newActions = updateActions_ newSelected rules newEquations
@@ -459,7 +435,7 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
         Nothing -> default
         Just entry -> updatePositions_
             {   model
-            |   equations = Dict.insert eq {entry | show = not entry.show, dragging = Nothing} model.equations
+            |   equations = Dict.insert eq {entry | show = not entry.show, grabbing = Nothing} model.equations
             ,   recencyList = updateEqOrder_ eq model.recencyList
             }
             |> updateQueryCmd tracker
@@ -498,11 +474,11 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                 ,   Maybe.map (\v -> model.setCapture v.id v.pID) action
                     |> Maybe.withDefault Cmd.none
                 )
-    PointerDown eq drag pid point -> case Dict.get eq model.equations of
+    PointerDown eq grab pid point -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->
             (   {   model
-                |   equations = Dict.insert eq { entry | dragging = Just drag } model.equations
+                |   equations = Dict.insert eq { entry | grabbing = Just grab } model.equations
                 ,   recencyList = updateEqOrder_ eq model.recencyList
                 }
             ,   tracker
@@ -514,32 +490,32 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
             Nothing -> default
             Just entry -> case commuteOrAssociate x y entry of
                 Err e -> default
-                Ok (newDragging, draggedEq) ->
+                Ok (newGrabbing, grabbedEq) ->
                     let
-                        draggingEntry = { entry | dragging = Just newDragging }
-                        draggedL = Rules.toLatex draggedEq
-                        newHis = History.update (History.Stage (History.Change (draggedEq, draggedL))) draggingEntry.history
-                        newSel = Just (eqNum, Set.singleton newDragging.id, Set.singleton newDragging.id)
+                        grabbingEntry = { entry | grabbing = Just newGrabbing }
+                        grabbedL = Rules.toLatex grabbedEq
+                        newHis = History.update (History.Stage (History.Change (grabbedEq, grabbedL))) grabbingEntry.history
+                        newSel = Just (eqNum, Set.singleton newGrabbing.id, Set.singleton newGrabbing.id)
                         -- don't use stageChange because it updates the selected nodes
-                        (newEntry, newT) = updateBricks tracker {draggingEntry | history = newHis}
+                        (newEntry, newT) = updateBricks tracker {grabbingEntry | history = newHis}
                     in
                         ({model | equations = Dict.insert eqNum newEntry model.equations, selected = newSel}, newT, Cmd.none)
 
         SvgDrag.End time _ -> case Dict.get eqNum model.equations of
             Nothing -> default
-            Just entry -> case entry.dragging of
+            Just entry -> case entry.grabbing of
                 Nothing -> default
-                Just drag -> case drag.moved of
-                    -- TODO: either check distance mouse moved before or if mouse is still over block before selecting
-                    Initial -> updateSelected_ eqNum drag.id (time > longClickThreshold) rules model
-                            |> \newModel -> (newModel, tracker, Cmd.none)
-                    NoOp -> default
-                    _ -> update size tracker rules (HistoryEvent eqNum History.Commit) model
+                Just grab -> let noGrabModel = {model | equations = Dict.insert eqNum {entry | grabbing = Nothing} model.equations}
+                    in case grab.moved of
+                        Initial -> updateSelected_ eqNum grab.id False rules noGrabModel
+                                |> \newModel -> (newModel, tracker, Cmd.none)
+                        NoOp -> (noGrabModel, tracker, Cmd.none)
+                        _ -> update size tracker rules (HistoryEvent eqNum History.Commit) noGrabModel
 
-commuteOrAssociate: Float -> Float -> Entry -> Result String (Drag, FullEquation)
-commuteOrAssociate x y entry = case entry.dragging of
-    Nothing -> Err "node is not dragging, invariant violated!"
-    Just drag -> (case drag.commutable of
+commuteOrAssociate: Float -> Float -> Entry -> Result String (Grab, FullEquation)
+commuteOrAssociate x y entry = case entry.grabbing of
+    Nothing -> Err "node is not grabbing, invariant violated!"
+    Just grab -> (case grab.commutable of
         Nothing -> Err "node is not commutable"
         Just (nthChildIndex, midpoints) -> let newIndex = indexFromMidpoints_ nthChildIndex midpoints x in
             if newIndex == nthChildIndex
@@ -548,15 +524,15 @@ commuteOrAssociate x y entry = case entry.dragging of
         )
         |> (\commuted -> case commuted of
             Ok c -> Ok c
-            Err _ -> case drag.groupable of
+            Err _ -> case grab.groupable of
                 Nothing -> Err "node is not groupable"
                 Just (midpoint, top) -> if -y < top  -- need negative because svg y-axis goes downwards
-                    then Err "not dragging above selected block"
+                    then Err "not grabbing above selected block"
                     else Ok (Grouping (x<midpoint))
             )
         |> (\grouped -> case grouped of
             Ok g -> g
-            Err _ -> case drag.ungroupable of
+            Err _ -> case grab.ungroupable of
                 Nothing -> NoOp
                 Just bottom -> if -y > bottom  -- need negative because svg y-axis goes downwards
                     then NoOp
@@ -564,17 +540,17 @@ commuteOrAssociate x y entry = case entry.dragging of
             )
         |> (\newState ->
             let
-                newMoved = if drag.moved == Initial && newState == NoOp then Initial else newState
-            in (if drag.moved == newMoved
-                then Err "drag state has not changed"
+                newMoved = if grab.moved == Initial && newState == NoOp then Initial else newState
+            in (if grab.moved == newMoved
+                then Err "grab state has not changed"
                 else let (currentEq, _) = History.current entry.history in case newMoved of
                     Initial -> Err "state returned to Initial, invariant violated!"
                     NoOp -> Ok currentEq
-                    Commuting newIndex -> Matcher.setChildIndex drag.id newIndex currentEq
-                    Grouping left -> Matcher.groupSibling drag.id left currentEq |> Result.map (\(_, newEq) -> newEq)
-                    Ungrouping -> Matcher.ungroupSubtree drag.id currentEq |> Result.map (\(_, newEq) -> newEq)
+                    Commuting newIndex -> Matcher.setChildIndex grab.id newIndex currentEq
+                    Grouping left -> Matcher.groupSibling grab.id left currentEq |> Result.map Tuple.second
+                    Ungrouping -> Matcher.ungroupSubtree grab.id currentEq |> Result.map Tuple.second
                 )
-                |> Result.map (\newEq -> ({drag | moved = newMoved}, newEq))
+                |> Result.map (\newEq -> ({grab | moved = newMoved}, newEq))
             )
 
 indexFromMidpoints_: Int -> List Float -> Float -> Int
@@ -631,6 +607,7 @@ views converter actionConvert model =
                     else Nothing
                     )
                 |> Maybe.withDefault Set.empty
+            grab = entry.grabbing |> Maybe.map .id
 
             (b,m) = entry.ui
         in
@@ -643,7 +620,7 @@ views converter actionConvert model =
                             ]
                         ) [Svg.Attributes.class "mathIcons"] m
                         |> Html.map converter
-                    ,   Bricks.view (brickAttr_ highlight eqNum) b
+                    ,   Bricks.view (brickAttr_ highlight grab eqNum) b
                         |> Html.map converter
                     ]
                 ,   div [class "historyHolder"]
@@ -707,16 +684,17 @@ historyEntry_ converter current eqNum index inner = Html.a
     )
     [inner]
 
-brickAttr_: Set.Set Int -> Int -> Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute Event)
-brickAttr_ highlight eqNum id commutable groupable ungroupable =
+brickAttr_: Set.Set Int -> Maybe Int -> Int -> Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute Event)
+brickAttr_ highlight grabbed eqNum id commutable groupable ungroupable =
     let
-        drag = Drag id commutable groupable ungroupable Initial
+        grab = Grab id commutable groupable ungroupable Initial
     in
         List.filterMap identity
-        [   HtmlEvent.onPointerCapture identity (PointerDown eqNum drag) |> Just
+        [   HtmlEvent.onPointerCapture identity (PointerDown eqNum grab) |> Just
         ,   Svg.Attributes.class "commutable" |> Helper.maybeGuard (commutable /= Nothing || groupable /= Nothing || ungroupable /= Nothing)
+        ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
+        ,   Svg.Attributes.class "grabbed" |> Helper.maybeGuard (grabbed == Just id)
         ]
-        |> \list -> if Set.member id highlight then (Svg.Attributes.class "selected" :: list) else list
 
 encode: Model -> Encode.Value
 encode model = Encode.object
@@ -777,7 +755,7 @@ addDefaultPositions_ orig =
                 ,   ui = (b, m)
                 ,   showHistory = tEntry.showHistory
                 ,   show = tEntry.show
-                ,   dragging = Nothing
+                ,   grabbing = Nothing
                 }
             ,   newT
             )
