@@ -54,8 +54,8 @@ defaultOptions_ =
             [   Input.Fixed
                 {   text = "\\f"
                 ,   latex =
-                    [   Latex.Text () "f"
-                    ,   Latex.Bracket () [Latex.Argument () 1]
+                    [   Latex.Text {state=(), style=Just Latex.Emphasis} "f"
+                    ,   Latex.Bracket {state=(), style=Just Latex.Emphasis} [Latex.Argument {state=(), style=Nothing} 1]
                     ]
                 ,   params = Array.fromList
                     [(Input.Scope {inseparable = False, immutable = False} [Input.StrElement "x"]

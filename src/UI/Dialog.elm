@@ -85,13 +85,13 @@ toInput_ funcProp name args example =
     (   [   Input.Fixed
             {   text = "\\" ++ name
             ,   latex =
-                (   Latex.Text () name
+                (   Latex.Text {state=(), style=Just Latex.Emphasis} name
                 ::  case args of
                     [] -> []
                     _ ->
-                        [   Latex.Bracket ()
-                            (   List.indexedMap (\i _ -> Latex.Argument () (i+1)) args
-                            |>  List.intersperse (Latex.Text () ",")
+                        [   Latex.Bracket {state=(), style=Just Latex.Emphasis}
+                            (   List.indexedMap (\i _ -> Latex.Argument {state=(), style=Nothing} (i+1)) args
+                            |>  List.intersperse (Latex.Text {state=(), style=Just Latex.Emphasis} ",")
                             )
                         ]
                 )

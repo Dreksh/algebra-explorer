@@ -169,14 +169,15 @@ toLatex border parentPos pos (Scope _ children) =
     let
         noCaret state scopeElem = case scopeElem of
             StrElement text -> [Latex.Text state text]
-            Fixed n -> Latex.map (\_ -> state ) n.latex
-                |> Latex.replace (Array.indexedMap (\i (p, _) -> toLatex True (state ++ [i]) [] p) n.params)
-            Bracket inner -> toLatex True state [] (Scope defaultScopeDetail inner)
+            Fixed n -> Latex.map (\_ -> state.state ) n.latex
+                |> Latex.replace (Array.indexedMap (\i (p, _) -> toLatex True (state.state ++ [i]) [] p) n.params)
+            Bracket inner -> toLatex True state.state [] (Scope defaultScopeDetail inner)
                 |> \newInner -> [Latex.Bracket state newInner]
-            InnerScope inScope -> toLatex True state [] inScope
+            InnerScope inScope -> toLatex True state.state [] inScope
+        appendIndex n state = {state | state = state.state ++ [n]}
     in
     List.foldl
-    (\elem (model, index) -> let childPos = parentPos ++ [index] in
+    (\elem (model, index) -> let childPos = {state=parentPos ++ [index], style=Nothing} in
         (   model
             ++ case pos of
                 [] -> noCaret childPos elem
@@ -190,25 +191,25 @@ toLatex border parentPos pos (Scope _ children) =
                             ,   Latex.Text childPos (String.dropLeft y str)
                             ]
                     Fixed n -> if x /= index then noCaret childPos elem
-                        else Latex.map (\_ -> childPos) n.latex
+                        else Latex.map (\_ -> childPos.state) n.latex
                             |> Latex.replace
                             (   Array.indexedMap
-                                (\i -> Tuple.first >> toLatex True (childPos ++ [i]) (if i /= y then [] else other))
+                                (\i -> Tuple.first >> toLatex True (childPos.state ++ [i]) (if i /= y then [] else other))
                                 n.params
                             )
-                    Bracket inner -> if x /= index then noCaret (childPos ++ [0]) elem
-                        else toLatex True (childPos ++ [0]) other (Scope defaultScopeDetail inner)
-                            |> \newInner -> [ Latex.Bracket (childPos ++ [0]) newInner]
-                    InnerScope inner -> if x /= index then noCaret (childPos ++ [0]) elem
-                        else toLatex True (childPos ++ [0]) other inner
+                    Bracket inner -> if x /= index then noCaret (appendIndex 0 childPos) elem
+                        else toLatex True (childPos.state ++ [0]) other (Scope defaultScopeDetail inner)
+                            |> \newInner -> [ Latex.Bracket (appendIndex 0 childPos) newInner]
+                    InnerScope inner -> if x /= index then noCaret (appendIndex 0 childPos) elem
+                        else toLatex True (childPos.state ++ [0]) other inner
         ,   index + 1
         )
     ) ([], 0) children
     |> \(model, _) -> case (border, List.head pos |> Maybe.map ((==) (List.length children))) of
-        (False, Just True) -> model ++ [Latex.Caret parentPos]
+        (False, Just True) -> model ++ [Latex.Caret {state=parentPos, style=Nothing}]
         (False, _) -> model
-        (True, Just True) -> [Latex.Border parentPos (model ++ [Latex.Caret parentPos])]
-        (True, _) -> [Latex.Border parentPos model]
+        (True, Just True) -> [Latex.Border {state=parentPos, style=Nothing} (model ++ [Latex.Caret {state=parentPos, style=Nothing}])]
+        (True, _) -> [Latex.Border {state=parentPos,style=Nothing} model]
 
 {- ## Updates -}
 
@@ -261,7 +262,7 @@ update event model = case event of
                             Ok newModel -> (newModel, "", Cmd.none)
                         '*' ->
                             let
-                                detail = {text = "*", latex = [Latex.SymbolPart () Latex.CrossMultiplcation]
+                                detail = {text = "*", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation]
                                         , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
                             in
                             case insertScopeElement_ Nothing (Fixed detail) updatedModel of
@@ -269,7 +270,7 @@ update event model = case event of
                             Ok newModel -> (newModel, "", Cmd.none)
                         '/' ->
                             let
-                                detail = {text = "/", latex = [Latex.SymbolPart () Latex.Division]
+                                detail = {text = "/", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.Division]
                                         , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
                             in
                             case insertScopeElement_ Nothing (Fixed detail) updatedModel of
@@ -441,18 +442,18 @@ traverse process (Scope detail children) caret = case caret of
                 Nothing -> Err BrokenCaret
                 Just (Scope inDetail inChildren, override) -> traverse process (Scope inDetail inChildren) others
                     |> Result.andThen (\res -> case res of
-                        Nothing -> Ok (Just (prev ++ after, [x, y]))
+                        Nothing -> Ok (Just (prev ++ after, [x]))
                         Just (newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
                             Ok (Just (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos))
                     )
             (Bracket kids :: after) -> traverse process (Scope detail kids) others
                 |> Result.map (\res -> case res of
-                    Nothing -> Just (prev ++ after, [x, y])
+                    Nothing -> Just (prev ++ after, [x])
                     Just (newChildren, pos) -> Just (prev ++ (Bracket newChildren) :: after, x::y::pos)
                 )
             (InnerScope (Scope inD inC) :: after) -> traverse process (Scope inD inC) others
                 |> Result.map (\res -> case res of
-                    Nothing -> Just (prev ++ after, [x, y])
+                    Nothing -> Just (children, [x, 0]) -- InnerScopes cannot be deleted (they're for parameter inputs)
                     Just (newChildren, pos) -> Just (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos)
                 )
             _ -> Err BrokenCaret
@@ -518,7 +519,7 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
 latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
 latexArray_ fixed latex = Latex.extractArgs latex
     |> Result.map (\dict -> if fixed
-        then Dict.foldl (\_ override -> Array.push (Scope defaultScopeDetail [], override)) Array.empty dict
+        then Dict.foldl (\_ override -> Array.push (Scope defaultScopeDetail [], override.state)) Array.empty dict
         else Array.fromList [(Scope defaultScopeDetail [], noOverride_)]
     )
 
@@ -627,33 +628,38 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
         )
 
 funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model (), Int)
-funcPropToLatex_ funcDict key = case Dict.get key funcDict of
-    Nothing -> (False, [Latex.Text () key, Latex.Bracket () [Latex.Argument () 1]], 1)
+funcPropToLatex_ funcDict key = let emState = {state = (), style=Just Latex.Emphasis} in
+    let regularState = {state = (), style=Just Latex.Emphasis} in
+    case Dict.get key funcDict of
+    Nothing -> (False, [Latex.Text emState key, Latex.Bracket emState [Latex.Argument regularState 1]], 1)
     Just value ->
         let
-            createLatex name args =
-                [   Latex.Text () name
-                ,   Latex.Bracket ()
-                    (List.range 1 args |> List.map (Latex.Argument ()) |> List.intersperse (Latex.Text () ","))
+            createLatex fixed name args =
+                [   Latex.Text emState name
+                ,   Latex.Bracket emState
+                    (   List.range 1 args
+                    |>  List.map (Latex.Argument regularState)
+                    |>  List.intersperse (Latex.Text (if fixed then emState else regularState) ",")
+                    )
                 ]
         in
         case value.property of
         Math.VariableNode n -> case n.state.latex of
             Just l -> (True, l, 0)
-            Nothing -> let l = createLatex key 1 in (False, l, 0)
+            Nothing -> (True, [Latex.Text emState n.name], 0)
         Math.UnaryNode n -> case n.state.latex of
             Just l -> (True, l, 1)
-            Nothing -> let l = createLatex key 1 in (True, l, 1)
+            Nothing -> let l = createLatex False key 1 in (True, l, 1)
         Math.BinaryNode n -> case n.state.latex of
             Just l -> (n.associative == Nothing, l, 2)
             Nothing -> if n.associative == Nothing
-                then let l = createLatex key 2 in (True, l, 2)
-                else let l = createLatex key 1 in (False, l, 2)
+                then let l = createLatex False key 2 in (True, l, 2)
+                else let l = createLatex False key 1 in (False, l, 2)
         Math.GenericNode n -> let numArgs = Maybe.withDefault 0 n.arguments in
             case n.state.latex of
             Just l -> (True, l, numArgs)
-            Nothing -> let l = createLatex key numArgs in (True, l, numArgs)
-        _ -> let l = createLatex key 1 in (False, l, 1)
+            Nothing -> let l = createLatex True key numArgs in (True, l, numArgs)
+        _ -> let l = createLatex False key 1 in (False, l, 1)
 
 fixedFrom_: String -> Bool -> Array.Array (List ScopeElement) -> Latex.Model () -> ScopeElement
 fixedFrom_ text fixed args latex =

@@ -1,5 +1,5 @@
 module Components.Latex exposing (
-    Model, Part(..), Symbol(..), getState, map, replace, getParamIndexes,
+    Model, Style(..), Part(..), Symbol(..), map, replace, getParamIndexes,
     symbolToStr, extractArgs, greekLetters,
     parse, unparse, decoder, encode
     )
@@ -14,20 +14,22 @@ import Set
 import Helper
 
 type alias Model elem = List (Part elem)
-
+type Style =
+    Faded
+    | Emphasis
 type Part elem =
-    Fraction elem (Model elem) (Model elem)
-    | Text elem String
-    | SymbolPart elem Symbol
-    | Superscript elem (Model elem)
-    | Subscript elem (Model elem)
-    | Bracket elem (Model elem) -- Round brackets that wrap around some content
-    | Sqrt elem (Model elem)
-    | Argument elem Int -- Our custom insertion, for adding
-    | Param elem Int
+    Fraction {state: elem, style: Maybe Style} (Model elem) (Model elem)
+    | Text {state: elem, style: Maybe Style} String
+    | SymbolPart {state: elem, style: Maybe Style} Symbol
+    | Superscript {state: elem, style: Maybe Style} (Model elem)
+    | Subscript {state: elem, style: Maybe Style} (Model elem)
+    | Bracket {state: elem, style: Maybe Style} (Model elem) -- Round brackets that wrap around some content
+    | Sqrt {state: elem, style: Maybe Style} (Model elem)
+    | Argument {state: elem, style: Maybe Style} Int -- Our custom insertion, for adding
+    | Param {state: elem, style: Maybe Style} Int
     -- Specifically for input
-    | Caret elem
-    | Border elem (Model elem) --
+    | Caret {state: elem, style: Maybe Style}
+    | Border {state: elem, style: Maybe Style} (Model elem) --
 
 type Symbol =
     -- Greek
@@ -78,34 +80,20 @@ type Symbol =
 
 {- ## General processing of Latex.Model -}
 
--- note that fraction doesn't reveal the other state of the bottom fraction
-getState: Part a -> a
-getState p = case p of
-    Fraction e _ _ -> e
-    Text e _ -> e
-    SymbolPart e _ -> e
-    Superscript e _ -> e
-    Subscript e _ -> e
-    Bracket e _ -> e
-    Sqrt e _ -> e
-    Argument e _ -> e
-    Param e _ -> e
-    Caret e -> e
-    Border e _ -> e
-
 map: (a -> b) -> Model a -> Model b
-map convert = List.map (\root -> case root of
-        Fraction e top bot -> Fraction (convert e) (map convert top) (map convert bot)
-        Text e str -> Text (convert e) str
-        SymbolPart e symbol -> SymbolPart (convert e) symbol
-        Superscript e inner -> Superscript (convert e) (map convert inner)
-        Subscript e inner -> Subscript (convert e) (map convert inner)
-        Bracket e inner -> Bracket (convert e) (map convert inner)
-        Sqrt e inner -> Sqrt (convert e) (map convert inner)
-        Argument e int -> Argument (convert e) int
-        Param e int -> Param (convert e) int
-        Caret e -> Caret (convert e)
-        Border e inner -> Border (convert e) (map convert inner)
+map convert = let inConv e = {style = e.style, state = convert e.state} in
+    List.map (\root -> case root of
+        Fraction e top bot -> Fraction (inConv e) (map convert top) (map convert bot)
+        Text e str -> Text (inConv e) str
+        SymbolPart e symbol -> SymbolPart (inConv e) symbol
+        Superscript e inner -> Superscript (inConv e) (map convert inner)
+        Subscript e inner -> Subscript (inConv e) (map convert inner)
+        Bracket e inner -> Bracket (inConv e) (map convert inner)
+        Sqrt e inner -> Sqrt (inConv e) (map convert inner)
+        Argument e int -> Argument (inConv e) int
+        Param e int -> Param (inConv e) int
+        Caret e -> Caret (inConv e)
+        Border e inner -> Border (inConv e) (map convert inner)
     )
 
 replace: Array.Array (Model state) -> Model state -> Model state
@@ -149,35 +137,42 @@ getParamIndexes latex =
 {- ## Encoding, Decoding: to and from the written form of the tree structure -}
 
 decoder: Decode.Decoder a -> Decode.Decoder (Model a)
-decoder inner = Decode.field "type" Decode.string
+decoder inner =
+    let
+        stateDec = Decode.map2 (\a b -> {style = a, state = b})
+            (Decode.field "style" styleDecoder_ |> Decode.maybe)
+            (Decode.field "state" inner)
+    in Decode.field "type" Decode.string
     |> Decode.andThen (\str -> case str of
         "fraction" -> Decode.map3 Fraction
-            (Decode.field "state" inner)
+            (Decode.field "state" stateDec)
             (Decode.field "top" (Decode.lazy (\_ -> decoder inner)))
             (Decode.field "bot" (Decode.lazy (\_ -> decoder inner)))
-        "text" -> Decode.map2 Text (Decode.field "state" inner) (Decode.field "text" Decode.string)
-        "symbol" -> Decode.map2 SymbolPart (Decode.field "state" inner) (Decode.field "symbol" symbolDecoder_)
-        "sup" -> Decode.map2 Superscript (Decode.field "state" inner) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
-        "sub" -> Decode.map2 Subscript (Decode.field "state" inner) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
-        "bracket" -> Decode.map2 Bracket (Decode.field "state" inner) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
-        "sqrt" -> Decode.map2 Sqrt (Decode.field "state" inner) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
-        "arg" -> Decode.map2 Argument (Decode.field "state" inner) (Decode.field "num" Decode.int)
+        "text" -> Decode.map2 Text (Decode.field "state" stateDec) (Decode.field "text" Decode.string)
+        "symbol" -> Decode.map2 SymbolPart (Decode.field "state" stateDec) (Decode.field "symbol" symbolDecoder_)
+        "sup" -> Decode.map2 Superscript (Decode.field "state" stateDec) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
+        "sub" -> Decode.map2 Subscript (Decode.field "state" stateDec) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
+        "bracket" -> Decode.map2 Bracket (Decode.field "state" stateDec) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
+        "sqrt" -> Decode.map2 Sqrt (Decode.field "state" stateDec) (Decode.field "inner" (Decode.lazy (\_ -> decoder inner)))
+        "arg" -> Decode.map2 Argument (Decode.field "state" stateDec) (Decode.field "num" Decode.int)
         _ -> Decode.fail ("unknown type: '" ++ str ++ "'")
     )
     |> Decode.list
 
 encode: (s -> Encode.Value) -> Model s -> Encode.Value
-encode convert = Encode.list (\n -> case n of
+encode convert =
+    let inConv e = Encode.object [("state", convert e.state), ("style", Maybe.map (styleToStr_ >> Encode.string) e.style |> Maybe.withDefault Encode.null)] in
+    Encode.list (\n -> case n of
         Fraction e top bot -> Encode.object
-            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot),("state",convert e)]
-        Text e str -> Encode.object [("type",Encode.string "text"),("state", convert e),("text",Encode.string str)]
-        SymbolPart e symbol -> Encode.object [("type",Encode.string "symbol"),("state", convert e),("symbol",encodeSymbol_ symbol)]
-        Superscript e inner -> Encode.object [("type",Encode.string "sup"),("state", convert e),("inner",encode convert inner)]
-        Subscript e inner -> Encode.object [("type",Encode.string "sub"),("state", convert e),("inner",encode convert inner)]
-        Bracket e inner -> Encode.object [("type",Encode.string "bracket"),("state", convert e),("inner",encode convert inner)]
-        Sqrt e inner -> Encode.object [("type",Encode.string "sqrt"),("state", convert e),("inner",encode convert inner)]
-        Argument e int -> Encode.object [("type",Encode.string "arg"),("state", convert e),("num", Encode.int int)]
-        Param e int -> Encode.object [("type",Encode.string "param"),("state", convert e),("num", Encode.int int)]
+            [("type",Encode.string "fraction"),("top",encode convert top),("bot",encode convert bot),("state",inConv e)]
+        Text e str -> Encode.object [("type",Encode.string "text"),("state", inConv e),("text",Encode.string str)]
+        SymbolPart e symbol -> Encode.object [("type",Encode.string "symbol"),("state", inConv e),("symbol",encodeSymbol_ symbol)]
+        Superscript e inner -> Encode.object [("type",Encode.string "sup"),("state", inConv e),("inner",encode convert inner)]
+        Subscript e inner -> Encode.object [("type",Encode.string "sub"),("state", inConv e),("inner",encode convert inner)]
+        Bracket e inner -> Encode.object [("type",Encode.string "bracket"),("state", inConv e),("inner",encode convert inner)]
+        Sqrt e inner -> Encode.object [("type",Encode.string "sqrt"),("state", inConv e),("inner",encode convert inner)]
+        Argument e int -> Encode.object [("type",Encode.string "arg"),("state", inConv e),("num", Encode.int int)]
+        Param e int -> Encode.object [("type",Encode.string "param"),("state", inConv e),("num", Encode.int int)]
         Caret e -> Encode.null
         Border e inner -> Encode.null
     )
@@ -185,6 +180,19 @@ encode convert = Encode.list (\n -> case n of
 symbolDecoder_: Decode.Decoder Symbol
 symbolDecoder_ = Decode.string
     |> Decode.andThen (strToSymbol_ >> Helper.resultToDecoder)
+
+styleDecoder_: Decode.Decoder Style
+styleDecoder_ = Decode.string
+    |> Decode.andThen (\str -> case str of
+        "faded" -> Decode.succeed Faded
+        "emphasis" -> Decode.succeed Emphasis
+        _ -> Decode.fail "unknown style"
+    )
+
+styleToStr_: Style -> String
+styleToStr_ style = case style of
+    Faded -> "faded"
+    Emphasis -> "emphasis"
 
 strToSymbol_: String -> Result String Symbol
 strToSymbol_ str = case str of
@@ -316,7 +324,7 @@ parse str = case Parser.run (modelParser_ |. Parser.end) str of
     Err _ -> Err "TODO"
     Ok model -> extractArgs model |> Result.map (\_ -> model)
 
-extractArgs: Model a -> Result String (Dict.Dict Int a)
+extractArgs: Model a -> Result String (Dict.Dict Int {style: Maybe Style, state: a})
 extractArgs =
     let
         recursive initial = Helper.resultList (\elem (found, m) -> case elem of
@@ -343,12 +351,15 @@ extractArgs =
             else Err "Not all arguments are present in the representation"
         )
 
+defaultState_: {state: (), style: Maybe Style}
+defaultState_ = {state = (), style = Nothing}
+
 modelParser_: Parser.Parser (Model ())
 modelParser_ = Parser.loop []
     (\list -> if List.isEmpty list then bracketOrSingle_ |. Parser.spaces |> Parser.map Parser.Loop else
         Parser.oneOf
-        [   Parser.succeed (\n -> list ++ [Subscript () n] |> Parser.Loop) |. Parser.token "_" |= bracketOrSingle_
-        ,   Parser.succeed (\n -> list ++ [Superscript () n] |> Parser.Loop) |. Parser.token "^" |= bracketOrSingle_
+        [   Parser.succeed (\n -> list ++ [Subscript defaultState_ n] |> Parser.Loop) |. Parser.token "_" |= bracketOrSingle_
+        ,   Parser.succeed (\n -> list ++ [Superscript defaultState_ n] |> Parser.Loop) |. Parser.token "^" |= bracketOrSingle_
         ,   Parser.succeed (\n -> list ++ [n] |> Parser.Loop) |= argumentsParser_
         ,   bracketOrSingle_ |> Parser.map (\new -> Parser.Loop (list ++ new))
         ,   Parser.succeed (Parser.Done list)
@@ -357,11 +368,11 @@ modelParser_ = Parser.loop []
     )
 
 argumentsParser_: Parser.Parser (Part ())
-argumentsParser_ = Parser.succeed (\n -> Bracket () n)
+argumentsParser_ = Parser.succeed (\n -> Bracket defaultState_ n)
     |. Parser.token "("
     |= Parser.loop [] (\list -> if List.isEmpty list then modelParser_ |> Parser.map Parser.Loop
         else Parser.oneOf
-            [   Parser.succeed ((::) (Text () ",") >> (++) list >> Parser.Loop) |. Parser.token "," |. Parser.spaces |= modelParser_
+            [   Parser.succeed ((::) (Text defaultState_ ",") >> (++) list >> Parser.Loop) |. Parser.token "," |. Parser.spaces |= modelParser_
             ,   Parser.succeed (Parser.Done list)
             ]
     )
@@ -372,14 +383,14 @@ valueParser_ = Parser.oneOf
     [   Parser.succeed identity
         |. Parser.token "\\"
         |= Parser.oneOf
-            [   Parser.succeed (Fraction ())  |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
-            ,   Parser.succeed (Sqrt ()) |. Parser.keyword "sqrt" |= bracketParser_
-            ,   Parser.succeed (Argument ()) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
-            ,   Parser.succeed (Param ()) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"
-            ,   Parser.succeed (SymbolPart ()) |= wordParser_
+            [   Parser.succeed (Fraction defaultState_)  |. Parser.keyword "frac" |= bracketParser_ |= bracketParser_
+            ,   Parser.succeed (Sqrt defaultState_) |. Parser.keyword "sqrt" |= bracketParser_
+            ,   Parser.succeed (Argument defaultState_) |. Parser.keyword "arg" |. Parser.token "{" |= numParser_ |. Parser.token "}"
+            ,   Parser.succeed (Param defaultState_) |. Parser.keyword "param" |. Parser.token "{" |= numParser_ |. Parser.token "}"
+            ,   Parser.succeed (SymbolPart defaultState_) |= wordParser_
             ]
-    ,   Parser.succeed (Bracket ()) |. Parser.token "(" |. Parser.spaces |= modelParser_ |. Parser.token ")"
-    ,   Parser.succeed (Text ()) |= letterParser_
+    ,   Parser.succeed (Bracket defaultState_) |. Parser.token "(" |. Parser.spaces |= modelParser_ |. Parser.token ")"
+    ,   Parser.succeed (Text defaultState_) |= letterParser_
     ]
     |. Parser.spaces
 

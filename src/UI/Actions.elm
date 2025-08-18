@@ -194,9 +194,9 @@ displayAction_ converter action = case action of
 matchToLatex: List (Html.Attribute msg) -> SingleMatch -> Html.Html msg
 matchToLatex attrs match =
     match.fromLatex
-    ++ (    Latex.SymbolPart () Latex.RightArrow
+    ++ (    Latex.SymbolPart {state=(), style=Just Latex.Faded} Latex.RightArrow
         ::  (   List.map .latex match.replacements
-            |> List.intersperse [Latex.Text () ", "]
+            |> List.intersperse [Latex.Text {state=(), style=Just Latex.Faded} ", "]
             |> List.concat
             )
     )

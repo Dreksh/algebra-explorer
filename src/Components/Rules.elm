@@ -31,12 +31,12 @@ type alias FunctionProp =
 negateProp: FunctionProp
 negateProp =
     {   javascript = Just (PrefixOp "-")
-    ,   latex = Just [Latex.Text () "-"]
+    ,   latex = Just [Latex.Text {state=(), style=Nothing} "-"]
     }
 divisionProp_: FunctionProp
 divisionProp_ =
     {   javascript = Just (PrefixOp "1/")
-    ,   latex = Just [Latex.SymbolPart () Latex.Division]
+    ,   latex = Just [Latex.SymbolPart {state=(), style=Nothing} Latex.Division]
     }
 
 type Javascript_ =
@@ -94,11 +94,11 @@ type Event =
 
 coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
 coreFunctions_ = Dict.fromList
-    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text () "+"]}, name = "", associative = Just 0, commutative = True, children = []}})
-    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart () Latex.CrossMultiplcation]}, name = "", associative = Just 1, commutative = True, children = []}})
+    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "+"]}, name = "", associative = Just 0, commutative = True, children = []}})
+    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation]}, name = "", associative = Just 1, commutative = True, children = []}})
     ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}})
     ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}})
-    ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text () "="]}, name = "", children = []}})
+    ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "="]}, name = "", children = []}})
     ]
 
 init: Model
@@ -111,10 +111,10 @@ init =
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
 functionProperties model = model.constants
     |> Dict.foldl
-        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text () k] } k
+        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text {state=(), style=Just Latex.Emphasis} k] } k
             |> \entry -> Dict.insert k {property = entry, count = count} d
         ) model.functions
-    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart () symbol]} name
+    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symbol]} name
         |> \entry -> Dict.insert name {property = entry, count = 1} d
         ) dict Latex.greekLetters
 
@@ -208,11 +208,15 @@ toLatex_ extractor converter complete tree =
         funcLatex = Math.getState tree |> extractor |> Maybe.andThen .latex
         genericFunction root = case funcLatex of
             Nothing -> List.foldl (\n list -> toLatex_ extractor converter complete n |> \new -> new :: list) [] (Math.getChildren root)
-                |> \list -> [Latex.Text treeState (Math.getName root), Latex.Bracket treeState (List.intersperse [Latex.Text treeState ","] list |> List.reverse |> List.concat) ]
+                |> \list ->
+                    [   Latex.Text {state=treeState, style=Just Latex.Emphasis} (Math.getName root)
+                    ,   Latex.Bracket {state=treeState, style=Just Latex.Emphasis}
+                        (List.intersperse [Latex.Text {state=treeState, style=Just Latex.Emphasis} ","] list |> List.reverse |> List.concat)
+                    ]
             Just l -> substituteArgs_ extractor converter complete treeState (Math.getChildren root) l
         bracket parent child = toLatex_ extractor converter complete child
             |> \inner -> if priority_ child >= priority_ parent
-                then [Latex.Bracket (Math.getState child |> converter) inner]
+                then [Latex.Bracket {state=Math.getState child |> converter, style = Nothing} inner]
                 else inner
         infixFunction root = case funcLatex of
             Nothing -> genericFunction root
@@ -225,19 +229,21 @@ toLatex_ extractor converter complete tree =
                 [] (Math.getChildren root)
     in
     case tree of
-        Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text treeState ]
-        Math.VariableNode n -> case Dict.get n.name Latex.greekLetters of
-            Nothing -> [Latex.Text treeState n.name]
-            Just symb -> [Latex.SymbolPart treeState symb]
+        Math.RealNode n -> [ String.fromFloat n.value |> Latex.Text {state=treeState, style=Nothing} ]
+        Math.VariableNode n -> case funcLatex of
+            Nothing -> [Latex.Text {state=treeState, style=Nothing} n.name]
+            Just l -> Latex.map (\_ -> treeState) l
         Math.UnaryNode n -> case n.name of
             "-" -> toLatex_ extractor converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Text treeState "-", Latex.Bracket (Math.getState n.child |> converter) inner]
-                    else Latex.Text treeState "-" :: inner
+                    then [Latex.Text {state=treeState, style=Nothing} "-", Latex.Bracket {state=Math.getState n.child |> converter, style=Nothing} inner]
+                    else Latex.Text {state=treeState, style=Nothing} "-" :: inner
             "/" -> toLatex_ extractor converter complete n.child
                 |> \inner -> if priority_ n.child > priority_ tree
-                    then [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division, Latex.Bracket (Math.getState n.child |> converter) inner]
-                    else [Latex.Text treeState "1", Latex.SymbolPart treeState Latex.Division] ++ inner
+                    then [Latex.Text {state=treeState, style=Just Latex.Faded} "1"
+                        , Latex.SymbolPart {state=treeState, style=Nothing} Latex.Division, Latex.Bracket {state=Math.getState n.child |> converter, style=Nothing} inner]
+                    else [Latex.Text {state=treeState, style=Just Latex.Faded} "1"
+                        , Latex.SymbolPart {state=treeState, style=Nothing} Latex.Division] ++ inner
             _ -> genericFunction tree
         Math.BinaryNode n -> case n.name of
             "*" -> n.children
@@ -245,42 +251,43 @@ toLatex_ extractor converter complete tree =
                     then bracket tree elem
                     else case getDivisionProps_ elem of
                     Just p -> bracket (Math.UnaryNode p) p.child
-                        |> \inner -> res ++ (Latex.SymbolPart (converter p.state) Latex.Division :: inner)
+                        |> \inner -> res ++ (Latex.SymbolPart {state=converter p.state, style=Nothing} Latex.Division :: inner)
                     Nothing -> bracket tree elem
-                        |> \newList -> res ++ (Latex.SymbolPart (converter n.state) Latex.CrossMultiplcation :: newList)
+                        |> \newList -> res ++ (Latex.SymbolPart {state=treeState, style=Nothing} Latex.CrossMultiplcation :: newList)
                 ) []
             "+" -> n.children
                 |> List.foldl (\elem res -> if List.isEmpty res
                     then bracket tree elem
                     else if Math.getName elem == "-"
                     then bracket tree elem |> \inner -> res ++ inner
-                    else bracket tree elem |> \inner -> res ++ (Latex.Text treeState "+" :: inner)
+                    else bracket tree elem |> \inner -> res ++ (Latex.Text {state=treeState, style=Nothing} "+" :: inner)
                 ) []
             _ -> infixFunction tree
         Math.DeclarativeNode _ -> infixFunction tree
         _ -> genericFunction tree
 
 substituteArgs_: (a -> Maybe FunctionProp) -> (a -> b) -> Bool -> b -> List (Math.Tree a) -> Latex.Model () -> Latex.Model b
-substituteArgs_ extractor convert complete state args = List.concatMap (\elem -> case elem of
-    Latex.Fraction _ top bottom ->
-        [Latex.Fraction state (substituteArgs_ extractor convert complete state args top) (substituteArgs_ extractor convert complete state args bottom)]
-    Latex.Superscript _ inner -> [Latex.Superscript state (substituteArgs_ extractor convert complete state args inner)]
-    Latex.Subscript _ inner -> [Latex.Subscript state (substituteArgs_ extractor convert complete state args inner)]
-    Latex.Bracket _ inner -> [Latex.Bracket state (substituteArgs_ extractor convert complete state args inner)]
-    Latex.Sqrt _ inner -> [Latex.Sqrt state (substituteArgs_ extractor convert complete state args inner)]
-    Latex.Border _ inner -> [Latex.Border state (substituteArgs_ extractor convert complete state args inner)]
-    Latex.Argument _ n -> if complete
-        then (case getN_ (n-1) args of
-                Nothing -> [Latex.Argument state n] -- Display missing info
-                Just t -> toLatex_ extractor convert True t
-            )
-        else [Latex.Argument state n] -- Display missing info
-    Latex.Param _ n -> case getN_ (n-1) args of
-        Nothing -> [Latex.Argument state n] -- Display missing info
-        Just t -> toLatex_ extractor convert True t
-    Latex.Text _ str ->  [Latex.Text state str]
-    Latex.SymbolPart _  str -> [Latex.SymbolPart state str]
-    Latex.Caret _  -> [Latex.Caret state]
+substituteArgs_ extractor convert complete state args = let newState old = {state=state, style=old.style} in
+    List.concatMap (\elem -> case elem of
+        Latex.Fraction s top bottom ->
+            [Latex.Fraction (newState s) (substituteArgs_ extractor convert complete state args top) (substituteArgs_ extractor convert complete state args bottom)]
+        Latex.Superscript s inner -> [Latex.Superscript (newState s) (substituteArgs_ extractor convert complete state args inner)]
+        Latex.Subscript s inner -> [Latex.Subscript (newState s) (substituteArgs_ extractor convert complete state args inner)]
+        Latex.Bracket s inner -> [Latex.Bracket (newState s) (substituteArgs_ extractor convert complete state args inner)]
+        Latex.Sqrt s inner -> [Latex.Sqrt (newState s) (substituteArgs_ extractor convert complete state args inner)]
+        Latex.Border s inner -> [Latex.Border (newState s) (substituteArgs_ extractor convert complete state args inner)]
+        Latex.Argument s n -> if complete
+            then (case getN_ (n-1) args of
+                    Nothing -> [Latex.Argument (newState s) n] -- Display missing info
+                    Just t -> toLatex_ extractor convert True t
+                )
+            else [Latex.Argument (newState s) n] -- Display missing info
+        Latex.Param s n -> case getN_ (n-1) args of
+            Nothing -> [Latex.Argument (newState s) n] -- Display missing info
+            Just t -> toLatex_ extractor convert True t
+        Latex.Text s str ->  [Latex.Text (newState s) str]
+        Latex.SymbolPart s  str -> [Latex.SymbolPart (newState s) str]
+        Latex.Caret s  -> [Latex.Caret (newState s)]
     )
 
 getN_: Int -> List a -> Maybe a
@@ -289,12 +296,12 @@ getN_ num list = if num < 0 then Nothing
     else getN_ (num-1) (List.drop 1 list)
 
 toSymbol: (state -> Maybe FunctionProp) -> Math.Tree (Matcher.State state) -> Latex.Model (Matcher.State state)
-toSymbol convert root = let treeState = Math.getState root in
+toSymbol convert root = let treeState = {state=Math.getState root, style=Just Latex.Emphasis} in
     case Math.getState root |> Matcher.getState |> convert |> Maybe.andThen .latex of
         Nothing -> if Math.getChildren root |> List.isEmpty
             then [Latex.Text treeState (Math.getName root)]
             else [Latex.Text treeState (Math.getName root), Latex.Bracket treeState [] ]
-        Just l -> substituteArgs_ (Matcher.getState >> convert) identity False treeState (Math.getChildren root) l
+        Just l -> substituteArgs_ (Matcher.getState >> convert) identity False (Math.getState root) (Math.getChildren root) l
 
 {-
 ## Topics
@@ -503,8 +510,8 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
                 knownProps = Dict.foldl (\k _ inner ->  Math.createConstant
                         {   javascript = FuncOp k |> Just
                         ,   latex = case Dict.get k Latex.greekLetters of
-                            Nothing -> Just [Latex.Text () k]
-                            Just symb -> Just [Latex.SymbolPart () symb]
+                            Nothing -> Just [Latex.Text {state=(), style=Just Latex.Emphasis} k]
+                            Just symb -> Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symb]
                         } k
                         |> \entry -> Dict.insert k {property = entry} inner
                     ) functions vars

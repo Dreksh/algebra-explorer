@@ -22,9 +22,9 @@ type Stroke =
     Move Vector2
     | Line Vector2
     | Curve Vector2 Vector2 Vector2
-
 type alias AnimationFrame =
     {   strokes: List Stroke
+    ,   style: Maybe Latex.Style
     ,   origin: Animation.EaseState Vector2
     ,   scale: Animation.EaseState Float
     ,   opacity: Animation.EaseState Float
@@ -144,7 +144,7 @@ latexIterator_ origin = {remaining= Latex.map (\s -> (s, 0)) origin, lastIndex =
 iteratorToPart_: Iterator -> (Iterator, Maybe Part)
 iteratorToPart_ it =
     let
-        result remaining s str = let id = Matcher.getID s in
+        result remaining state str = let s = Tuple.first state.state in let id = Matcher.getID s in
             (   case Dict.get id it.lastIndex of
                     Nothing -> 0
                     Just n -> n + 1
@@ -153,40 +153,43 @@ iteratorToPart_ it =
                 (   {remaining = remaining, lastIndex = Dict.insert id occurrence it.lastIndex}
                 ,   Just {str = str, id = id, corrID = Matcher.getState s |> .corrID, occurrence = occurrence}
                 )
+        expandState state = state.state
     in
     case it.remaining of
         [] -> (it, Nothing)
         (current::next) -> case current of
-            Latex.Fraction (s, seen) top bot -> if seen >= 1
-                then if List.isEmpty bot then result next s " )"
+            Latex.Fraction state top bot -> let (s, seen) = expandState state in if seen >= 1
+                then if List.isEmpty bot then result next state " )"
                     else iteratorToPart_ {remaining = bot, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) top innerIt.remaining :: next}, part)
-                else if List.isEmpty top then result (Latex.Fraction (s, 1) top bot :: next) s " /"
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction state top innerIt.remaining :: next}, part)
+                else if List.isEmpty top then result (Latex.Fraction {state | state = (s, 1)} top bot :: next) state " /"
                     else iteratorToPart_ {remaining = top, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction (s, seen) innerIt.remaining bot :: next}, part)
-            Latex.Text (s, _) text -> result next s text
-            Latex.SymbolPart (s, _) symbol -> result next s (" " ++ Latex.symbolToStr symbol)
-            Latex.Superscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Fraction state innerIt.remaining bot :: next}, part)
+            Latex.Text s text -> result next s text
+            Latex.SymbolPart s symbol -> result next s (" " ++ Latex.symbolToStr symbol)
+            Latex.Superscript state inner -> let (s, _) = expandState state in
+                if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript (s, 0) innerIt.remaining :: next}, part)
-            Latex.Subscript (s, _) inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Superscript {state | state=(s, 0)} innerIt.remaining :: next}, part)
+            Latex.Subscript state inner -> let (s, _) = expandState state in
+                if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript (s, 0) innerIt.remaining :: next}, part)
-            Latex.Bracket (s, seen) inner -> if seen >= 1 then
-                    if List.isEmpty inner then result next s " )"
+                    |> \(innerIt, part) -> ({innerIt | remaining = Latex.Subscript {state | state=(s, 0)} innerIt.remaining :: next}, part)
+            Latex.Bracket state inner -> let (s, seen) = expandState state in if seen >= 1 then
+                    if List.isEmpty inner then result next state " )"
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket (s, 1) innerIt.remaining :: next}, part)
-                else result (Latex.Bracket (s, 1) inner :: next) s " ("
-            Latex.Sqrt (s, seen) inner -> if seen >= 3 then
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Bracket {state | state=(s, 1)} innerIt.remaining :: next}, part)
+                else result (Latex.Bracket {state | state=(s, 1)} inner :: next) state " ("
+            Latex.Sqrt state inner -> let (s, seen) = expandState state in if seen >= 3 then
                     if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                     else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
-                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Sqrt (s, 3) innerIt.remaining :: next}, part)
-                else result (Latex.Sqrt (s, seen + 1) inner :: next) s (" sqrt" ++ String.fromInt seen)
+                        |> \(innerIt, part) -> ({innerIt | remaining = Latex.Sqrt {state | state=(s, 3)} innerIt.remaining :: next}, part)
+                else result (Latex.Sqrt {state | state=(s, seen + 1)} inner :: next) state (" sqrt" ++ String.fromInt seen)
             Latex.Border s inner -> if List.isEmpty inner then iteratorToPart_ {it | remaining = next}
                 else iteratorToPart_ {remaining = inner, lastIndex = it.lastIndex}
                     |> \(innerIt, part) -> ({innerIt | remaining = Latex.Border s innerIt.remaining :: next} , part)
-            Latex.Argument (s, _) num -> result next s (" " ++ String.fromInt num)
-            Latex.Param (s, _) num -> result next s (" " ++ String.fromInt num)
+            Latex.Argument s num -> result next s (" " ++ String.fromInt num)
+            Latex.Param s num -> result next s (" " ++ String.fromInt num)
             Latex.Caret _ -> iteratorToPart_ {it | remaining = next}
 
 toMatches_: List (BFS.Change Part) -> Dict.Dict (Int, Int) Part
@@ -225,23 +228,24 @@ toMatches_ inList =
         (done, (found,newDel))
     |> Tuple.first
 
-toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, origin: Vector2, scale: Float}
+toAnimationDict_: Float -> Frame State -> Dict.Dict (Int, Int) {strokes: List Stroke, style: Maybe Latex.Style, origin: Vector2, scale: Float}
 toAnimationDict_ scale = processFrame_ (\frame origin inScale dict -> case frame.data of
         BaseFrame detail -> let id = Matcher.getID detail.elem in
             Dict.insert
             (id, Dict.filter (\(eID,_) _ -> eID == id) dict |> Dict.size)
-            {strokes = detail.strokes, origin = origin, scale = inScale}
+            {strokes = detail.strokes, origin = origin, scale = inScale, style = detail.style}
             dict
         _ -> dict
     )
     (0,0) scale Dict.empty
 
-newAnimation_: (Int, Int) -> {strokes: List Stroke, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
+newAnimation_: (Int, Int) -> {strokes: List Stroke, style: Maybe Latex.Style, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
 newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t 1 in
     (   Dict.insert key
         {   strokes = value.strokes
         ,   origin = Animation.newEaseVector2 animationTime_ value.origin
         ,   scale = Animation.newEaseFloat animationTime_ value.scale
+        ,   style = value.style
         ,   opacity = op
         }
         dict
@@ -251,7 +255,7 @@ newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat anim
 {- toFrames -}
 
 type FrameData state =
-    BaseFrame {strokes: List Stroke, elem: state}
+    BaseFrame {strokes: List Stroke, elem: state, style: Maybe Latex.Style}
     | Position (List {frame: Frame state, origin: Vector2, scale: Float})
     | Cursor
     | Border state
@@ -305,8 +309,8 @@ symbolsToFrames_ ref elem = case elem of
                         ,   origin = (0.125 + (maxWidth - (Tuple.first topFrame.botRight))*0.375, topOrigin)
                         ,   scale = 0.75
                         }
-                    ,   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (1, 0)], elem = s }, topLeft = (0,0), botRight = (0,1)}
-                        , origin = (0,0), scale = width }
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0,0), Line (1, 0)], elem = s.state, style = s.style }
+                        , topLeft = (0,0), botRight = (0,1)}, origin = (0,0), scale = width }
                     ,   {   frame = botFrame
                         ,   origin = (0.125 + (maxWidth - (Tuple.first botFrame.botRight))*0.375, botOrigin)
                         ,   scale = 0.75
@@ -360,9 +364,13 @@ symbolsToFrames_ ref elem = case elem of
                 shift = 0.3*height
             in
             (   {   data = Position
-                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, -0.9), Curve (0.05, -0.7) (0.05, -0.3) (0.2, -0.1)], elem = s}, topLeft = (0,-1), botRight = (0.3,0)}, origin = (0,bot), scale = height}
+                    [   {frame = {data = BaseFrame {strokes = [Move (0.2, -0.9), Curve (0.05, -0.7) (0.05, -0.3) (0.2, -0.1)], elem = s.state, style = s.style}
+                        , topLeft = (0,-1), botRight = (0.3,0)}, origin = (0,bot), scale = height
+                        }
                     ,   {frame = new, origin = (shift, 0), scale = 1}
-                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, -0.9), Curve (0.25, -0.7) (0.25, -0.3) (0.1, -0.1)], elem = s}, topLeft = (0,-1), botRight = (0.3,0)}, origin = (Tuple.first new.botRight + shift, bot), scale = height}
+                    ,   {frame = {data = BaseFrame {strokes = [Move (0.1, -0.9), Curve (0.25, -0.7) (0.25, -0.3) (0.1, -0.1)], elem = s.state, style = s.style}
+                        , topLeft = (0,-1), botRight = (0.3,0)}, origin = (Tuple.first new.botRight + shift, bot), scale = height
+                        }
                     ]
                 ,   topLeft = (left, top)
                 ,   botRight = (right + 2*shift, bot)
@@ -380,12 +388,12 @@ symbolsToFrames_ ref elem = case elem of
             in
             (   {   data = Position
                     [   {frame = new, origin = (xOffset, 0), scale = 1}
-                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0.7), Line (0.1, 0.9), Line (0.3, 0)], elem = s}, topLeft = (0, 0), botRight = (0.3, 0.9)}
-                        ,   origin = (0,yOffset), scale = verticalScale}
-                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (1, 0)], elem = s}, topLeft = (0, 0), botRight = (1, 0)}
-                        ,   origin = (xOffset,yOffset), scale = right}
-                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (0, 0.2)], elem = s}, topLeft = (0, 0), botRight = (0, 0.2)}
-                        ,   origin = (xOffset + right,yOffset), scale = verticalScale}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0.7), Line (0.1, 0.9), Line (0.3, 0)], elem = s.state, style = s.style}
+                        , topLeft = (0, 0), botRight = (0.3, 0.9)},   origin = (0,yOffset), scale = verticalScale}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (1, 0)], elem = s.state, style = s.style}
+                        , topLeft = (0, 0), botRight = (1, 0)}, origin = (xOffset,yOffset), scale = right}
+                    ,   {   frame = {data = BaseFrame {strokes = [Move (0, 0), Line (0, 0.2)], elem = s.state, style = s.style}
+                        , topLeft = (0, 0), botRight = (0, 0.2)}, origin = (xOffset + right,yOffset), scale = verticalScale}
                     ]
                 ,   topLeft = (0, yOffset - 0.1) -- Add 0.1 padding at the top
                 ,   botRight = (right + xOffset + 0.1, bot) -- add 0.1 padding on the right
@@ -401,7 +409,7 @@ symbolsToFrames_ ref elem = case elem of
                     ,   Move (0.6, 0.3), Line (0.8,0.3), Line (0.8,0.1)
                     ,   Move (0.6, -0.3), Line (0.8,-0.3), Line (0.8,-0.1)
                     ]
-                , elem = s
+                , elem = s.state, style = s.style
                 }
             ,   topLeft  = (0, -0.5)
             ,   botRight = (1,0.5)
@@ -417,7 +425,7 @@ symbolsToFrames_ ref elem = case elem of
                     ,   Move (0.6, 0.3), Line (0.8,0.3), Line (0.8,0.1)
                     ,   Move (0.6, -0.3), Line (0.8,-0.3), Line (0.8,-0.1)
                     ]
-                , elem = s
+                , elem = s.state, style = s.style
                 }
             ,   topLeft  = (0, -0.5)
             ,   botRight = (1,0.5)
@@ -429,7 +437,7 @@ symbolsToFrames_ ref elem = case elem of
             |> \new -> let (newTL, newBR) = (Animation.minVector2 (0,-1) new.topLeft, Animation.maxVector2 (0.4,0.5) new.botRight) in
                 (   {   data = Position
                         [   {frame = new, origin = (0,0), scale = 1}
-                        ,   {frame = {data = Border s, topLeft = newTL, botRight = newBR}
+                        ,   {frame = {data = Border s.state, topLeft = newTL, botRight = newBR}
                             , origin = (0,0), scale = 1
                             }
                         ]
@@ -459,73 +467,73 @@ values are all relative to height, where height is is treated as the unit (for w
 origin should be on the left + half-way through the height of the short characters.
 -}
 
-failedFrame_: state -> Frame state
+failedFrame_: {state: state, style: Maybe Latex.Style} -> Frame state
 failedFrame_ s =
-    {   data = BaseFrame {strokes = [Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], elem = s}
+    {   data = BaseFrame {strokes = [Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], elem = s.state, style = s.style}
     ,   topLeft  = (0, -0.5)
     ,   botRight = (1,0.5)
     }
 
-symbolStrokes_: state -> Latex.Symbol -> Frame state
+symbolStrokes_: {state: state, style: Maybe Latex.Style} -> Latex.Symbol -> Frame state
 symbolStrokes_ s str = case str of
-    Latex.AlphaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.3), Curve (0.3, 0.4) (0.1, 0.5) (0.1, 0.3), Curve (0.1, 0.1) (0.3, -0.6) (0.5, -0.3), Curve (0.7, 0) (0.7, 0.4) (0.9, 0.4) ], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.AlphaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.3), Curve (0.3, 0.4) (0.1, 0.5) (0.1, 0.3), Curve (0.1, 0.1) (0.3, -0.6) (0.5, -0.3), Curve (0.7, 0) (0.7, 0.4) (0.9, 0.4) ], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
     Latex.BetaLower -> {data = BaseFrame {strokes =
         [Move (0.1, 0.5), Line (0.2, -0.4), Curve (0.3, -1) (0.7, -0.8) (0.6, -0.6), Curve (0.5, -0.4) (0.3, -0.4) (0.2,-0.4), Curve (1.2, -0.3) (0.7, 0.5) (0, 0.2)
-        ], elem = s}, topLeft = (0, -1), botRight = (0.9, 0.6)}
-    Latex.ChiLower -> {data = BaseFrame {strokes = [Move (0.1, -0.3), Curve (0.3, -0.5) (0.5, 0.5) (0.7, 0.3), Move (0.1, 0.4), Line (0.7, -0.4) ], elem = s}, topLeft = (0, -0.5), botRight = (0.8, 0.5)}
-    Latex.DeltaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.6), Curve (0.1, -0.7) (0.1,-0.6) (0.5,-0.3), Curve (0.9, 0) (0.9, 0.4) (0.5, 0.4), Curve (0, 0.4) (0, -0.3) (0.7, -0.1)], elem = s}, topLeft = (0, -0.8), botRight = (1, 0.5)}
-    Latex.EpsilonLower -> {data = BaseFrame {strokes = [Move (0.9, -0.4), Curve (-0.2, -0.6) (-0.2, 0.6) (0.9, 0.4), Move (0.1, 0), Line (0.7, 0)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.EpsilonVarLower -> {data = BaseFrame {strokes = [Move (0.8, -0.4), Curve (0.2, -0.6) (0, 0) (0.7, -0.1), Curve (0, -0.3) (0, 0.7) (0.9, 0.3)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.EtaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.4), Curve (0.2, -0.3) (0.2, -0.2) (0.2,0.4), Curve (0.2,-0.3) (0.7,-0.5) (0.7,-0.2), Line (0.7,0.6), Curve (0.7,0.7) (0.7, 0.8) (0.9, 0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
-    Latex.GammaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.2), Curve (0.3, -0.4) (0.6, -0.5) (0.5,0.2), Curve (0.4,0.9) (0.3,1) (0.4,0.5), Curve (0.5,0) (0.7, -0.2) (0.9, -0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
-    Latex.IotaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.5, 0.5)}
-    Latex.KappaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.4), Line (0.1, 0.4), Move (0.7, -0.3), Curve (0.7,-0.4) (0.6,-0.4) (0.1,0), Curve (0.5,-0.1) (0.7,-0.1) (0.6,0.2), Curve (0.5,0.5) (0.7,0.4) (0.8,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.9, 0.5)}
-    Latex.LambdaLower -> {data = BaseFrame {strokes = [Move (0.1,0.4), Curve (0.3, 0.4) (0.4, 0.1) (0.5,-0.2), Move (0.2, -0.4), Curve (0.6,-0.4) (0.6,0.4) (0.9,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.MuLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.3, 0.6) (0.2, 0) (0.2,-0.3), Curve (0.3,1) (0.7,0) (0.7,-0.4), Curve (0.7,0.2) (0.8,0.3) (0.9,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
-    Latex.NuLower -> {data = BaseFrame {strokes = [Move (0.1,-0.3), Curve (0.3, -0.4) (0.4, 0) (0.3,0.4), Curve (0.9,0.1) (1,-0.2) (0.7,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.OmegaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.3), Curve (-0.1,0.3) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.5,0.2) (1,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1.2, 0.5)}
-    Latex.PhiLower -> {data = BaseFrame {strokes = [Move (0.5,-0.3), Curve (0,-0.3) (0,0.3) (0.5,0.3), Curve (1,0.3) (1,-0.3) (0.5,-0.3), Move (0.6,-0.7), Line (0.4,0.7)], elem = s}, topLeft = (0, -0.8), botRight = (1, 0.8)}
-    Latex.PhiVarLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0,0.2) (0.2,0.4) (0.5,0.3), Curve (0.8,0.2) (0.9,0) (0.8,-0.2), Curve (0.7,-0.4) (0.2,-0.3) (0.5,0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
+        ], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (0.9, 0.6)}
+    Latex.ChiLower -> {data = BaseFrame {strokes = [Move (0.1, -0.3), Curve (0.3, -0.5) (0.5, 0.5) (0.7, 0.3), Move (0.1, 0.4), Line (0.7, -0.4) ], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (0.8, 0.5)}
+    Latex.DeltaLower -> {data = BaseFrame {strokes = [Move (0.8, -0.6), Curve (0.1, -0.7) (0.1,-0.6) (0.5,-0.3), Curve (0.9, 0) (0.9, 0.4) (0.5, 0.4), Curve (0, 0.4) (0, -0.3) (0.7, -0.1)], elem = s.state, style=s.style}, topLeft = (0, -0.8), botRight = (1, 0.5)}
+    Latex.EpsilonLower -> {data = BaseFrame {strokes = [Move (0.9, -0.4), Curve (-0.2, -0.6) (-0.2, 0.6) (0.9, 0.4), Move (0.1, 0), Line (0.7, 0)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.EpsilonVarLower -> {data = BaseFrame {strokes = [Move (0.8, -0.4), Curve (0.2, -0.6) (0, 0) (0.7, -0.1), Curve (0, -0.3) (0, 0.7) (0.9, 0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.EtaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.4), Curve (0.2, -0.3) (0.2, -0.2) (0.2,0.4), Curve (0.2,-0.3) (0.7,-0.5) (0.7,-0.2), Line (0.7,0.6), Curve (0.7,0.7) (0.7, 0.8) (0.9, 0.9)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.GammaLower -> {data = BaseFrame {strokes = [Move (0.1, -0.2), Curve (0.3, -0.4) (0.6, -0.5) (0.5,0.2), Curve (0.4,0.9) (0.3,1) (0.4,0.5), Curve (0.5,0) (0.7, -0.2) (0.9, -0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.IotaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.5), Curve (0,0.4) (0.2,0.5) (0.4,0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (0.5, 0.5)}
+    Latex.KappaLower -> {data = BaseFrame {strokes = [Move (0.2,-0.4), Line (0.1, 0.4), Move (0.7, -0.3), Curve (0.7,-0.4) (0.6,-0.4) (0.1,0), Curve (0.5,-0.1) (0.7,-0.1) (0.6,0.2), Curve (0.5,0.5) (0.7,0.4) (0.8,0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (0.9, 0.5)}
+    Latex.LambdaLower -> {data = BaseFrame {strokes = [Move (0.1,0.4), Curve (0.3, 0.4) (0.4, 0.1) (0.5,-0.2), Move (0.2, -0.4), Curve (0.6,-0.4) (0.6,0.4) (0.9,0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.MuLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.3, 0.6) (0.2, 0) (0.2,-0.3), Curve (0.3,1) (0.7,0) (0.7,-0.4), Curve (0.7,0.2) (0.8,0.3) (0.9,0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.NuLower -> {data = BaseFrame {strokes = [Move (0.1,-0.3), Curve (0.3, -0.4) (0.4, 0) (0.3,0.4), Curve (0.9,0.1) (1,-0.2) (0.7,-0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.OmegaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.3), Curve (-0.1,0.3) (0.5,0.4) (0.6,0.1), Curve (0.7,0.5) (1.5,0.2) (1,-0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1.2, 0.5)}
+    Latex.PhiLower -> {data = BaseFrame {strokes = [Move (0.5,-0.3), Curve (0,-0.3) (0,0.3) (0.5,0.3), Curve (1,0.3) (1,-0.3) (0.5,-0.3), Move (0.6,-0.7), Line (0.4,0.7)], elem = s.state, style=s.style}, topLeft = (0, -0.8), botRight = (1, 0.8)}
+    Latex.PhiVarLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0,0.2) (0.2,0.4) (0.5,0.3), Curve (0.8,0.2) (0.9,0) (0.8,-0.2), Curve (0.7,-0.4) (0.2,-0.3) (0.5,0.9)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 1)}
     Latex.PiLower -> {data = BaseFrame {strokes =
         [ Move (0.1,-0.1), Curve (0.2,-0.3) (0.3,-0.3) (0.4,-0.3), Line (0.6,-0.3), Curve (0.8,-0.3) (0.9,-0.3) (0.9,-0.4), Move (0.4,-0.3)
         , Curve (0.4,0.1) (0.3,0.4) (0.2,0.4), Move (0.6,-0.3), Line(0.6,0.4)
-        ], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.PsiLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0.1,0.5) (1,0.5) (0.9,-0.3), Move (0.6,-0.4), Line (0.5,0.9)], elem = s}, topLeft = (0, -0.5), botRight = (1, 1)}
-    Latex.RhoLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.2,-1.4) (1.4,0.2) (0.2,0.3)], elem = s}, topLeft = (0, -0.5), botRight = (0.8, 1)}
-    Latex.SigmaLower -> {data = BaseFrame {strokes = [Move (0.9,-0.3), Curve (0.8,-0.3) (0.7,-0.4) (0.4,-0.3), Curve (0.1,-0.2) (0.1,0.4) (0.5,0.4), Curve (0.9, 0.4) (1,-0.3) (0.4,-0.3)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.TauLower -> {data = BaseFrame {strokes = [Move (0.1,-0.1), Curve (0.2,-0.3) (0.3,-0.3) (0.4,-0.3), Line (0.9,-0.3), Move (0.5,-0.3), Curve (0.5, 0.2) (0.4,0.4) (0.7,0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.ThetaLower -> {data = BaseFrame {strokes = [Move (0.5,-0.9), Curve (0,-0.9) (0,0.4) (0.5,0.4), Curve (1,0.4) (0.9,-0.9) (0.5,-0.9), Curve (0.1,-0.9) (0,0.3) (0.8,-0.3)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.UpsilonLower -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Curve (0.1,-0.4) (0.3,-0.4) (0.3,0), Curve (0.3,0.5) (0.9,0.5) (0.9,-0.4)], elem = s}, topLeft = (0, -0.5), botRight = (1, 0.5)}
-    Latex.XiLower -> {data = BaseFrame {strokes = [Move (0.4,-0.9), Curve (0.9,-0.5) (0.9,-1) (0.4,-0.7), Curve (-0.1,-0.4) (-0.1,0.1) (0.6,-0.3), Curve (-0.1,0.1) (-0.1,0.8) (0.4,0.5), Curve (0.9, 0.2) (0.9,0.6) (0.5,0.9)], elem = s}, topLeft = (0, -1), botRight = (0.9, 1)}
-    Latex.ZetaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.9), Curve (1,-0.5) (0.9,-1) (0.5,-0.8), Curve (0,-0.6) (0,0.3) (0.5,0.1), Curve (1,-0.1) (1, 0.3) (0.4, 0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.DeltaUpper -> {data = BaseFrame {strokes = [Move (0.6,-0.8), Line (0.1,0.4), Line (1.1,0.4), Line (0.6,-0.8), Line (0.1, 0.4)], elem = s}, topLeft = (0, -1), botRight = (1.2, 0.5)}
-    Latex.GammaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.8), Line (0.1,-0.8), Line (0.1,0.4)], elem = s}, topLeft = (0, -1), botRight = (0.8, 0.5)}
-    Latex.LambdaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.5,-0.8), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.OmegaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.6,0.4), Curve (0,0.2) (0,-0.9) (0.7,-0.9), Curve (1.4,-0.9) (1.4,0.2) (0.8,0.4), Line (1.3,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+        ], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.PsiLower -> {data = BaseFrame {strokes = [Move (0.2,-0.3), Curve (0.1,0.5) (1,0.5) (0.9,-0.3), Move (0.6,-0.4), Line (0.5,0.9)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 1)}
+    Latex.RhoLower -> {data = BaseFrame {strokes = [Move (0.1,0.9), Curve (0.2,-1.4) (1.4,0.2) (0.2,0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (0.8, 1)}
+    Latex.SigmaLower -> {data = BaseFrame {strokes = [Move (0.9,-0.3), Curve (0.8,-0.3) (0.7,-0.4) (0.4,-0.3), Curve (0.1,-0.2) (0.1,0.4) (0.5,0.4), Curve (0.9, 0.4) (1,-0.3) (0.4,-0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.TauLower -> {data = BaseFrame {strokes = [Move (0.1,-0.1), Curve (0.2,-0.3) (0.3,-0.3) (0.4,-0.3), Line (0.9,-0.3), Move (0.5,-0.3), Curve (0.5, 0.2) (0.4,0.4) (0.7,0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.ThetaLower -> {data = BaseFrame {strokes = [Move (0.5,-0.9), Curve (0,-0.9) (0,0.4) (0.5,0.4), Curve (1,0.4) (0.9,-0.9) (0.5,-0.9), Curve (0.1,-0.9) (0,0.3) (0.8,-0.3)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.UpsilonLower -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Curve (0.1,-0.4) (0.3,-0.4) (0.3,0), Curve (0.3,0.5) (0.9,0.5) (0.9,-0.4)], elem = s.state, style=s.style}, topLeft = (0, -0.5), botRight = (1, 0.5)}
+    Latex.XiLower -> {data = BaseFrame {strokes = [Move (0.4,-0.9), Curve (0.9,-0.5) (0.9,-1) (0.4,-0.7), Curve (-0.1,-0.4) (-0.1,0.1) (0.6,-0.3), Curve (-0.1,0.1) (-0.1,0.8) (0.4,0.5), Curve (0.9, 0.2) (0.9,0.6) (0.5,0.9)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (0.9, 1)}
+    Latex.ZetaLower -> {data = BaseFrame {strokes = [Move (0.3,-0.9), Curve (1,-0.5) (0.9,-1) (0.5,-0.8), Curve (0,-0.6) (0,0.3) (0.5,0.1), Curve (1,-0.1) (1, 0.3) (0.4, 0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.DeltaUpper -> {data = BaseFrame {strokes = [Move (0.6,-0.8), Line (0.1,0.4), Line (1.1,0.4), Line (0.6,-0.8), Line (0.1, 0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1.2, 0.5)}
+    Latex.GammaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.8), Line (0.1,-0.8), Line (0.1,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (0.8, 0.5)}
+    Latex.LambdaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.5,-0.8), Line (0.9,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.OmegaUpper -> {data = BaseFrame {strokes = [Move (0.1,0.4), Line (0.6,0.4), Curve (0,0.2) (0,-0.9) (0.7,-0.9), Curve (1.4,-0.9) (1.4,0.2) (0.8,0.4), Line (1.3,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1.4, 0.5)}
     Latex.PhiUpper -> {data = BaseFrame {strokes =
         [   Move (0.1,-0.9), Line (0.9,-0.9), Move (0.1,0.4), Line (0.9,0.4), Move (0.5,-0.9), Line (0.5,0.4)
         ,   Move (0.5, -0.6), Curve (0,-0.6) (0,0.1) (0.5,0.1), Curve (1,0.1) (1,-0.6) (0.5,-0.6)
-        ], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.PiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.8), Line (1.1,-0.8), Move (0.4,-0.8), Line (0.4,0.4), Move (0.8,-0.8), Line (0.8,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.2, 0.5)}
-    Latex.PsiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1, 0.1) (0.9, 0.1) (0.9,-0.7), Move (0.1, -0.9), Line (0.9,-0.9), Move (0.1,0.4), Line (0.9,0.4), Move (0.5,-0.9), Line (0.5,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.SigmaUpper -> {data = BaseFrame {strokes = [Move (0.9,-0.9), Line (0.1, -0.9), Curve (0.6,-0.2) (0.7,-0.5) (0.1,0.4), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.ThetaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.9), Curve (0,-0.9) (0,0.4) (0.7,0.4), Curve (1.4,0.4) (1.4,-0.9) (0.7,-0.9), Move (0.4,-0.3), Line (1,-0.3)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
-    Latex.UpsilonUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1,-1) (0.6,-1) (0.5,0.4), Curve (0.4,-1) (0.9,-1) (0.9,-0.7), Move (0.1,0.4), Line (0.9,0.4)], elem = s}, topLeft = (0, -1), botRight = (1, 0.5)}
-    Latex.XiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.9), Line (1.3,-0.9), Move (0.4,-0.3), Line (1,-0.3), Move (0.1,0.4), Line (1.3,0.4)], elem = s}, topLeft = (0, -1), botRight = (1.4, 0.5)}
-    Latex.Infinity -> {data = BaseFrame {strokes = [Move (0.1,0), Curve (0.1,0.1) (0.3,0.2) (0.5,0), Curve (0.7,-0.2) (0.9,-0.1) (0.9,0), Curve (0.9,0.1) (0.7,0.2) (0.5,0), Curve (0.3,-0.2) (0.1,-0.1) (0.1,0)], elem = s}, topLeft = (0, -0.2), botRight = (1, 0.2)}
-    Latex.Circ -> {data = BaseFrame {strokes = [Move (0.4,-0.3), Curve (0,-0.3) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.3) (0.4,-0.3)], elem = s}, topLeft = (0, -0.4), botRight = (0.8, 0.4)}
-    Latex.RightArrow -> {data = BaseFrame {strokes = [Move (0.1,0), Line (0.9,0), Move (0.7, -0.3), Line (0.9,0), Line (0.7,0.3)], elem = s}, topLeft = (0, -0.4), botRight = (1, 0.4)}
-    Latex.CrossMultiplcation -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Line(0.5,0.2), Move (0.1,0.2), Line (0.5,-0.2)], elem = s}, topLeft = (0,-0.3), botRight = (0.6, 0.3)}
-    Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
-    Latex.Integration -> {data = BaseFrame {strokes = [Move (0, 0.8), Curve (0.6, 1) (0,-1.5) (0.6,-1.3)], elem = s}, topLeft = (0,-1.5), botRight = (0.6,1)}
+        ], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.PiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.8), Line (1.1,-0.8), Move (0.4,-0.8), Line (0.4,0.4), Move (0.8,-0.8), Line (0.8,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1.2, 0.5)}
+    Latex.PsiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1, 0.1) (0.9, 0.1) (0.9,-0.7), Move (0.1, -0.9), Line (0.9,-0.9), Move (0.1,0.4), Line (0.9,0.4), Move (0.5,-0.9), Line (0.5,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.SigmaUpper -> {data = BaseFrame {strokes = [Move (0.9,-0.9), Line (0.1, -0.9), Curve (0.6,-0.2) (0.7,-0.5) (0.1,0.4), Line (0.9,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.ThetaUpper -> {data = BaseFrame {strokes = [Move (0.7,-0.9), Curve (0,-0.9) (0,0.4) (0.7,0.4), Curve (1.4,0.4) (1.4,-0.9) (0.7,-0.9), Move (0.4,-0.3), Line (1,-0.3)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+    Latex.UpsilonUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.7), Curve (0.1,-1) (0.6,-1) (0.5,0.4), Curve (0.4,-1) (0.9,-1) (0.9,-0.7), Move (0.1,0.4), Line (0.9,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1, 0.5)}
+    Latex.XiUpper -> {data = BaseFrame {strokes = [Move (0.1,-0.9), Line (1.3,-0.9), Move (0.4,-0.3), Line (1,-0.3), Move (0.1,0.4), Line (1.3,0.4)], elem = s.state, style=s.style}, topLeft = (0, -1), botRight = (1.4, 0.5)}
+    Latex.Infinity -> {data = BaseFrame {strokes = [Move (0.1,0), Curve (0.1,0.1) (0.3,0.2) (0.5,0), Curve (0.7,-0.2) (0.9,-0.1) (0.9,0), Curve (0.9,0.1) (0.7,0.2) (0.5,0), Curve (0.3,-0.2) (0.1,-0.1) (0.1,0)], elem = s.state, style=s.style}, topLeft = (0, -0.2), botRight = (1, 0.2)}
+    Latex.Circ -> {data = BaseFrame {strokes = [Move (0.4,-0.3), Curve (0,-0.3) (0,0.3) (0.4,0.3), Curve (0.8,0.3) (0.8,-0.3) (0.4,-0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.4), botRight = (0.8, 0.4)}
+    Latex.RightArrow -> {data = BaseFrame {strokes = [Move (0.1,0), Line (0.9,0), Move (0.7, -0.3), Line (0.9,0), Line (0.7,0.3)], elem = s.state, style=s.style}, topLeft = (0, -0.4), botRight = (1, 0.4)}
+    Latex.CrossMultiplcation -> {data = BaseFrame {strokes = [Move (0.1,-0.2), Line(0.5,0.2), Move (0.1,0.2), Line (0.5,-0.2)], elem = s.state, style=s.style}, topLeft = (0,-0.3), botRight = (0.6, 0.3)}
+    Latex.Division -> {data = BaseFrame {strokes = [Move (0.1, 0), Line (0.5, 0), Move (0.27, -0.25), Line (0.33,-0.2), Move (0.27, 0.2), Line (0.33,0.25)], elem = s.state, style=s.style}, topLeft = (0,-0.3), botRight = (0.6,0.3)}
+    Latex.Integration -> {data = BaseFrame {strokes = [Move (0, 0.8), Curve (0.6, 1) (0,-1.5) (0.6,-1.3)], elem = s.state, style=s.style}, topLeft = (0,-1.5), botRight = (0.6,1)}
 
-wordStrokes_: state -> String -> Frame state
+wordStrokes_: {state: state, style: Maybe Latex.Style} -> String -> Frame state
 wordStrokes_ s str =
     String.foldl (\c (list, ((_, top), (right, bot))) -> charStrokes_ c
             |> \(strokes, (_, newTop), (newRight, newBot)) ->
                 (rightShiftStrokes_ right strokes ++ list, ((0, min top newTop), (right + newRight, max bot newBot)))
         ) ([], ((0, 0), (0, 0))) str
-        |> \(list, (topLeft, botRight)) -> {data = BaseFrame {strokes = list, elem = s}, topLeft = topLeft, botRight = botRight}
+        |> \(list, (topLeft, botRight)) -> {data = BaseFrame {strokes = list, elem = s.state, style = s.style}, topLeft = topLeft, botRight = botRight}
 
 charStrokes_: Char -> (List Stroke, Vector2, Vector2)
 charStrokes_ c = case c of
