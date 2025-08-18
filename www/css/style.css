@@ -481,12 +481,14 @@ dialog svg {
 .brick.commutable > .brickRect {
     cursor: ew-resize;
 }
-.stroke {
-    stroke: var(--color-text);
-    stroke-width: 2;
+.mathStroke {
+    stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
     fill: none;
+}
+.mathStroke.stroke {
+    stroke: var(--color-text);
 }
 .stroke:not(.selected):hover {
     stroke: var(--color-highlight);

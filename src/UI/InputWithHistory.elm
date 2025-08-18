@@ -61,8 +61,8 @@ defaultOptions_ =
                     [(Input.Scope {inseparable = False, immutable = False} [Input.StrElement "x"]
                     ,{up = Nothing, down = Nothing, left = Nothing, right = Nothing}
                     )]
-                ,   firstNode = Just 1
-                ,   lastNode = Just 1
+                ,   firstNode = Just 0
+                ,   lastNode = Just 0
                 }
             ,   Input.StrElement "=x+3"
             ]

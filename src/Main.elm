@@ -459,7 +459,7 @@ downloadTopicCmd_ preinstall url = Http.get
 
 view: Model -> Browser.Document Event
 view core = let model = core.swappable in
-    { title = "Maths"
+    { title = "Algebra Explorer"
     , body =
         Html.Keyed.node "div" [id "body"]
         (   ("draggableListener", div [id "draggableListener"] [])

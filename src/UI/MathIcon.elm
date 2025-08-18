@@ -5,15 +5,13 @@ module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime
 import Dict
 import Html
 import Svg
-import Svg.Attributes exposing (class, d, fill, height, opacity, stroke, strokeLinecap, strokeLinejoin, strokeWidth, viewBox, width, x, y)
+import Svg.Attributes exposing (class, d, height, opacity, strokeWidth, viewBox, width, x, y)
 -- Ours
 import Algo.BFS as BFS
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.Icon as Icon
-import UI.Animation as Animation
-import UI.Animation as Animation
 
 type alias State = Matcher.State Animation.State
 type alias Vector2 = Animation.Vector2
@@ -25,6 +23,7 @@ type Stroke =
 type alias AnimationFrame =
     {   strokes: List Stroke
     ,   style: Maybe Latex.Style
+    ,   width: String
     ,   origin: Animation.EaseState Vector2
     ,   scale: Animation.EaseState Float
     ,   opacity: Animation.EaseState Float
@@ -240,12 +239,14 @@ toAnimationDict_ scale = processFrame_ (\frame origin inScale dict -> case frame
     (0,0) scale Dict.empty
 
 newAnimation_: (Int, Int) -> {strokes: List Stroke, style: Maybe Latex.Style, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
-newAnimation_ key value (dict, t) = let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t 1 in
+newAnimation_ key value (dict, t) = let targetOp = if value.style == Just Latex.Faded then 0.5 else 1 in
+    let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t targetOp in
     (   Dict.insert key
         {   strokes = value.strokes
         ,   origin = Animation.newEaseVector2 animationTime_ value.origin
         ,   scale = Animation.newEaseFloat animationTime_ value.scale
         ,   style = value.style
+        ,   width = if value.style == Just Latex.Emphasis then "3" else "2"
         ,   opacity = op
         }
         dict
@@ -684,7 +685,7 @@ static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round", strokeLinejoin "round"]
+                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
                 []
                 :: list
             _ -> list -- Ignore cursor, border and position
@@ -698,13 +699,11 @@ staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 staticWithCursor attrs model = let frames = latexToFrames model in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round", strokeLinejoin "round"]
+                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
                 []
                 :: list
             Cursor -> Svg.path
-                [   d (strokeToPath_ origin scale [Move frame.topLeft, Line frame.botRight])
-                ,   stroke "currentColor", strokeWidth "1", fill "none", class "cursor"]
-                []
+                [   d (strokeToPath_ origin scale [Move frame.topLeft, Line frame.botRight]), class "cursor"] []
                 :: list
             Border _ ->
                 let
@@ -714,7 +713,7 @@ staticWithCursor attrs model = let frames = latexToFrames model in
                 Svg.rect
                 [   x (String.fromFloat left), y (String.fromFloat top)
                 ,   width (String.fromFloat (right-left)), height (String.fromFloat (bot-top))
-                ,   stroke "currentColor", strokeWidth "1", fill "none", class "border"
+                ,   class "border"
                 ]
                 []
                 :: list
@@ -740,18 +739,24 @@ cursorStyle = """
 }
 .cursor {
     animation: 2s blink 0s infinite;
+    stroke: currentColor;
+    stroke-width: 1;
+    fill: none;
     opacity: 1;
 }
 .border {
     stroke-dasharray: 4;
+    stroke: currentColor;
+    stroke-width: 1;
+    fill: none;
 }
 """
 
 
 view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
 view convert attrs model = Dict.toList model.frames
-    |> List.map (\((id, _), frame) -> Svg.path (Icon.class "stroke" :: frameToAttr_ frame ++ convert id) [])
-    |> (++) (List.map (frameToAttr_ >> \a -> Svg.path (Icon.class "stroke" :: a) []) model.deleting)
+    |> List.map (\((id, _), frame) -> Svg.path ([Icon.class "stroke", class "mathStroke"] ++ frameToAttr_ True frame ++ convert id) [])
+    |> (++) (List.map (frameToAttr_ True >> \a -> Svg.path ([Icon.class "stroke", class "mathStroke"] ++ a) []) model.deleting)
     |> Svg.svg (toViewBox_ (Animation.current model.topLeft) (Animation.current model.botRight) :: attrs)
 
 toViewBox_: Vector2 -> Vector2 -> Html.Attribute msg
@@ -765,15 +770,16 @@ toViewBox_ (left, top) (right, bot) =
 
 toSvgGroup: List (Svg.Attribute msg) -> Model -> Svg.Svg msg
 toSvgGroup attr model = Dict.toList model.frames
-    |> List.map (\(_, frame) -> Svg.path (frameToAttr_ frame) [])
-    |> (++) (List.map (frameToAttr_ >> \a -> Svg.path a []) model.deleting)
+    |> List.map (\(_, frame) -> Svg.path (frameToAttr_ False frame) [])
+    |> (++) (List.map (frameToAttr_ False >> \a -> Svg.path a []) model.deleting)
     |> Svg.g attr
 
-frameToAttr_: AnimationFrame -> List (Svg.Attribute msg)
-frameToAttr_ frame =
+frameToAttr_: Bool -> AnimationFrame -> List (Svg.Attribute msg)
+frameToAttr_ addWidth frame =
     [   d (strokeToPath_ (Animation.current frame.origin) (Animation.current frame.scale) frame.strokes)
     ,   opacity (Animation.current frame.opacity |> String.fromFloat)
     ]
+    |> \p -> if addWidth then strokeWidth frame.width :: p else p
 
 {- UI -}
 
