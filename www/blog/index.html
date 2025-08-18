@@ -11,13 +11,29 @@
       <section>
       Algebra Explorer is a tool to help students understand maths notation. Our aim is to answer questions such as:
       <ul>
-        <li>In 1+2*3 why does 2*3 go first?</li>
-        <li>Why is 1+2-3 different since either 1+2 or 2-3 can go first?</li>
-        <li>Why does 1-2+3 equal (1-2)+3 but not 1-(2+3)?</li>
-        <li>Why does 1+2 equal 2+1 but 1-2 does not equal 2-1?</li>
+        <li>
+          In <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math>
+          why does <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> go first?
+        </li>
+        <li>
+          Why is <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&minus;</mo><mn>3</mn></math>
+          different since either <math><mn>1</mn><mo>+</mo><mn>2</mn></math>
+          or <math><mn>2</mn><mo>&minus;</mo><mn>3</mn></math> can go first?
+        </li>
+        <li>
+          Why does <math><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>+</mo><mn>3</mn></math>
+          equal <math><mo>(</mo><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mn>3</mn></math>
+          but not <math><mn>1</mn><mo>&minus;</mo><mo>(</mo><mn>2</mn><mo>+</mo><mn>3</mn><mo>)</mo></math>?
+        </li>
+        <li>
+          Why does <math><mn>1</mn><mo>+</mo><mn>2</mn></math>
+          equal <math><mn>2</mn><mo>+</mo><mi>1</mi></math>
+          but <math><mn>1</mn><mo>-</mo><mi>2</mi></math>
+          does not equal <math><mn>2</mn><mo>-</mo><mi>1</mi></math>?
+        </li>
       </ul>
       <p>
-      We do this by visualising the notation via building blocks representing the 'Abstract Syntax Tree' of the maths. For example, 1+2 is
+      We do this by visualising the notation via building blocks representing the ‘abstract syntax tree’ of the maths. For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is
       </p>
 TODO: add picture of blocks <!--
  _   _
@@ -25,7 +41,7 @@ TODO: add picture of blocks <!--
 |__+__|
 -->
       <p>
-      where 1 and 2 are stacked on top of +, implying that + <i>depends on</i> 1 and 2. Similarly, 1+2*3 is:
+      where <math><mn>1</mn></math> and <math><mn>2</mn></math> are stacked on top of <math><mo>+</mo></math>, implying that <math><mo>+</mo></math> <i>depends on</i> <math><mn>1</mn></math> and <math><mn>2</mn></math>. Similarly, <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math> is:
       </p>
 TODO: add picture of blocks <!--
      _   _
@@ -34,7 +50,7 @@ TODO: add picture of blocks <!--
 |____+____|
 -->
       <p>
-      This alternative representation shows more clearly that 2*3 must go first, using gravity as an analogy for the dependency relationship between operations.
+      This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using gravity as an analogy for the dependency relationship between operations.
       </p>
       <p>
       But where the tool really shines is <b>interactivity</b>! The rules of algebra can be applied on these blocks, allowing students to freely explore without worrying about making mistakes.
@@ -62,7 +78,7 @@ TODO: add picture of blocks <!--
             <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
           </math>
           </p>
-          but this is a special property of + and * that is crucial to algebra. Consider the sentence
+          but this is a special property of <maths><mo>+</mo></maths> and <maths><mo>&times;</mo></maths> that is crucial to algebra. Consider the sentence
           <blockquote>
             My friend enjoys maths.
           </blockquote>
@@ -73,7 +89,7 @@ TODO: add picture of blocks <!--
           which doesn't make any sense at all!
           </p>
           <p>
-          In Algebra Explorer this can be performed by dragging blocks horizontally, just like reorganising tabs in your browser.
+          In Algebra Explorer this can be performed by dragging blocks horizontally, just like <i>reordering</i> tabs in your browser.
           TODO: add .gif here
           </p>
         </div>
@@ -102,7 +118,7 @@ TODO: add picture of blocks <!--
           This time the rewritten sentence does make sense (who knows what cats are doing when we're not looking...) but has a very different meaning.
           </p>
           <p>
-          This is performed by dragging vertically up to group, and down to ungroup.
+          This is performed by dragging vertically up to <i>group</i>, and down to <i>ungroup</i>.
           TODO: add .gif here
           </p>
         </div>
