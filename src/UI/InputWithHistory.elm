@@ -149,7 +149,7 @@ update convert tracker funcDict event model = case event of
                 ,   Ok (Just tree)
                 ,   Cmd.none
                 )
-    InputEvent e -> let (inModel, errStr, inCmd) = Input.update e model.input in
+    InputEvent e -> let (inModel, errStr, inCmd) = Input.update funcDict e model.input in
         if String.isEmpty errStr |> not
         then ((model, tracker), Err errStr, Cmd.none)
         else case (e, model.current) of
@@ -182,7 +182,8 @@ createView_ converter funcDict model inputNum width height =
             ]
         ,   Html.ul
             [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
-            (   List.map
+            (   Html.span [] [] -- For creating an extra gap
+            ::  List.map
                 (\entry -> case entry of
                     Default val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.default []

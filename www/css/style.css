@@ -9,7 +9,6 @@
     --color-submit: green;
     --color-text: black;
     --color-textbox: white;
-    --color-textbox-alternate: rgb(230,230,230);
     --color-grab: rgb(230,230,230);
     --color-selected: lightgreen;
     --color-toolbar: rgb(180,180,180);
@@ -131,15 +130,27 @@ span.space {
     border-radius: 0 0 2rem 2rem;
     padding: 0;
     margin: 0;
+    background-color: var(--color-textbox);
+}
+.input > ul > span {
+    display: block;
+    height: 2rem;
 }
 .input > ul > li {
+    position: relative;
     text-wrap: nowrap;
-    height: 2rem;
+    height: 2.5rem;
     align-content: center;
-    background-color: var(--color-textbox-alternate);
 }
-.input > ul > li:nth-child(even) {
-    background-color: var(--color-textbox);
+.input > ul > li:before{
+  content: "";
+  display: block;
+  position: absolute;
+  top: -1px;
+  left: 10%;
+  height: 1px;
+  width: 80%;
+  background-color: var(--color-background);
 }
 .input > ul svg {
     height: 1rem;
@@ -180,21 +191,18 @@ span.space {
     display: flex;
     flex-direction: row;
     position: absolute;
-    bottom: -2.5rem;
-    height: 2rem;
+    bottom: -50%;
+    height: 50%;
     width: 100%;
-    border-radius: 1rem;
     padding: 0 1rem;
     background-color: var(--color-textbox);
-    box-sizing: border-box;
-}
-.mathInput > .popup > div {
-    flex-shrink: 1;
-    display: flex;
-    flex-direction: row;
     overflow-x: scroll;
     overflow-y: hidden;
     box-sizing: border-box;
+}
+.mathInput > .popup svg {
+    height: 100%;
+    margin: 0 0.1rem;
 }
 /* Menu */
 #menuToggle {

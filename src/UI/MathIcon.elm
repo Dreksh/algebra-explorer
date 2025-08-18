@@ -681,8 +681,14 @@ closestChar str point = String.foldl (\c (res, index, p) ->
 
 {- UI -}
 
+capHeight: Frame s -> (Vector2, Vector2)
+capHeight frame = let ((left, top), (right, bot)) = (frame.topLeft, frame.botRight) in
+    let extra = 1.5 - (bot - top) in
+    if extra <= 0 then ((left, top), (right, bot))
+    else ((left, top - extra/2), (right, bot + extra/2))
+
 static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
-static attrs l = let frames = latexToFrames l in
+static attrs l = let frames = latexToFrames l in let (topLeft, botRight) = capHeight frames in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
                 [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
@@ -691,12 +697,12 @@ static attrs l = let frames = latexToFrames l in
             _ -> list -- Ignore cursor, border and position
         ) (0,0) 20 [] frames
     |>  Svg.svg
-        (   toViewBox_ (Animation.scaleVector2 20 frames.topLeft) (Animation.scaleVector2 20 frames.botRight)
+        (   toViewBox_ (Animation.scaleVector2 20 topLeft) (Animation.scaleVector2 20 botRight)
         ::  attrs
         )
 
 staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
-staticWithCursor attrs model = let frames = latexToFrames model in
+staticWithCursor attrs model = let frames = latexToFrames model in let (topLeft, botRight) = capHeight frames in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
                 [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
@@ -722,8 +728,8 @@ staticWithCursor attrs model = let frames = latexToFrames model in
     |> \children ->  Svg.svg
         (   toViewBox_
             -- Add horizontal shift to allow for borders and cursors to be displayed
-            (Animation.scaleVector2 20 frames.topLeft |> Animation.addVector2 (-1,-1))
-            (Animation.scaleVector2 20 frames.botRight |> Animation.addVector2 (1,1))
+            (Animation.scaleVector2 20 topLeft |> Animation.addVector2 (-1,-1))
+            (Animation.scaleVector2 20 botRight |> Animation.addVector2 (1,1))
         ::  attrs
         )
         (   Svg.style [] [Svg.text cursorStyle]

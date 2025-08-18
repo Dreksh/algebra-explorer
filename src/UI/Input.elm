@@ -23,6 +23,7 @@ import UI.HtmlEvent as HtmlEvent
 import UI.MathIcon as MathIcon
 import UI.SvgDrag as SvgDrag
 import Algo.History as History
+import UI.HtmlEvent as HtmlEvent
 
 -- Scope is always editable and capable of inserting & deleting. But the scope itself cannot be deleted.
 type Scope = Scope ScopeDetail (List ScopeElement)
@@ -60,7 +61,7 @@ type alias PreviousInput =
 type alias Model msg =
     {   history: History.Model Scope
     ,   previousInput: Maybe PreviousInput -- For checking when to commit / flush
-    ,   functionInput: Maybe String
+    ,   suggestions: Maybe (List (String, Html.Html Event)) -- Cached suggestions list
     ,   cursor: CaretPosition
     ,   showCursor: Bool
     ,   holderID: String
@@ -74,8 +75,6 @@ type Event =
     | MouseDown Encode.Value (Float, Float)
     | Shift SvgDrag.Event
     | InsertFixed ScopeElement
-    | HelperInput String
-    | HelperClear
 
 defaultScopeDetail: ScopeDetail
 defaultScopeDetail = {inseparable = True, immutable = False}
@@ -84,7 +83,7 @@ init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> Stri
 init mouseCmd focusCmd holderID =
     {   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
-    ,   functionInput = Nothing
+    ,   suggestions = Nothing
     ,   cursor = [0]
     ,   holderID = holderID
     ,   showCursor = False
@@ -96,7 +95,7 @@ initWithFixed: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg
 initWithFixed mouseCmd focusCmd holderID elements pos =
     {   history = History.init (Scope {inseparable = True, immutable = True} elements)
     ,   previousInput = Nothing
-    ,   functionInput = Nothing
+    ,   suggestions = Nothing
     ,   cursor = pos
     ,   holderID = holderID
     ,   showCursor = False
@@ -109,7 +108,7 @@ set (Scope detail children) model =
     {   model
     |   history = History.flushAndCommit (Scope detail children) model.history
     ,   previousInput = Nothing
-    ,   functionInput = Nothing
+    ,   suggestions = Nothing
     ,   cursor = [List.length children]
     ,   showCursor = False
     }
@@ -118,7 +117,7 @@ clear model =
     {   model
     |   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
-    ,   functionInput = Nothing
+    ,   suggestions = Nothing
     ,   cursor = [0]
     ,   showCursor = False
     }
@@ -143,21 +142,7 @@ view convert functions attr model =
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
             (toLatex False [] (if model.showCursor then model.cursor else []) (current model))
         ]
-    |> Helper.maybeAppend (model.functionInput
-            -- Has to be maybe, so that only one input will be on screen at any point
-            |> Maybe.map (\str -> displaySuggestions_ functions str
-                |> \(selectable, eventCreator) -> Html.div
-                    [class "popup"]
-                    [   Html.form [HtmlEvent.onSubmitForm (formDecoder_ eventCreator)]
-                        [   Html.input
-                            [type_ "text", id "inputHelper", name "input", HtmlEvent.onKeyChange HelperInput, HtmlEvent.onBlur HelperClear]
-                            []
-                        ]
-                    ,   Html.Keyed.node "div" [] selectable
-                    ]
-                |> Html.map convert
-            )
-        )
+    |> Helper.maybeAppend (Maybe.map (Html.Keyed.node "div" [class "popup"] >> Html.map convert) model.suggestions)
     )
 
 formDecoder_: (String -> ScopeElement) -> Decode.Decoder Event
@@ -214,7 +199,7 @@ toLatex border parentPos pos (Scope _ children) =
 {- ## Updates -}
 
 allowedChars_: Set.Set Char
-allowedChars_ = String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-.,= "
+allowedChars_ = String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789., "
     |> Set.fromList
 
 -- How long we will wait between character inputs where we assume they are within the same block of inputs
@@ -232,8 +217,25 @@ batchFlushStage_ currentTime insertion model = let newModel = {model | previousI
 flushStage_: Model msg -> Model msg
 flushStage_ model = {model | history = History.commit model.history, previousInput = Nothing}
 
-update: Event -> Model msg -> (Model msg, String, Cmd msg)
-update event model = case event of
+addOp_: ScopeElement
+addOp_ = Fixed {text = "+", latex = [Latex.Text {state=(), style=Nothing} "+"]
+            , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+equalOp_: ScopeElement
+equalOp_ = Fixed {text = "=", latex = [Latex.Text {state=(), style=Nothing} "="]
+            , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+subOp_: ScopeElement
+subOp_ = Fixed {text = "-", latex = [Latex.Text {state=(), style=Nothing} "-"]
+            , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+timesOp_: ScopeElement
+timesOp_ = Fixed {text = "*", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation]
+            , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+divideOp_: ScopeElement
+divideOp_ = Fixed {text = "/", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.Division]
+            , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
+
+
+update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Event -> Model msg -> (Model msg, String, Cmd msg)
+update funcProp event model = case event of
     Key e -> let entry = current model in
         case (e.key, e.meta) of
         ("z", True) ->
@@ -255,33 +257,34 @@ update event model = case event of
                 Just (char, _) -> if Set.member char allowedChars_
                     then case insertChar_ char updatedModel of
                         Err str -> (updatedModel, str, Cmd.none)
-                        Ok (newModel) -> (newModel, "", Cmd.none)
+                        Ok (newModel) ->
+                            ( {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor |> Just}
+                            , "", Cmd.none
+                            )
                     else case char of
                         '(' -> case insertScopeElement_ (Just 0) (Bracket []) updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
-                        '*' ->
-                            let
-                                detail = {text = "*", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation]
-                                        , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
-                            in
-                            case insertScopeElement_ Nothing (Fixed detail) updatedModel of
+                        '+' -> case insertScopeElement_ Nothing addOp_ updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
-                        '/' ->
-                            let
-                                detail = {text = "/", latex = [Latex.SymbolPart {state=(), style=Nothing} Latex.Division]
-                                        , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
-                            in
-                            case insertScopeElement_ Nothing (Fixed detail) updatedModel of
+                        '-' -> case insertScopeElement_ Nothing subOp_ updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
-                        '\\' -> ({updatedModel | functionInput = Just ""}, "", updatedModel.focusCmd "inputHelper")
+                        '=' -> case insertScopeElement_ Nothing equalOp_ updatedModel of
+                            Err str -> (updatedModel, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '*' -> case insertScopeElement_ Nothing timesOp_ updatedModel of
+                            Err str -> (updatedModel, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '/' -> case insertScopeElement_ Nothing divideOp_ updatedModel of
+                            Err str -> (updatedModel, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
                         _ -> (updatedModel, "'" ++ c ++ "' is not an allowed input", Cmd.none)
             else (updatedModel, "", Cmd.none)
         _ -> (model, "", Cmd.none)
-    ShowCursor -> ({model | showCursor = True}, "", Cmd.none)
-    HideCursor -> ({model | history = History.commit model.history, showCursor = False}, "", Cmd.none)
+    ShowCursor -> ({model | showCursor = True, suggestions = getSuggestions_ funcProp (current model) model.cursor |> Just}, "", Cmd.none)
+    HideCursor -> ({model | history = History.commit model.history, showCursor = False, suggestions = Nothing}, "", Cmd.none)
     MouseDown val point -> (flushStage_ model, "", model.mouseCmd val point)
     Shift e -> case e of
         SvgDrag.End _ point -> (setCursor_ point model, "", Cmd.none)
@@ -291,8 +294,6 @@ update event model = case event of
             Err str -> (flushStage_ model, str, Cmd.none)
             Ok finalModel -> (finalModel |> flushStage_, "", model.focusCmd (model.holderID ++ "-input"))
         _ -> (model, "unexpected fixed element to be inserted", Cmd.none)
-    HelperInput str -> ({model | functionInput = Just str}, "", Cmd.none)
-    HelperClear -> ({model | functionInput = Nothing}, "", Cmd.none)
 
 {- ## Cursor Movement -}
 
@@ -597,11 +598,33 @@ toEntryString_ (Scope _ children) = Helper.resultList (\child res -> case child 
 
 {- ## Suggestion -}
 
+getSuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Scope -> CaretPosition
+    -> List (String, Html.Html Event)
+getSuggestions_ dicts origin caret =
+    let
+        findString (Scope detail children) pos = case pos of
+            [] -> ""
+            [x] -> case (List.take (x-1) children |> List.head, List.take x children |> List.head) of
+                (_, Just (StrElement str)) -> str
+                (Just (StrElement str), _) -> str
+                _ -> ""
+            (x::y::others) -> case List.take x children |> List.head of
+                Nothing -> ""
+                Just (StrElement str) -> str
+                Just (Fixed f) -> case Array.get y f.params of
+                    Nothing -> ""
+                    Just (scope,_) -> findString scope others
+                Just (Bracket kids) -> findString (Scope detail kids) others
+                Just (InnerScope scope) -> findString scope others
+    in
+        findString origin caret
+        |> displaySuggestions_ dicts
+
 defaultOps: Set.Set String
 defaultOps = Set.fromList ["+", "-", "*", "/", "="]
 
 displaySuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String
-    -> (List (String, Html.Html Event), String -> ScopeElement)
+    -> List (String, Html.Html Event)
 displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
     Dict.keys functions
     |> List.filter (\key -> Set.member key defaultOps |> not)
@@ -621,11 +644,29 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
         )
     )
     |> List.sortBy (\((corr, args), _) -> (-corr, -args))
-    |> \list ->
-        (   List.map Tuple.second list
-        ,   \str -> let (fixed, latex, _) = funcPropToLatex_ functions str in
-                fixedFrom_ ("\\" ++ str) fixed Array.empty latex
-        )
+    |> List.map Tuple.second
+    |> (++)
+        [   (   "+"
+            ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed addOp_)]
+                [[Latex.Text {state=(), style=Nothing} "+"] |> MathIcon.static []]
+            )
+        ,   (   "-"
+            ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed subOp_)]
+                [[Latex.Text {state=(), style=Nothing} "-"] |> MathIcon.static []]
+            )
+        ,   (   "*"
+            ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed timesOp_)]
+                [[Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation] |> MathIcon.static []]
+            )
+        ,   (   "/"
+            ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed divideOp_) ]
+                [[Latex.SymbolPart {state=(), style=Nothing} Latex.Division] |> MathIcon.static []]
+            )
+        ,   (   "="
+            ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed equalOp_)]
+                [[Latex.Text {state=(), style=Nothing} "="] |> MathIcon.static []]
+            )
+        ]
 
 funcPropToLatex_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> (Bool, Latex.Model (), Int)
 funcPropToLatex_ funcDict key = let emState = {state = (), style=Just Latex.Emphasis} in

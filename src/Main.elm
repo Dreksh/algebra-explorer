@@ -39,6 +39,7 @@ import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
+import Components.Rules as Rules
 
 -- Overall Structure of the app: it's a document
 
@@ -240,7 +241,7 @@ update event core = let model = core.swappable in
             Just newE -> update newE core
         DialogEvent e -> case core.dialog of
             Nothing -> (core, Cmd.none)
-            Just (dialog, matched) -> Dialog.update e dialog
+            Just (dialog, matched) -> Dialog.update (Rules.functionProperties model.rules) e dialog
                 |> \(newDialog, errStr, cmd) -> if errStr /= "" then submitNotification_ core errStr
                     else ({core  | dialog = Just (newDialog, matched)}, cmd)
         NoOp -> (core, Cmd.none)

@@ -105,11 +105,12 @@ toInput_ funcProp name args example =
     ,   [2,0,1]
     )
 
-update: Event -> Model msg -> (Model msg, String, Cmd msg)
-update event model = case event of
+update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Event -> Model msg
+    -> (Model msg, String, Cmd msg)
+update funcProp event model = case event of
     InputEvent id inE -> case Dict.get id model.inputFields of
         Nothing -> (model, "", Cmd.none)
-        Just inModel -> Input.update inE inModel
+        Just inModel -> Input.update funcProp inE inModel
             |> \(newModel, errStr, cmd) ->
                 (   {   model
                     |   inputFields = Dict.insert id newModel model.inputFields
