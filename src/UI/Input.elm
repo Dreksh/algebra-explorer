@@ -244,7 +244,7 @@ update funcProp event model = case event of
         ("Z", True) ->
             (   {model | history = History.commit model.history |> History.redo }
             , "", Cmd.none)
-        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False |> Debug.log "what", "", Cmd.none)
+        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False, "", Cmd.none)
         ("Delete", _) -> (batchFlushStage_ e.time False model |> delete_ True, "", Cmd.none)
         ("ArrowUp", _) -> (flushStage_ model |> cursorMove_ funcProp Up_, "", Cmd.none)
         ("ArrowDown", _) -> (flushStage_ model |> cursorMove_ funcProp Down_, "", Cmd.none)
@@ -666,7 +666,7 @@ getSuggestions_: Dict.Dict String {a | property: Math.FunctionProperty Rules.Fun
     -> List (String, Html.Html Event)
 getSuggestions_ dicts origin caret =
     let
-        findString (Scope detail children) pos = case pos |> Debug.log "check" of
+        findString (Scope detail children) pos = case pos of
             [] -> ""
             [x] -> case List.drop x children |> List.head of
                 Just (StrElement str) -> str
@@ -682,7 +682,7 @@ getSuggestions_ dicts origin caret =
                 Just (Bracket kids) -> findString (Scope detail kids) others
                 Just (InnerScope scope) -> findString scope others
     in
-        findString origin caret |> Debug.log "prompt"
+        findString origin caret
         |> displaySuggestions_ dicts
 
 defaultOps: Set.Set String
