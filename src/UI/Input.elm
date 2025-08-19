@@ -265,6 +265,9 @@ update funcProp event model = case event of
                         '(' -> case insertScopeElement_ (Just 0) (Bracket []) updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
+                        ')' -> case exitBracket_ updatedModel of
+                            Err str -> (updatedModel, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
                         '+' -> case insertScopeElement_ Nothing addOp_ updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
@@ -398,6 +401,28 @@ cursorNext_ direction (Scope detail children) caret =
                     NextCursor -> if detail.immutable then getNext detail children (x + 1) else FoundCursor [x+1]
             Nothing -> if detail.immutable then getPrevious detail children x else FoundCursor [x] -- reset to previous
 
+exitBracket_: Model msg -> Result String (Model msg)
+exitBracket_ model =
+    let
+        enter (Scope detail children) caret = case caret of
+            (x::y::others) -> case List.drop x children |> List.head of
+                Just (Fixed n) -> case Array.get y n.params of
+                    Nothing -> if detail.immutable then Nothing else Just [x+1]
+                    Just (inScope, _) -> case enter inScope others of
+                        Nothing -> if detail.immutable then Nothing else Just [x+1]
+                        Just pos -> Just (x::y::pos)
+                Just (Bracket kids) -> case enter (Scope detail kids) others of
+                    Nothing -> if detail.immutable then Nothing else Just [x+1]
+                    Just pos -> Just (x::y::pos)
+                Just (InnerScope inScope) -> enter inScope others
+                    |> Maybe.map (\pos -> x::y::pos)
+                _ -> Nothing
+            _ -> Nothing
+    in
+        case enter (current model) model.cursor of
+            Nothing -> Err "')' is not an allowed input"
+            Just pos -> Ok {model | cursor = pos}
+
 {- ## Click -}
 
 setCursor_: (Float, Float) -> Model msg -> Model msg
@@ -459,7 +484,7 @@ traverse process (Scope detail children) caret = case caret of
                 )
             (InnerScope (Scope inD inC) :: after) -> traverse process (Scope inD inC) others
                 |> Result.map (\res -> case res of
-                    Nothing -> Just (children, [x, 0]) -- InnerScopes cannot be deleted (they're for parameter inputs)
+                    Nothing -> Just (children, caret) -- InnerScopes cannot be deleted (they're for parameter inputs)
                     Just (newChildren, pos) -> Just (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos)
                 )
             _ -> Err BrokenCaret
