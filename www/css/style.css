@@ -200,6 +200,9 @@ span.space {
     overflow-y: hidden;
     box-sizing: border-box;
 }
+.mathInput > .popup a {
+    width: fit-content;
+}
 .mathInput > .popup svg {
     height: 100%;
     margin: 0 0.1rem;
