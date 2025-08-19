@@ -126,7 +126,9 @@ updateCoordinate_ (screenX, screenY) start to =
         (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
         orig = start.original
     in case start.direction of
-        Top -> {left = orig.left + dx, right = orig.right + dx, top = orig.top + dy, bottom = orig.bottom + dy }
+        Top -> let newDy = dy |> max (-orig.top) |> min (99 - orig.top) in
+            let newDx = dx |> max (1 - orig.right)  |> min (99 - orig.left) in
+            {left = orig.left + newDx, right = orig.right + newDx, top = orig.top + newDy, bottom = orig.bottom + newDy }
         Left -> {orig |left = orig.left + dx |> min (orig.right - 2) }
         Right -> {orig | right = orig.right + dx |> max (orig.left + 2)}
         Bottom -> {orig | bottom = orig.bottom + dy |> max (orig.top + 2)}
