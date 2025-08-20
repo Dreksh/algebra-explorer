@@ -5,6 +5,7 @@ import Array
 import Dict
 import Html exposing (a, button, form, h1, h2, input, label, node, p, span, text)
 import Html.Attributes as Attr
+import Html.Lazy exposing (lazy2)
 import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
@@ -152,15 +153,7 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
         Button m -> Just (button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text])
         Info i -> Just (text i.text)
         FormattedInfo i -> Just i
-        Radio r -> r.options
-            |> Dict.foldl (\num t foldList -> let n = String.fromInt num in
-                let id = r.name ++ n |> fieldID in foldList ++
-                [   Html.br [] []
-                ,   Html.input [Attr.type_ "radio", Attr.name r.name, Attr.id id, Attr.value n, Attr.checked (List.isEmpty foldList)] []
-                ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
-                ]
-            ) []
-            |> span [Attr.class "radioSelection"] |> Just
+        Radio r -> lazy2 toRadioButtons_ r.name r.options |> Just -- Lazy requires the function to be named, cannot use anonymous functions
         MathInput n -> Dict.get n.id inputs
             |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
         ParameterInput n -> Dict.get n.id inputs
@@ -168,6 +161,17 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
         Link l -> Just (a [Attr.class "clickable", Attr.target "_blank", Attr.href l.url] [text l.url])
     )
     >> span []
+
+toRadioButtons_: String -> Dict.Dict Int (Html.Html msg) -> Html.Html msg
+toRadioButtons_ name =
+    Dict.foldl (\num t list -> let n = String.fromInt num in
+        let id = name ++ n |> fieldID in list ++
+        [   Html.br [] []
+        ,   Html.input [Attr.type_ "radio", Attr.name name, Attr.id id, Attr.value n, Attr.checked (List.isEmpty list)] []
+        ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
+        ]
+    ) []
+    >> span [Attr.class "radioSelection"]
 
 decoder_: Model msg -> Decode.Decoder msg
 decoder_ model = let valueDecoder name = Decode.field "value" Decode.string |> Decode.field name in
