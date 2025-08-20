@@ -188,8 +188,7 @@ span.space {
 }
 .mathInput > .popup {
     z-index: 1;
-    display: flex;
-    flex-direction: row;
+    display: block;
     position: absolute;
     bottom: -50%;
     height: 50%;
@@ -199,9 +198,11 @@ span.space {
     overflow-x: scroll;
     overflow-y: hidden;
     box-sizing: border-box;
+    text-wrap: nowrap;
 }
 .mathInput > .popup a {
-    width: fit-content;
+    display: inline-block;
+    height: 100%;
 }
 .mathInput > .popup svg {
     height: 100%;
