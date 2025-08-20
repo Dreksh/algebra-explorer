@@ -2,9 +2,9 @@
     "name": "Differentiation",
     "functions":{
         "differentiate": {"arguments": 2, "commutative": false, "associative": false, "latex": "\\frac{d}{d\\param{1}}\\arg{2}"},
-        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"},
-        "sine": {"arguments": 1, "latex": "sin\\arg{1}"},
-        "cosine": {"arguments": 1, "latex": "cos\\arg{1}"}
+        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}", "alternativeNames": ["exp"]},
+        "sin": {"arguments": 1, "latex": "sin\\arg{1}", "alternativeNames": ["sine"]},
+        "cos": {"arguments": 1, "latex": "cos\\arg{1}", "alternativeNames": ["cosine"]}
     },
     "constants": {
         "e": "Math.E"
@@ -17,8 +17,8 @@
                 {"from": "\\differentiate(a,a)", "to": ["1"]},
                 {"from": "\\differentiate(a,\\power(a,n))", "to": ["n*\\power(a,n-1)"]},
                 {"from": "\\differentiate(a,\\power(e,a))", "to": ["\\power(e,a)"]},
-                {"from": "\\differentiate(a,\\sine(a))", "to": ["\\cosine(a)"]},
-                {"from": "\\differentiate(a,\\cosine(a))", "to": ["-\\sine(a)"]}
+                {"from": "\\differentiate(a,\\sin(a))", "to": ["\\cos(a)"]},
+                {"from": "\\differentiate(a,\\cos(a))", "to": ["-\\sin(a)"]}
             ]
         },
         {

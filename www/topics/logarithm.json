@@ -1,8 +1,8 @@
 {
     "name": "Logarithm",
     "functions":{
-        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"},
-        "logarithm": {"arguments": 2, "associative": false, "commutative": false, "latex": "log_\\param{1}\\arg{2}"},
+        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}", "alternativeNames": ["exp"]},
+        "log": {"arguments": 2, "associative": false, "commutative": false, "latex": "log_\\param{1}\\arg{2}"},
         "ln": {"arguments": 1, "latex": "ln(\\arg{1})"},
         "log10": {"arguments": 1, "latex": "log(\\arg{1})"}
     },
@@ -14,8 +14,16 @@
             "title": "Expand",
             "description": "Rewrite to add more details",
             "matches": [
-                {"from": "\\log10logarithm(a)", "to": ["\\logarithm(10,a)"]},
-                {"from": "\\lnlogarithm(a)", "to": ["\\logarithm(e,a)"]}
+                {"from": "\\log10(a)", "to": ["\\log(10,a)"]},
+                {"from": "\\ln(a)", "to": ["\\log(e,a)"]}
+            ]
+        },
+        {
+            "title": "Unexpand",
+            "description": "Rewrite the expanded logs into short-hand form",
+            "matches": [
+                {"from": "\\log(10,a)", "to": ["\\log10(a)"]},
+                {"from": "\\log(e,a)", "to": ["\\ln(a)"]}
             ]
         },
         {
@@ -28,7 +36,7 @@
                 }
             },
             "matches": [
-                {"from": "a", "to": ["\\logarithm(\\base,\\power(\\base, a))"]}
+                {"from": "a", "to": ["\\log(\\base,\\power(\\base, a))"]}
             ]
         },
         {   "title": "Change of base",
@@ -40,31 +48,47 @@
                 }
             },
             "matches": [
-                {"from": "\\logarithm(a,b)", "to": ["\\logarithm(\\base,b)/\\logarithm(\\base,a)"]}
+                {"from": "\\log(a,b)", "to": ["\\log(\\base,b)/\\log(\\base,a)"]}
             ]
         },
         {
             "title": "Merge",
             "description": "Extract a multiple from the power",
             "matches": [
-                {"from": "a\\logarithm(b,c)", "to": ["\\logarithm(b,\\power(c,a))"]},
-                {"from": "-\\logarithm(b,c)", "to": ["\\logarithm(b,\\power(c,-1))"]},
-                {"from": "\\logarithm(a,b)+\\log(a,c)", "to": ["\\logarithm(a,b*c)"]},
-                {"from": "\\logarithm(a,b)-\\log(a,c)", "to": ["\\logarithm(a,b/c)"]}
+                {"from": "a\\log(b,c)", "to": ["\\log(b,\\power(c,a))"]},
+                {"from": "-\\log(b,c)", "to": ["\\log(b,\\power(c,-1))"]},
+                {"from": "\\log(a,b)+\\log(a,c)", "to": ["\\log(a,b*c)"]},
+                {"from": "\\log(a,b)-\\log(a,c)", "to": ["\\log(a,b/c)"]},
+                {"from": "a\\log10(b)", "to": ["\\log10(\\power(b,a))"]},
+                {"from": "-\\log10(b)", "to": ["\\log10(\\power(b,-1))"]},
+                {"from": "\\log10(b)+\\log10(c)", "to": ["\\log10(b*c)"]},
+                {"from": "\\log10(b)-\\log10(c)", "to": ["\\log10(b/c)"]},
+                {"from": "a\\ln(b)", "to": ["\\ln(\\power(b,a))"]},
+                {"from": "-\\ln(b)", "to": ["\\ln(\\power(b,-1))"]},
+                {"from": "\\ln(b)+\\ln(c)", "to": ["\\ln(b*c)"]},
+                {"from": "\\ln(b)-\\ln(c)", "to": ["\\ln(b/c)"]}
             ]
         },
         {   "title": "Remove identity",
             "description": "Remove the log, since it doesn't have an impact anymore",
             "matches": [
-                {"from": "\\logarithm(a,a)", "to": ["1"]},
-                {"from": "\\logarithm(a,1)", "to": ["0"]}
+                {"from": "\\log(a,a)", "to": ["1"]},
+                {"from": "\\log(a,1)", "to": ["0"]},
+                {"from": "\\log10(10)", "to": ["1"]},
+                {"from": "\\log10(1)", "to": ["0"]},
+                {"from": "\\ln(e)", "to": ["1"]},
+                {"from": "\\ln(1)", "to": ["0"]}
             ]
         },
         {   "title": "Cancel out",
             "description": "Cancelling out the log and power",
             "matches": [
-                {"from": "\\power(a,\\logarithm(a,b))", "to": ["b"]},
-                {"from": "\\logarithm(a,\\power(a,b))", "to": ["b"]}
+                {"from": "\\power(a,\\log(a,b))", "to": ["b"]},
+                {"from": "\\log(a,\\power(a,b))", "to": ["b"]},
+                {"from": "\\power(10,\\log10(b))", "to": ["b"]},
+                {"from": "\\log10(\\power(10,b))", "to": ["b"]},
+                {"from": "\\power(e,\\ln(b))", "to": ["b"]},
+                {"from": "\\ln(\\power(e,b))", "to": ["b"]}
             ]
         }
     ]

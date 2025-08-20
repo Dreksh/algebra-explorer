@@ -1,10 +1,10 @@
 {
     "name": "Arithmetic",
     "functions":{
-        "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}, "latex": "+", "alternativeName": "plus"},
-        "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\times", "alternativeName": "times"},
-        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-", "alternativeName": "minus"},
-        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div", "alternativeName": "over"}
+        "+": {"arguments": 2, "associative": true, "commutative": true, "identity": 0, "javascript": {"type":"infix", "symbol": "+"}, "latex": "+", "alternativeNames": ["plus", "add"]},
+        "*": {"arguments": 2, "associative": true, "commutative": true, "identity": 1, "javascript": {"type":"infix", "symbol": "*"}, "latex": "\\times", "alternativeNames": ["times", "multiply"]},
+        "-": {"arguments": 1, "javascript":{"type":"prefix", "symbol": "-"}, "latex": "-", "alternativeNames": ["minus", "subtract"]},
+        "/": {"arguments": 1, "javascript":{"type":"prefix", "symbol":"1/"}, "latex": "\\div", "alternativeNames": ["over", "divide"]}
     },
     "constants": {},
     "actions": [

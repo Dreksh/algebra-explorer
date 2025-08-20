@@ -27,19 +27,19 @@ import UI.Menu as Menu
 type alias FunctionProp =
     {   javascript: Maybe Javascript_
     ,   latex: Maybe (Latex.Model ())
-    ,   alternativeName: Maybe String
+    ,   alternativeNames: List String
     }
 negateProp: FunctionProp
 negateProp =
     {   javascript = Just (PrefixOp "-")
     ,   latex = Just [Latex.Text {state=(), style=Nothing} "-"]
-    ,   alternativeName = Just "minus"
+    ,   alternativeNames = ["minus", "subtract"]
     }
 divisionProp_: FunctionProp
 divisionProp_ =
     {   javascript = Just (PrefixOp "1/")
     ,   latex = Just [Latex.SymbolPart {state=(), style=Nothing} Latex.Division]
-    ,   alternativeName = Just "over"
+    ,   alternativeNames = ["over", "divide"]
     }
 
 type Javascript_ =
@@ -97,11 +97,11 @@ type Event =
 
 coreFunctions_: Dict.Dict String {property: Math.FunctionProperty FunctionProp}
 coreFunctions_ = Dict.fromList
-    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "+"], alternativeName = Just "plus"}, name = "", associative = Just 0, commutative = True, children = []}})
-    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation], alternativeName = Just "times"}, name = "", associative = Just 1, commutative = True, children = []}})
+    [   ("+",{property= Math.BinaryNode {state = {javascript = InfixOp "+" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "+"], alternativeNames = ["plus", "add"]}, name = "", associative = Just 0, commutative = True, children = []}})
+    ,   ("*",{property= Math.BinaryNode {state = {javascript = InfixOp "*" |> Just, latex = Just [Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation], alternativeNames = ["times", "multiply"]}, name = "", associative = Just 1, commutative = True, children = []}})
     ,   ("-",{property= Math.UnaryNode {state = negateProp, name = "", child = Math.RealNode {state = negateProp, value = 0}}})
     ,   ("/",{property= Math.UnaryNode {state = divisionProp_, name = "", child = Math.RealNode {state = divisionProp_, value = 0}}})
-    ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "="], alternativeName = Just "equals"}, name = "", children = []}})
+    ,   ("=",{property= Math.DeclarativeNode {state = {javascript = InfixOp "=" |> Just, latex = Just [Latex.Text {state=(), style=Nothing} "="], alternativeNames = ["equals"]}, name = "", children = []}})
     ]
 
 init: Model
@@ -114,10 +114,10 @@ init =
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
 functionProperties model = model.constants
     |> Dict.foldl
-        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text {state=(), style=Just Latex.Emphasis} k], alternativeName = Nothing} k
+        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text {state=(), style=Just Latex.Emphasis} k], alternativeNames = []} k
             |> \entry -> Dict.insert k {property = entry, count = count} d
         ) model.functions
-    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symbol], alternativeName = Nothing} name
+    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symbol], alternativeNames = []} name
         |> \entry -> Dict.insert name {property = entry, count = 1} d
         ) dict Latex.greekLetters
 
@@ -515,7 +515,7 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
                         ,   latex = case Dict.get k Latex.greekLetters of
                             Nothing -> Just [Latex.Text {state=(), style=Just Latex.Emphasis} k]
                             Just symb -> Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symb]
-                        ,   alternativeName = Nothing
+                        ,   alternativeNames = []
                         } k
                         |> \entry -> Dict.insert k {property = entry} inner
                     ) functions vars
@@ -703,10 +703,10 @@ encodeFunctionProp prop =
     ]
 
 functionPropDecoder: Dec.Decoder FunctionProp
-functionPropDecoder = Dec.map3 FunctionProp
+functionPropDecoder = Dec.map3 (\a b c -> FunctionProp a b (Maybe.withDefault [] c))
     (Dec.maybe <| Dec.field "javascript" javascriptDecoder_)
     (Dec.maybe <| Dec.field "latex" <| Dec.andThen (Helper.resultToDecoder << Latex.parse) <| Dec.string)
-    (Dec.maybe <| Dec.field "alternativeName" Dec.string)
+    (Dec.maybe <| Dec.field "alternativeNames" <| Dec.list <| Dec.string)
 
 encodeTopic_: Topic -> Enc.Value
 encodeTopic_ topic = Enc.object

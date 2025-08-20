@@ -199,7 +199,7 @@ toLatex border parentPos pos (Scope _ children) =
 {- ## Updates -}
 
 allowedChars_: Set.Set Char
-allowedChars_ = String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789., "
+allowedChars_ = String.toList "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,"
     |> Set.fromList
 
 -- How long we will wait between character inputs where we assume they are within the same block of inputs
@@ -255,7 +255,7 @@ update funcProp event model = case event of
             then case String.uncons c of
                 Nothing -> (updatedModel, "", Cmd.none)
                 Just (char, _) -> if Set.member char allowedChars_
-                    then case insertChar_ funcProp char updatedModel of
+                    then case insertChar_ char updatedModel of
                         Err str -> (updatedModel, str, Cmd.none)
                         Ok (newModel) ->
                             ( {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor |> Just}
@@ -281,6 +281,9 @@ update funcProp event model = case event of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
                         '/' -> case insertScopeElement_ Nothing divideOp_ updatedModel of
+                            Err str -> (updatedModel, str, Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        ' ' -> case insertSpace_ funcProp updatedModel of
                             Err str -> (updatedModel, str, Cmd.none)
                             Ok newModel -> (newModel, "", Cmd.none)
                         _ -> (updatedModel, "'" ++ c ++ "' is not an allowed input", Cmd.none)
@@ -460,6 +463,7 @@ type TraversalError_  =
     BrokenCaret -- For when the position cannot be found
     | CannotSplitArgument_
     | CannotModifySection_
+    | DoesNotEndInKeyword_ String
 
 traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition)))
     -> Scope -> CaretPosition -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition))
@@ -491,53 +495,21 @@ traverse process (Scope detail children) caret = case caret of
 
 {- ## Insertion -}
 
-insertChar_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Char -> Model msg -> Result String (Model msg)
-insertChar_ funcProp char model = let (Scope detail children) = current model in
+insertChar_: Char -> Model msg -> Result String (Model msg)
+insertChar_ char model = let (Scope detail children) = current model in
     traverse
     (\parent input -> if parent.inseparable && char == ',' then Err CannotSplitArgument_
-        else
-        let
-            parser = replacementParser_ funcProp
-            updateString infront num behind string = case Parser.run parser string of
-                Ok ("", (fixed, index), "") -> Just
-                    (   infront ++ (fixed :: behind)
-                    ,   case index of
-                        Nothing -> [List.length infront + 1]
-                        Just n -> [List.length infront, n, 0]
-                    )
-                Ok ("", (fixed, index), after) -> Just
-                    (   infront ++ (fixed :: StrElement after :: behind)
-                    ,   case index of
-                        Nothing -> [List.length infront + 1]
-                        Just n -> [List.length infront, n, 0]
-                    )
-                Ok (before, (fixed, index), "") -> Just
-                    (   infront ++ (StrElement before :: fixed :: behind)
-                    ,   case index of
-                        Nothing -> [List.length infront + 2]
-                        Just n -> [List.length infront + 1, n, 0]
-                    )
-                Ok (before, (fixed, index), after) -> Just
-                    (   infront ++ (StrElement before :: fixed :: StrElement after :: behind)
-                    ,   case index of
-                        Nothing -> [List.length infront + 2]
-                        Just n -> [List.length infront + 1, n, 0]
-                    )
-                Err _ -> Just
-                    (   infront ++ (StrElement string :: behind)
-                    ,   if num == -1 then [List.length infront + 1]
-                        else [List.length infront, num + 1]
-                    )
-        in Ok
+        else Ok
         (   case input of
             TextCase prev str num next -> (String.left num str) ++String.fromChar char ++ (String.dropLeft num str)
-                |> updateString prev num next
+                |> \newStr -> Just (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
             IntermediateCase prev next -> case next of
-                (StrElement str::after) -> updateString prev 0 after (String.cons char str)
+                (StrElement str::after) -> Just (prev ++ (StrElement (String.cons char str) :: after), [List.length prev, 1])
                 _ -> let beforeLength = List.length prev - 1 in
                     case List.drop beforeLength prev of
-                        [StrElement str] -> updateString (List.take beforeLength prev) -1 next (str ++ String.fromChar char)
-                        _ -> updateString prev -1 next (String.fromChar char)
+                        [StrElement str] -> str ++ String.fromChar char
+                            |> \newStr -> Just (List.take beforeLength prev ++ (StrElement newStr :: next), [List.length prev])
+                        _ -> Just (prev ++ (StrElement (String.fromChar char)::next), [List.length prev + 1])
         )
     )
     (Scope detail children) model.cursor
@@ -545,39 +517,56 @@ insertChar_ funcProp char model = let (Scope detail children) = current model in
         Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
-replacementParser_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Parser.Parser (String, (ScopeElement, Maybe Int), String)
-replacementParser_ funcProp = Dict.toList funcProp
-    |> List.map (\(k, v) -> let match = v.property |> Math.getState |> .alternativeName |> Maybe.withDefault k in
-        ((-(String.length match), match, k), v)
-    ) -- So we match longer strings first
-    |> List.sortBy Tuple.first
-    |> List.map (\((_, match, key), prop) ->
-        let
-            (fixed, latex, _) = funcPropToLatex_ key (Just prop)
-            element = fixedFrom_ (if Set.member key defaultOps then key else "\\" ++ key) fixed Array.empty latex
-            first = case element of
-                Fixed n -> n.firstNode
-                _ -> Nothing
-        in
-            \prevStr -> Parser.succeed (Parser.Done (prevStr, Just (element, first))) |. Parser.token match
+insertSpace_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String (Model msg)
+insertSpace_ funcProp model =
+    let
+        (Scope detail children) = current model
+        updateIndex currentIndex index = case index of
+            Nothing -> [currentIndex + 1]
+            Just n -> [currentIndex, n, 0]
+        updateString prev front back next = case getSubstitution_ funcProp front of
+            Nothing -> Err (DoesNotEndInKeyword_ front)
+            Just ("", fixed, index) -> if back == ""
+                then Ok (Just (prev ++ (fixed :: next), updateIndex (List.length prev) index))
+                else Ok (Just (prev ++ (fixed :: StrElement back :: next), updateIndex (List.length prev) index))
+            Just (before, fixed, index) -> if back == ""
+                then Ok (Just (prev ++ (StrElement before :: fixed :: next), updateIndex (List.length prev + 1) index))
+                else Ok (Just (prev ++ (StrElement before :: fixed :: StrElement back :: next), updateIndex (List.length prev + 1) index))
+    in
+    traverse
+    (\_ input -> case input of
+        TextCase prev str num next -> updateString prev (String.left num str) (String.dropLeft num str) next
+        IntermediateCase prev next -> let beforeLength = List.length prev - 1 in
+            case List.drop beforeLength prev of
+                [StrElement str] -> updateString (List.take beforeLength prev) str "" next
+                _ -> Err (DoesNotEndInKeyword_ "")
     )
-    |> \choices -> Parser.succeed Tuple.pair
-        |= Parser.loop ("", Nothing)
-        (\(prevStr, _) -> Parser.oneOf
-            (   List.map (\choice -> choice prevStr) choices
-            ++  [   Parser.succeed (\c -> Parser.Loop (prevStr ++ c, Nothing))
-                    |= Parser.variable {start = \char -> Set.member char allowedChars_, inner = \_ -> False, reserved = Set.empty}
-                ]
-            )
-        )
-        |= Parser.oneOf
-            [   Parser.variable {start = \char -> Set.member char allowedChars_, inner = \char -> Set.member char allowedChars_, reserved = Set.empty}
-            ,   Parser.succeed ""
-            ]
-        |> Parser.andThen (\((before, fixed), after) -> case fixed of
-            Nothing -> Parser.problem "no fixed symbols found"
-            Just f -> Parser.succeed (before, f, after)
-        )
+    (Scope detail children) model.cursor
+    |> \res -> case res of
+        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Err (DoesNotEndInKeyword_ str) -> Err ("No keyword found at the end of '" ++ str ++ "'")
+        _ -> Err "Something went wrong"
+
+getSubstitution_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> Maybe (String, ScopeElement, Maybe Int)
+getSubstitution_ funcProp str = Dict.toList funcProp
+    |> List.concatMap (\(k, v) -> k :: (v.property |> Math.getState |> .alternativeNames)
+        |> List.map (\match -> ((-(String.length match), match, k), v))
+    )
+    |> List.sortBy Tuple.first -- match longer strings first
+    |> List.foldl (\((_, match, key), prop) res -> case res of
+        Just _ -> res
+        Nothing -> if String.endsWith match str
+            then
+                let
+                    (fixed, latex, _) = funcPropToLatex_ key (Just prop)
+                    element = fixedFrom_ (if Set.member key defaultOps then key else "\\" ++ key) fixed Array.empty latex
+                    first = case element of
+                        Fixed n -> n.firstNode
+                        _ -> Nothing
+                in
+                Just (String.left (String.length str - String.length match) str, element, first)
+            else Nothing
+    ) Nothing
 
 insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
 insertScopeElement_ firstNode element model = let (Scope detail children) = current model in

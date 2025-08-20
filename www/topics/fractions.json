@@ -1,7 +1,7 @@
 {
     "name": "Fractions",
     "functions":{
-        "fraction": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\frac{\\arg{1}}{\\arg{2}}"},
+        "fraction": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\frac{\\arg{1}}{\\arg{2}}", "alternativeNames": ["frac"]},
         "mixedfraction": {"arguments": 3, "latex": "\\arg{1}\\frac{\\arg{2}}{\\arg{3}}"}
     },
     "constants": {},

@@ -1,7 +1,7 @@
 {
     "name": "Power",
     "functions":{
-        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}"}
+        "power": {"arguments": 2, "associative": false, "commutative": false, "latex": "\\arg{1}^\\arg{2}", "alternativeNames": ["exp"]}
     },
     "constants": {},
     "actions": [

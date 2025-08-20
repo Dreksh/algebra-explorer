@@ -1,11 +1,11 @@
 {
     "name": "Trigonometry",
     "functions":{
-        "degree": {"arguments": 1, "latex": "\\arg{1}^\\circ"},
-        "sine": {"arguments": 1, "latex": "sin\\arg{1}"},
-        "cosine": {"arguments": 1, "latex": "cos\\arg{1}"},
-        "tangent": {"arguments": 1, "latex": "tan\\arg{1}"},
-        "sqrt": {"arguments": 1, "latex": "\\sqrt{\\arg{1}}"}
+        "degrees": {"arguments": 1, "latex": "\\arg{1}^\\circ", "alternativeNames": ["degree"]},
+        "sin": {"arguments": 1, "latex": "sin\\arg{1}", "alternativeNames": ["sine"]},
+        "cos": {"arguments": 1, "latex": "cos\\arg{1}", "alternativeNames": ["cosine"]},
+        "tan": {"arguments": 1, "latex": "tan\\arg{1}", "alternativeNames": ["tangent"]},
+        "sqrt": {"arguments": 1, "latex": "\\sqrt{\\arg{1}}", "alternativeNames": ["root"]}
     },
     "constants": {
         "pi": "Math.PI",
@@ -16,75 +16,75 @@
             "title": "To Radians",
             "description": "Convert an angle in degrees to radians",
             "matches": [
-                {"from": "\\degree(a)", "to": ["a*\\pi/180"]}
+                {"from": "\\degrees(a)", "to": ["a*\\pi/180"]}
             ]
         },
         {
             "title": "Wrap around",
             "description": "Angles keep looping",
             "matches": [
-                {"from": "\\degree(360+a)", "to": ["\\degree(a)"]},
-                {"from": "\\degree(2\\pi+a)", "to": ["\\degree(a)"]}
+                {"from": "\\degrees(360+a)", "to": ["\\degrees(a)"]},
+                {"from": "\\degrees(2\\pi+a)", "to": ["\\degrees(a)"]}
             ]
         },
         {
             "title": "Negative Angles",
             "description": "Trig identities with negative angles",
             "matches": [
-                {"from": "\\sine(a)", "to": ["-\\sine(-a)"]},
-                {"from": "\\cosine(a)", "to": ["\\cosine(-a)"]},
-                {"from": "\\tangent(a)", "to": ["-\\tangent(-a)"]}
+                {"from": "\\sin(a)", "to": ["-\\sin(-a)"]},
+                {"from": "\\cos(a)", "to": ["\\cos(-a)"]},
+                {"from": "\\tan(a)", "to": ["-\\tan(-a)"]}
             ]
         },
         {
             "title": "Pythagorus",
             "description": "Applying pythagorus to the right-angle triangle",
-            "matches": [{"from": "\\sine(a)\\sine(a)+\\cosine(a)\\cosine(a)", "to": ["1"]}]
+            "matches": [{"from": "\\sin(a)\\sin(a)+\\cos(a)\\cos(a)", "to": ["1"]}]
         },
         {   "title": "Compound Angle",
             "description": "When you add angles",
             "matches": [
-                {"from": "\\sine(a+b)", "to": ["\\sine(a)\\cosine(b)+\\cosine(a)\\sine(b)"]},
-                {"from": "\\cosine(a+b)", "to": ["\\cosine(a)\\cosine(b)-\\sine(a)\\sine(b)"]},
-                {"from": "\\tangent(a+b)", "to": ["(\\tangent(a)+\\tangent(b))/(1-\\tangent(a)\\tangent(b))"]}
+                {"from": "\\sin(a+b)", "to": ["\\sin(a)\\cos(b)+\\cos(a)\\sin(b)"]},
+                {"from": "\\cos(a+b)", "to": ["\\cos(a)\\cos(b)-\\sin(a)\\sin(b)"]},
+                {"from": "\\tan(a+b)", "to": ["(\\tan(a)+\\tan(b))/(1-\\tan(a)\\tan(b))"]}
             ]
         },
         {   "title": "Resolve",
             "description": "Some values can be resolved to known numbers",
             "matches": [
-                {"from": "\\sine(0)", "to": ["0"]},
-                {"from": "\\cosine(0)", "to": ["1"]},
-                {"from": "\\tangent(0)", "to": ["0"]},
-                {"from": "\\sine(\\pi/6)", "to": ["1/2"]},
-                {"from": "\\cosine(\\pi/6)", "to": ["\\sqrt(3)/2"]},
-                {"from": "\\tangent(\\pi/6)", "to": ["1/\\sqrt(3)"]},
-                {"from": "\\sine(\\degree(30))", "to": ["1/2"]},
-                {"from": "\\cosine(\\degree(30))", "to": ["\\sqrt(3)/2"]},
-                {"from": "\\tangent(\\degree(30))", "to": ["1/\\sqrt(3)"]},
-                {"from": "\\sine(\\pi/4)", "to": ["1/\\sqrt(2)"]},
-                {"from": "\\cosine(\\pi/4)", "to": ["1/\\sqrt(2)"]},
-                {"from": "\\tangent(\\pi/4)", "to": ["1"]},
-                {"from": "\\sine(\\degree(45))", "to": ["1/\\sqrt(2)"]},
-                {"from": "\\cosine(\\degree(45))", "to": ["1/\\sqrt(2)"]},
-                {"from": "\\tangent(\\degree(45))", "to": ["1"]},
-                {"from": "\\sine(\\pi/3)", "to": ["\\sqrt(3)/2"]},
-                {"from": "\\cosine(\\pi/3)", "to": ["1/2"]},
-                {"from": "\\tangent(\\pi/3)", "to": ["\\sqrt(3)"]},
-                {"from": "\\sine(\\degree(60))", "to": ["\\sqrt(3)/2"]},
-                {"from": "\\cosine(\\degree(60))", "to": ["1/2"]},
-                {"from": "\\tangent(\\degree(60))", "to": ["\\sqrt(3)"]},
-                {"from": "\\sine(\\pi/2)", "to": ["1"]},
-                {"from": "\\cosine(\\pi/2)", "to": ["0"]},
-                {"from": "\\tangent(\\pi/2)", "to": ["\\infty"]},
-                {"from": "\\sine(\\degree(90))", "to": ["1"]},
-                {"from": "\\cosine(\\degree(90))", "to": ["0"]},
-                {"from": "\\tangent(\\degree(90))", "to": ["\\infty"]},
-                {"from": "\\sine(\\pi)", "to": ["0"]},
-                {"from": "\\cosine(\\pi)", "to": ["-1"]},
-                {"from": "\\tangent(\\pi)", "to": ["0"]},
-                {"from": "\\sine(\\degree(180))", "to": ["0"]},
-                {"from": "\\cosine(\\degree(180))", "to": ["-1"]},
-                {"from": "\\tangent(\\degree(180))", "to": ["0"]}
+                {"from": "\\sin(0)", "to": ["0"]},
+                {"from": "\\cos(0)", "to": ["1"]},
+                {"from": "\\tan(0)", "to": ["0"]},
+                {"from": "\\sin(\\pi/6)", "to": ["1/2"]},
+                {"from": "\\cos(\\pi/6)", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\tan(\\pi/6)", "to": ["1/\\sqrt(3)"]},
+                {"from": "\\sin(\\degrees(30))", "to": ["1/2"]},
+                {"from": "\\cos(\\degrees(30))", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\tan(\\degrees(30))", "to": ["1/\\sqrt(3)"]},
+                {"from": "\\sin(\\pi/4)", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\cos(\\pi/4)", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\tan(\\pi/4)", "to": ["1"]},
+                {"from": "\\sin(\\degrees(45))", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\cos(\\degrees(45))", "to": ["1/\\sqrt(2)"]},
+                {"from": "\\tan(\\degrees(45))", "to": ["1"]},
+                {"from": "\\sin(\\pi/3)", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\cos(\\pi/3)", "to": ["1/2"]},
+                {"from": "\\tan(\\pi/3)", "to": ["\\sqrt(3)"]},
+                {"from": "\\sin(\\degrees(60))", "to": ["\\sqrt(3)/2"]},
+                {"from": "\\cos(\\degrees(60))", "to": ["1/2"]},
+                {"from": "\\tan(\\degrees(60))", "to": ["\\sqrt(3)"]},
+                {"from": "\\sin(\\pi/2)", "to": ["1"]},
+                {"from": "\\cos(\\pi/2)", "to": ["0"]},
+                {"from": "\\tan(\\pi/2)", "to": ["\\infty"]},
+                {"from": "\\sin(\\degrees(90))", "to": ["1"]},
+                {"from": "\\cos(\\degrees(90))", "to": ["0"]},
+                {"from": "\\tan(\\degrees(90))", "to": ["\\infty"]},
+                {"from": "\\sin(\\pi)", "to": ["0"]},
+                {"from": "\\cos(\\pi)", "to": ["-1"]},
+                {"from": "\\tan(\\pi)", "to": ["0"]},
+                {"from": "\\sin(\\degrees(180))", "to": ["0"]},
+                {"from": "\\cos(\\degrees(180))", "to": ["-1"]},
+                {"from": "\\tan(\\degrees(180))", "to": ["0"]}
             ]
         }
     ]

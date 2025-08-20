@@ -1,6 +1,6 @@
 {   "name": "Rock, Paper, Scissors",
     "functions": {
-        "vs": {"arguments": 2, "associative": false, "commutative": true}
+        "vs": {"arguments": 2, "associative": false, "commutative": true, "alternativeNames": ["play"]}
     },
     "constants": {
         "rock": "",
