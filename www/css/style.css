@@ -50,7 +50,6 @@ button.noDefault {
     padding: 0;
     box-sizing: border-box;
     pointer-events: none;
-    z-index: 1;
 }
 #leftPane {
     flex-grow: 1;

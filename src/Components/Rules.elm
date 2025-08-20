@@ -639,7 +639,7 @@ expressionDecoder_: Dict.Dict String {a | property: Math.FunctionProperty Functi
 expressionDecoder_ funcProps args =
     let
         checkUnknowns name numArgs dict = case Dict.get name dict of
-            Nothing -> Ok (Dict.insert name (0, True) dict)
+            Nothing -> Ok (Dict.insert name (numArgs, True) dict)
             Just (n, _) -> if n == numArgs then Ok (Dict.insert name (n, False) dict)
                 else if n == 0 || numArgs == 0 then Err "Variable cannot be used as a function"
                 else Err "Functions has different number of inputs"

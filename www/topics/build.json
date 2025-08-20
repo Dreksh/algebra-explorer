@@ -1,5 +1,5 @@
 {
-    "name": "Build",
+    "name": "Play",
     "functions":{},
     "constants": {},
     "actions": [
@@ -7,8 +7,10 @@
             "title": "Replace",
             "description": "Operates on an expression to generate a new one. It does not guarantee equality when used in an equation.",
             "parameters": {
-                "\\f(x)": "The function to apply to any node",
-                "example": "x"
+                "\\f(x)": {
+                    "description": "The function to apply to any node",
+                    "example": "x"
+                }
             },
             "matches": [
                 {"from": "a", "to": ["\\f(a)"]}
