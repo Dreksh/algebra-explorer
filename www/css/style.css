@@ -119,8 +119,9 @@ span.space {
     justify-content: start;
 }
 .textbar img {
-    height: 2rem;
-    margin: 0 0.5rem;
+    max-height: 2rem;
+    max-width: 2rem;
+    margin: 0 1rem;
 }
 .input > ul {
     width: 70%;
@@ -361,6 +362,8 @@ span.space {
 .notificationMessage >pre {
     float: left;
     margin: 0.2rem 0;
+    max-width: 90%;
+    text-wrap: wrap;
     padding: 0;
     vertical-align: center;
 }
