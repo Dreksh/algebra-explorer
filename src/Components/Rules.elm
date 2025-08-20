@@ -526,7 +526,16 @@ ruleDecoder_: Dict.Dict String {a | property: Math.FunctionProperty FunctionProp
 ruleDecoder_ knownFuncs = Dec.map3 (\a b c -> (a,b,c))
     (Dec.field "title" Dec.string)
     (Dec.field "description" Dec.string)
-    (Dec.maybe (Dec.field "parameters" (parameterDecoder_ knownFuncs)) |> Dec.map (Maybe.withDefault (Dict.empty, Dict.empty)))
+    (Dec.oneOf
+        -- Do not use Dec.maybe, since it returns 'Ok Nothing' if the parameters type is malformed
+        [   Dec.field "parameters" Dec.value
+        ,   Dec.succeed (Enc.object [])
+        ]
+        |> Dec.andThen (\val -> case Dec.decodeValue (parameterDecoder_ knownFuncs) val of
+            Ok res -> Dec.succeed res
+            Err e -> Dec.fail (Dec.errorToString e)
+        )
+    )
     |> Dec.andThen (\((title, description, (parameters, args))) -> -- Validate that both lhs and rhs has symbols covered
         Dec.list (
             (Dec.field "from" (expressionDecoder_ knownFuncs args))
