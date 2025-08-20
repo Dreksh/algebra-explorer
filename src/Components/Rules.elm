@@ -1,13 +1,11 @@
-module Components.Rules exposing (Model, Event(..), Parameter, Topic, Rule, Source, init,
+module Components.Rules exposing (Model, Event(..), LoadState(..), Parameter, Topic, Rule, Source, init,
     FunctionProp, negateProp, functionProperties, toLatex, toSymbol, process,
     addTopic, deleteTopic, addSources, topicDecoder, loadedTopics,
-    evaluateStr, menuTopics, encode, decoder, sourceDecoder,
+    evaluateStr, encode, decoder, sourceDecoder,
     encodeFunctionProp, functionPropDecoder
     )
 
 import Dict
-import Html exposing (a, h3, p, text)
-import Html.Attributes exposing (class, href, title)
 import Json.Decode as Dec
 import Json.Encode as Enc
 import Set
@@ -16,9 +14,6 @@ import Helper
 import Algo.Matcher as Matcher
 import Algo.Math as Math
 import Components.Latex as Latex
-import UI.HtmlEvent as HtmlEvent
-import UI.Icon as Icon
-import UI.Menu as Menu
 
 {-
 ## Modeling rules
@@ -78,7 +73,7 @@ type alias Topic =
 type alias Model =
     {   functions: Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
     ,   constants: Dict.Dict String (Maybe String, Int) -- Number of topics that rely on the constant
-    ,   topics: Dict.Dict String (LoadState_ Topic)
+    ,   topics: Dict.Dict String (LoadState Topic)
     }
 
 type alias Source =
@@ -87,9 +82,9 @@ type alias Source =
     ,   preinstall: Bool
     }
 
-type LoadState_ obj =
-    NotInstalled_ Source
-    | Installed_ (Maybe Source) obj
+type LoadState obj =
+    NotInstalled Source
+    | Installed (Maybe Source) obj
 
 type Event =
     Download String
@@ -334,15 +329,15 @@ addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing
                 |   functions = functions
                 ,   constants = constants
                 ,   topics = (  case (Dict.get topic.name model.topics, url) of
-                        (Nothing, Nothing) -> Installed_ Nothing topic
-                        (Nothing, Just u) -> Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
-                        (Just (NotInstalled_ s), Nothing) -> Installed_ Nothing topic
-                        (Just (NotInstalled_ s), Just u) -> if s.url == u then Installed_ (Just s) topic
-                            else Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
-                        (Just (Installed_ _ _), Nothing) -> Installed_ Nothing topic
-                        (Just (Installed_ Nothing _), Just u) -> Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
-                        (Just (Installed_ (Just s) _), Just u) -> if s.url == u then Installed_ (Just s) topic
-                            else Installed_ (Just {url = u, description = "No description provided", preinstall = False}) topic
+                        (Nothing, Nothing) -> Installed Nothing topic
+                        (Nothing, Just u) -> Installed (Just {url = u, description = "No description provided", preinstall = False}) topic
+                        (Just (NotInstalled s), Nothing) -> Installed Nothing topic
+                        (Just (NotInstalled s), Just u) -> if s.url == u then Installed (Just s) topic
+                            else Installed (Just {url = u, description = "No description provided", preinstall = False}) topic
+                        (Just (Installed _ _), Nothing) -> Installed Nothing topic
+                        (Just (Installed Nothing _), Just u) -> Installed (Just {url = u, description = "No description provided", preinstall = False}) topic
+                        (Just (Installed (Just s) _), Just u) -> if s.url == u then Installed (Just s) topic
+                            else Installed (Just {url = u, description = "No description provided", preinstall = False}) topic
                     )
                     |> \t -> Dict.insert topic.name t model.topics
                 }
@@ -351,7 +346,7 @@ addTopic url topic m = let model = deleteTopic topic.name m in -- Clear Existing
 
 deleteTopic: String -> Model -> Model
 deleteTopic name model = case Dict.get name model.topics of
-    Just (Installed_ url topic) ->
+    Just (Installed url topic) ->
         let
             newFunctions = topic.functions |> Dict.foldl (\n _ newDict -> case Dict.get n newDict of
                     Nothing -> newDict
@@ -369,7 +364,7 @@ deleteTopic name model = case Dict.get name model.topics of
             {   model
             |   topics = case url of
                     Nothing -> Dict.remove name model.topics
-                    Just existing -> Dict.insert name (NotInstalled_ existing) model.topics
+                    Just existing -> Dict.insert name (NotInstalled existing) model.topics
             ,   constants = newConstants
             ,   functions = newFunctions
             }
@@ -378,7 +373,7 @@ deleteTopic name model = case Dict.get name model.topics of
 loadedTopics: Model -> List Topic
 loadedTopics model = Dict.toList model.topics
     |> List.filterMap (\(_, state) -> case state of
-        Installed_ _ obj -> Just obj
+        Installed _ obj -> Just obj
         _ -> Nothing
     )
 
@@ -387,9 +382,9 @@ addSources map model =
     {   model
     |   topics = Dict.foldl (\name url dict ->
             case Dict.get name dict of
-                Nothing -> Dict.insert name (NotInstalled_ url) dict
+                Nothing -> Dict.insert name (NotInstalled url) dict
                 Just existing -> case existing of
-                    Installed_ Nothing obj -> Dict.insert name (Installed_ (Just url) obj) dict
+                    Installed Nothing obj -> Dict.insert name (Installed (Just url) obj) dict
                     _ -> dict -- Don't override existing topics
         )
         model.topics
@@ -430,62 +425,6 @@ evaluateStr_ model root = (
         Math.GenericNode s -> Helper.resultList (\child list -> evaluateStr_ model child |> Result.map (\c -> c::list)) [] s.children
             |> Result.andThen (List.reverse >> toJavascriptString_ model s.name)
     ) |> Result.map (\str -> "(" ++ str ++ ")" )
-
-{-
-## UI
--}
-
-menuTopics: (Event -> msg) -> Model -> List (Menu.Part msg)
-menuTopics converter model = Dict.foldl (\k t -> (::)
-        (case t of
-            NotInstalled_ source -> Menu.Section
-                {name = k, icon = Just (\c -> Icon.download [HtmlEvent.onClick (converter (Download source.url)), Icon.class "clickable", Icon.class c])}
-                [   Menu.Content [] [a [href source.url, class "clickable"] [text "View source"]]
-                ,   Menu.Content [] [p [] [text source.description]]
-                ]
-            Installed_ s topic -> Menu.Section
-                {name = topic.name, icon = Just (\c -> a [HtmlEvent.onClick (converter (Delete topic.name)), class "clickable", class c] [text "x"])}
-                (   [   case s of
-                            Just source -> Menu.Content [] [a [href source.url, class "clickable"] [text "View source"] ]
-                            Nothing -> Menu.Content [] [p [] [text "This is an uploaded topic"]]
-                    ,   Menu.Content [] [p [] [text (Maybe.map .description s |> Maybe.withDefault "<No description provided>")]]
-                    ]
-                ++ List.map (\rule -> Menu.Section {name = rule.title, icon = Nothing}
-                    [  Menu.Content [] ( List.concat
-                        [ [h3 [] [text "Rules"]]
-                        , List.map (\match -> p [] [text (match.from.name ++"→"++ (List.map .name match.to |> String.join ", "))]) rule.matches
-                        , [   h3 [] [text "Description"], p [] [text rule.description]]
-                        ])
-                    ]
-                )
-                    topic.rules
-                )
-        )
-    )
-    [   Menu.Section {name = "Core", icon = Nothing}
-        [   Menu.Content [] [p [] [text "Covers the basic interactions in this block representation"]]
-        ,   Menu.Section {name = "Evaluate", icon = Nothing}
-            [   Menu.Content []
-                [   h3 [] [text "Convert expression into a single number"]
-                ,   p [] [text "If the section does not contain any unknown variables, then the calculator can crunch the numbers to return a value."]
-                ]
-            ]
-        ,   Menu.Section {name = "Expand", icon = Nothing}
-            [   Menu.Content []
-                [   h3 [] [text "Given x=y, f(x)=f(y)"]
-                ,   p [] [text "Modify the number based on some calculation. Use this to split the number up into small things, i.e. using 2+3=5 to make 5 into 2+3"]
-                ]
-            ]
-        ,   Menu.Section {name = "Substitute", icon = Nothing}
-            [   Menu.Content []
-                [   h3 [] [text "Given x=y, f(x)=f(y)"]
-                ,   p [] [text "Since the equation provided means that both sides have the same value, the statement will remain true when replacing all occurrences with one by the other."]
-                ]
-            ]
-        ]
-    ]
-    model.topics
-    |> List.reverse
 
 {-
 ## Topic Parser
@@ -674,8 +613,8 @@ encode model = Enc.object
     [   ("functions", Enc.dict identity (\prop -> Enc.object [("properties", encodeFProp_ prop.property), ("count", Enc.int prop.count)] ) model.functions)
     ,   ("constants", Enc.dict identity (\(name, count) -> Enc.object [("name", encMaybeString name), ("count", Enc.int count)]) model.constants)
     ,   ("topics", Enc.dict identity (\loadState -> case loadState of
-            NotInstalled_ source -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string source.url),("description", Enc.string source.description)]
-            Installed_ source topic -> Enc.object
+            NotInstalled source -> Enc.object [("type", Enc.string "notInstalled"),("url", Enc.string source.url),("description", Enc.string source.description)]
+            Installed source topic -> Enc.object
                 (   [   ("type", Enc.string "installed")
                     ,   ("topic", encodeTopic_ topic)
                     ]
@@ -735,8 +674,8 @@ decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
     (Dec.field "functions" <| Dec.dict <| Dec.map2 (\p c -> {property = p, count = c}) (Dec.field "properties" functionDecoder_)  (Dec.field "count" Dec.int))
     (Dec.field "constants" <| Dec.dict <| Dec.map2 Tuple.pair (Dec.maybe <| Dec.field "name" Dec.string) (Dec.field "count" Dec.int))
     (Dec.field "topics" <| Dec.dict <| Dec.andThen (\s -> case s of
-        "notInstalled" -> Dec.map NotInstalled_ sourceDecoder
-        "installed" -> Dec.map2 Installed_ (Dec.maybe <| sourceDecoder) (Dec.field "topic" topicDecoder)
+        "notInstalled" -> Dec.map NotInstalled sourceDecoder
+        "installed" -> Dec.map2 Installed (Dec.maybe <| sourceDecoder) (Dec.field "topic" topicDecoder)
         _ -> Dec.fail ("Unknown loadState: " ++ s)
     ) <| Dec.field "type" Dec.string
     )

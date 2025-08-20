@@ -491,7 +491,7 @@ view core = let model = core.swappable in
                             (Display.menu DisplayEvent model.display)
                         ,   Tutorial.menu TutorialEvent model.tutorial
                         ,   Menu.Section {name = "Topics", icon = Just (\c -> a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable", class c] [text "+"])}
-                            (Rules.menuTopics RuleEvent model.rules)
+                            (Menu.rules RuleEvent model.rules)
                         ]
                     ,   Icon.menu (List.filterMap identity
                             [ id "menuToggle" |> Just

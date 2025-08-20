@@ -246,6 +246,7 @@ span.space {
 }
 #menu p {
     vertical-align: middle;
+    height: 1rem;
 }
 #menu li {
     list-style: none;
