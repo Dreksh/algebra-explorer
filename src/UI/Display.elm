@@ -655,7 +655,7 @@ views converter actionConvert model =
                                 ]
                                 else [class "contextualDisabled"]
                             )
-                            [div [class "contextualActionLabel"] [text "Undo"]]  -- TODO: make these icons instead
+                            [div [class "contextualActionLabel"] [Icon.undo []]]
                         ,   div
                             (   class "contextualAction" :: if History.canRedo entry.history then
                                 [   class "clickable"
@@ -665,7 +665,7 @@ views converter actionConvert model =
                                 ]
                                 else [class "contextualDisabled"]
                             )
-                            [div [class "contextualActionLabel"] [text "Redo"]]
+                            [div [class "contextualActionLabel"] [Icon.redo []]]
                         ]
                         :: if Set.isEmpty highlight then [] else Actions.viewContextual actionConvert model.actions
                     )

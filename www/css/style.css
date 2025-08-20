@@ -451,6 +451,9 @@ dialog svg {
     background-color: var(--color-textbox-alternate);
     border-radius: 0.4rem;
 }
+.contextualActionLabel > svg {
+    height: 1rem;
+}
 .contextualDisabled {
     pointer-events: none;
     color: var(--color-background);
