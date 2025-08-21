@@ -342,6 +342,10 @@ span.space {
     border-radius: 0.5rem;
     pointer-events: auto;
 }
+.notificationMessage * {
+    -webkit-user-select: text;
+    user-select: text;
+}
 .notificationError {
     background-color: var(--color-error);
 }

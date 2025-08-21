@@ -139,6 +139,7 @@ encodeFunctionProperty stateEnc fp =
                     )
                 ]
                 ++ stateEnc n.state
+            DeclarativeNode n -> ("arguments",Encode.int 2) :: stateEnc n.state
             _ -> stateEnc (getState fp)
     )
     |> Encode.object

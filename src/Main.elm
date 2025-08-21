@@ -692,6 +692,7 @@ saveFile model = Encode.encode 0
                 ) model.evaluator
             )
         ,   ("showMenu", Encode.bool model.showMenu)
+        ,   ("showActions", Encode.bool model.showActions)
         ]
     )
     |> FDownload.string "math.json" "application/json"

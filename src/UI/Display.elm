@@ -775,8 +775,8 @@ entryDecoder_: Decode.Decoder TmpEntry_
 entryDecoder_ = Decode.map4 TmpEntry_
     (Decode.field "history" <| History.decoder <| historyStateDecoder_ )
     (Decode.maybe <| Decode.field "view" <| Draggable.decoder)
-    (Decode.field "show" <| Decode.bool)
     (Decode.field "showHistory" Decode.bool)
+    (Decode.field "show" <| Decode.bool)
 
 historyStateDecoder_: Decode.Decoder (FullEquation, Latex.Model State)
 historyStateDecoder_ = Decode.map2 Tuple.pair

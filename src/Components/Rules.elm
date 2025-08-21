@@ -648,6 +648,7 @@ encodeFunctionProp prop =
             Nothing -> Enc.null
             Just l -> Latex.unparse l |> Enc.string
         )
+    ,   ("alternativeNames", Enc.list Enc.string prop.alternativeNames)
     ]
 
 functionPropDecoder: Dec.Decoder FunctionProp
@@ -674,9 +675,19 @@ encodeRule_: Rule -> Enc.Value
 encodeRule_ rule = Enc.object
     [   ("title", Enc.string rule.title)
     ,   ("description", Enc.string rule.description)
-    ,   ("parameters", Enc.object (Dict.toList rule.parameters |> List.map (\(_, p) -> (p.name, Enc.string p.description) )))
+    ,   ("parameters", Enc.object (Dict.values rule.parameters |> List.map (\p -> encodeParameter_ p)))
     ,   ("matches", Enc.list (\match -> Enc.object [("from", Enc.string match.from.name), ("to", Enc.list (.name >> Enc.string) match.to)]) rule.matches)
     ]
+
+encodeParameter_: Parameter -> (String, Enc.Value)
+encodeParameter_ p =
+    (   if List.isEmpty p.arguments then "\\" ++ p.name
+        else "\\" ++ p.name ++ "(" ++ (String.join "," p.arguments) ++ ")"
+    ,   Enc.object
+        [   ("description", Enc.string p.description)
+        ,   ("example", Enc.string p.example)
+        ]
+    )
 
 decoder: Dec.Decoder Model
 decoder = Dec.map3 (\f c t -> {functions = f, constants = c, topics = t})
