@@ -1,27 +1,25 @@
 function run() {
     // Update --n variable in css & prepare anchors
-    let index = 0
-    for (let node of document.getElementsByTagName("h2")) {
-        let ref = document.createElement("a");
-        ref.innerHTML = node.innerHTML;
-        ref.tabIndex = 0;
-        let id = node.innerHTML.replace(/\W+/g, '-').toLowerCase();
-        ref.href = "#" + id;
-        node.replaceChildren(ref);
-        node.style.setProperty('--n', index.toString());
+    let navbar = document.getElementsByTagName("nav");
+    if (navbar.length != 0) {
+        let bar = navbar[0];
+        for (let node of document.getElementsByTagName("h2")) {
+            let ref = document.createElement("a");
+            ref.innerHTML = node.innerHTML;
+            let id = node.innerHTML.replace(/\W+/g, '-').toLowerCase();
+            ref.href = "#" + id;
+            bar.insertAdjacentElement("beforeend", ref);
 
-        let anchor = document.createElement("a");
-        anchor.className = "anchor"
-        anchor.id = id;
-        anchor.style.setProperty('--n', index.toString());
-        node.insertAdjacentElement("beforebegin", anchor);
-        index++;
+            let anchor = document.createElement("a");
+            anchor.id = id;
+            node.insertAdjacentElement("beforebegin", anchor);
+        }
     }
     // Set callbacks on try-it-out
     for (let node of document.getElementsByClassName("try-it-out")) {
         let removalTime = null;
-        let button = document.createElement("h3");
-        button.innerHTML = "> Try it Out!"
+        let button = document.createElement("a");
+        button.innerHTML = "<h3>&gt; Try it Out! (Click to expand)</h3>"
         button.addEventListener("click", () => {
             if (node.className == "try-it-out") {
                 node.className = "try-it-out expand";
@@ -45,15 +43,4 @@ function run() {
         });
         node.insertAdjacentElement("afterbegin", button);
     }
-    // Add title
-    let title = document.createElement("div");
-    title.innerHTML = "\
-      <h1><a href=\"index.html\">Algebra Explorer</a></h1>\
-      <p>A tool that allows people to explore both steps and rules of algebra</p>\
-      <p>The source code can be found on\
-        <a href=\"https://github.com/Dreksh/algebra-explorer\">https://github.com/Dreksh/algebra-explorer</a>\
-      </p>\
-    ";
-    title.id = "title";
-    document.body.insertAdjacentElement("afterbegin", title);
 }

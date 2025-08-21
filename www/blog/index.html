@@ -7,9 +7,13 @@
     <script src="script.js"></script>
   </head>
   <body onLoad="run()">
+    <nav>
+    </nav>
     <main>
+      <h1><a href=\"index.html\">Algebra Explorer</a></h1>
       <section>
-      Algebra Explorer is a tool to help students understand maths notation. Our aim is to answer questions such as:
+      Algebra Explorer is a tool that allows students to freely explore algebra without worrying about making mistakes.
+      Our aim is to let give students an intuition for:
       <ul>
         <li>
           In <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math>
@@ -33,7 +37,7 @@
         </li>
       </ul>
       <p>
-      We do this by visualising the notation via building blocks representing the ‘abstract syntax tree’ of the maths. For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is
+      We do this by visualising the notation via building blocks representation <!-- [to become a footnote] representing the ‘abstract syntax tree’ of the maths-->. For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is
       </p>
 TODO: add picture of blocks <!--
  _   _
@@ -50,21 +54,21 @@ TODO: add picture of blocks <!--
 |____+____|
 -->
       <p>
-      This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using gravity as an analogy for the dependency relationship between operations.
+      This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using levels as an analogy for the dependency relationship between operations,
+      similar to the movements in "Towers of Hanoi" <!-- Add wiki link -->.
       </p>
       <p>
-      But where the tool really shines is <b>interactivity</b>! The rules of algebra can be applied on these blocks, allowing students to freely explore without worrying about making mistakes.
-      </p>
-      <p>
-      The rest of this article serves as a tutorial, and along the way we hope to reveal some insights you might not have thought about before.
-      Enjoy exploring algebra!
+      This best part of this tool is the <b>interactivity</b>! The rest of this article serves as a tutorial with that in mind,
+      and along the way we hope to reveal some insights you might not have thought about before.
+      Enjoy Algebra Explorer!
       </p>
       </section>
 
       <h2>Commutativity and Associativity</h2>
       <section>
+      <p>How can I understand the blocks?</p>
       <p>
-      The first two <b>rules</b> of algebra we would like to introduce are Commutativity and Associativity. These are quite long and scary words, but in our tool they are represented via <i>dragging</i>.
+      Commutativity and Associativity are quite long and scary words, but in our tool they are represented via <i>dragging</i>.
       </p>
       <h3><s>Commutativity</s> Reordering</h3>
       <div class="explanation">
@@ -78,11 +82,12 @@ TODO: add picture of blocks <!--
             <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
           </math>
           </p>
-          but this is a special property of <maths><mo>+</mo></maths> and <maths><mo>&times;</mo></maths> that is crucial to algebra. Consider the sentence
+          but this is a special trait of <maths><mo>+</mo></maths> and <maths><mo>&times;</mo></maths> that is crucial to algebra.
+          Generally, functions cannot reorder their inputs. Consider the sentence
           <blockquote>
             My friend enjoys maths.
           </blockquote>
-          where swapping the order results in
+          where the verb is the function, with "My friend" and "maths" as the inputs. Swapping the order gives:
           <blockquote>
             Maths enjoys my friend.
           </blockquote>
@@ -94,12 +99,12 @@ TODO: add picture of blocks <!--
           </p>
         </div>
       </div>
-      <h3><s>Associativity</s> (Grouping)</h3>
+      <h3><s>Associativity</s> Grouping</h3>
       <div class="explanation">
         <img />
         <div>
           <p>
-          It may also be obvious that
+          It may also seem obvious that
           </p>
           <p>
           <math>
@@ -137,17 +142,24 @@ TODO: add picture of blocks <!--
       </div>
       </section>
 
-      <h2>BODMAS/BIDMAS</h2>
+      <h2>Inverses</h2>
       <section>
+      <p>Why do some operations not allow swaps?</p>
+      <h3>Negative Numbers</h3>
       <p>
-      BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
-      order that the operations should happen. But there is a subtle difference in which we
-      treat the Brackets and Orders/Indices vs Addition and Subtraction. The difference is
-      due to inverses.
+      What does it mean to have -2 cats?
       </p>
-      <h3>Inverses</h3>
+      <p>
+      I don't know either.
+      </p>
+      <!-- Starting from here -->
+      <p>
+      +(-..) shortened to just -. This of this as abbreviation, similar to "do not" into "don't", "it was" into "'twas"
+      </p>
       <p>
       Let's first define what Addition and Multiplication can mean in simple terms: <br />
+      </p>
+      <p>
       Addition: Let's get <math><mi>n</mi></math> more things <br />
       Multiplication: Let's make <math><mi>n</mi></math> copies
       </p>
@@ -183,8 +195,23 @@ TODO: add picture of blocks <!--
       </div>
       </section>
 
+      <h2>Notation</h2>
+      <section>
+      <p>Why do we need brackets?</p>
+      <h3>BODMAS/BIDMAS/PEMDAS</h3>
+      <p>
+      BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
+      order that the operations should happen. But there is a subtle difference in which we
+      treat the Brackets and Orders/Indices vs Addition and Subtraction. The difference is
+      due to inverses.
+      </p>
+      <!-- Reference factorisation, brackets may randomly appear -->
+      <!-- ab + ac = a(b+c) , initially no brackets, but then they appear-->
+      </section>
+
       <h2>Exploration of Patterns</h2>
       <section>
+      <p>What rules are we using?</p>
       <p>
       Maths is sometimes called the "Science of Pattern". The key is to know when a pattern is
       applicable to the exercise
@@ -235,6 +262,25 @@ TODO: add picture of blocks <!--
       This includes asking to fill the gaps of our latex parser
       </p>
       </section>
+
+      <h2>About Us</h2>
+      <section>
+        <p>
+        We're Derek and Jonny! Two Electronics and Information Engineering graduates from
+        Imperial College London. We share a passion in math, computing and education!
+        </p>
+        <!-- Insert imagae here -->
+        (Our blue is lonely, would be nice if they had a golden friend)
+      <h3>About 'Me's</h3>
+        <h3>Derek</h3>
+        <!-- Links and stuff, linkedin and github -->
+
+        <h3>Jonny</h3>
+        - PhD in visualisations
+        - Just a great person who want to help people with maths
+        - It's cool, that it's interesting to visualise things.
+      </section>
+
     </main>
   </body>
 </html>
