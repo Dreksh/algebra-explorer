@@ -18,7 +18,7 @@
         app.ports.evaluateString.subscribe(function (val) { app.ports.evaluateResult.send({"id": val["id"], "value": eval(val["str"])}); });
         window.document.addEventListener("keydown", function(e) {
             // Only send Undo, Redo and Escape
-            if ((e.ctrlKey || e.metaKey) && e.key == "z" || e.key == "Escape") {
+            if ((e.ctrlKey || e.metaKey) && e.key == "z" || e.key == "Escape" || e.key == " ") {
                 app.ports.onKeyDown.send({"ctrl": e.ctrlKey || e.metaKey, "shift": e.shiftKey, "key": e.key});
                 e.preventDefault(); // Block browser's default undo/redo
             }

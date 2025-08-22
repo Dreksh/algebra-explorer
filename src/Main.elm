@@ -272,6 +272,7 @@ update event core = let model = core.swappable in
             (True, True, "z") -> case Display.redo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
                 Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
+            (_, _, " ") -> update EnterCreateMode core
             _ -> (core, Cmd.none)
         EnterCreateMode -> let (inputModel, newT) = InputWithHistory.open core.animation core.input in
             (   {   core
