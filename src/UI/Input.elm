@@ -62,6 +62,7 @@ type alias Model msg =
     {   history: History.Model Scope
     ,   previousInput: Maybe PreviousInput -- For checking when to commit / flush
     ,   suggestions: Maybe (List (String, Html.Html Event)) -- Cached suggestions list
+    ,   matchFound: Bool
     ,   cursor: CaretPosition
     ,   showCursor: Bool
     ,   holderID: String
@@ -84,6 +85,7 @@ init mouseCmd focusCmd holderID =
     {   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
     ,   suggestions = Nothing
+    ,   matchFound = False
     ,   cursor = [0]
     ,   holderID = holderID
     ,   showCursor = False
@@ -96,6 +98,7 @@ initWithFixed mouseCmd focusCmd holderID elements pos =
     {   history = History.init (Scope {inseparable = True, immutable = True} elements)
     ,   previousInput = Nothing
     ,   suggestions = Nothing
+    ,   matchFound = False
     ,   cursor = pos
     ,   holderID = holderID
     ,   showCursor = False
@@ -109,6 +112,7 @@ set (Scope detail children) model =
     |   history = History.flushAndCommit (Scope detail children) model.history
     ,   previousInput = Nothing
     ,   suggestions = Nothing
+    ,   matchFound = False
     ,   cursor = [List.length children]
     ,   showCursor = False
     }
@@ -118,6 +122,7 @@ clear model =
     |   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
     ,   suggestions = Nothing
+    ,   matchFound = False
     ,   cursor = [0]
     ,   showCursor = False
     }
@@ -142,7 +147,14 @@ view convert functions attr model =
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
             (toLatex False [] (if model.showCursor then model.cursor else []) (current model))
         ]
-    |> Helper.maybeAppend (Maybe.map (Html.Keyed.node "div" [class "popup"] >> Html.map convert) model.suggestions)
+    |>  Helper.maybeAppend (Maybe.map (\children -> Html.div [class "popup"]
+            [   if model.matchFound
+                then Html.p [class "reminder"] [Html.text "Press [space] to insert"]
+                else Html.p [class "helpable"] [Html.text "Click an icon to insert"]
+            ,   Html.Keyed.node "div" [class "holder"] children
+            ]
+            |> Html.map convert
+        ) model.suggestions)
     )
 
 formDecoder_: (String -> ScopeElement) -> Decode.Decoder Event
@@ -244,12 +256,12 @@ update funcProp event model = case event of
         ("Z", True) ->
             (   {model | history = History.commit model.history |> History.redo }
             , "", Cmd.none)
-        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False, "", Cmd.none)
-        ("Delete", _) -> (batchFlushStage_ e.time False model |> delete_ True, "", Cmd.none)
-        ("ArrowUp", _) -> (flushStage_ model |> cursorMove_ funcProp Up_, "", Cmd.none)
-        ("ArrowDown", _) -> (flushStage_ model |> cursorMove_ funcProp Down_, "", Cmd.none)
-        ("ArrowLeft", _) -> (flushStage_ model |> cursorMove_ funcProp Left_, "", Cmd.none)
-        ("ArrowRight", _) -> (flushStage_ model |> cursorMove_ funcProp Right_, "", Cmd.none)
+        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False |> checkMatches_ funcProp, "", Cmd.none)
+        ("Delete", _) -> (batchFlushStage_ e.time False model |> delete_ True |> checkMatches_ funcProp, "", Cmd.none)
+        ("ArrowUp", _) -> (flushStage_ model |> cursorMove_ funcProp Up_ |> checkMatches_ funcProp, "", Cmd.none)
+        ("ArrowDown", _) -> (flushStage_ model |> cursorMove_ funcProp Down_ |> checkMatches_ funcProp, "", Cmd.none)
+        ("ArrowLeft", _) -> (flushStage_ model |> cursorMove_ funcProp Left_ |> checkMatches_ funcProp, "", Cmd.none)
+        ("ArrowRight", _) -> (flushStage_ model |> cursorMove_ funcProp Right_ |> checkMatches_ funcProp, "", Cmd.none)
         (c, False) -> let updatedModel = batchFlushStage_ e.time True model in
             if String.length c == 1
             then case String.uncons c of
@@ -258,7 +270,8 @@ update funcProp event model = case event of
                     then case insertChar_ char updatedModel of
                         Err str -> (updatedModel, str, Cmd.none)
                         Ok (newModel) ->
-                            ( {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor |> Just}
+                            (   {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor |> Just}
+                                |> checkMatches_ funcProp
                             , "", Cmd.none
                             )
                     else case char of
@@ -289,11 +302,15 @@ update funcProp event model = case event of
                         _ -> (updatedModel, "'" ++ c ++ "' is not an allowed input", Cmd.none)
             else (updatedModel, "", Cmd.none)
         _ -> (model, "", Cmd.none)
-    ShowCursor -> ({model | showCursor = True, suggestions = getSuggestions_ funcProp (current model) model.cursor |> Just}, "", Cmd.none)
+    ShowCursor ->
+        (   {model | showCursor = True, suggestions = getSuggestions_ funcProp (current model) model.cursor |> Just}
+            |> checkMatches_ funcProp
+        , "", Cmd.none
+        )
     HideCursor -> ({model | history = History.commit model.history, showCursor = False, suggestions = Nothing}, "", Cmd.none)
     MouseDown val point -> (flushStage_ model, "", model.mouseCmd val point)
     Shift e -> case e of
-        SvgDrag.End _ point -> (setCursor_ point model, "", Cmd.none)
+        SvgDrag.End _ point -> (setCursor_ point model |> checkMatches_ funcProp, "", Cmd.none)
         _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
     InsertFixed elem -> case elem of
         Fixed n -> case insertScopeElement_ n.firstNode elem model of
@@ -434,24 +451,24 @@ setCursor_ point model = toLatex False [] [] (current model)
     |> \frameRes -> case frameRes of
         Nothing -> model
         Just (newC, diff) -> traverse (\_ input -> case input of
-            TextCase prev str num next -> Ok (Just (prev ++ (StrElement str :: next), [List.length prev, num]))
+            TextCase prev str num next -> Ok ((), Just (prev ++ (StrElement str :: next), [List.length prev, num]))
             IntermediateCase prev next -> case List.head next of
-                Nothing -> Ok (Just (prev ++ next, [List.length prev + List.length next]))
+                Nothing -> Ok ((), Just (prev ++ next, [List.length prev + List.length next]))
                 Just n -> case n of
                     StrElement str -> MathIcon.closestChar str diff
                         |> \(index, vector) -> if Tuple.first vector > 0
                             then if index + 1 == String.length str
-                                then Ok (Just (prev ++ next, [List.length prev + 1]))
-                                else Ok (Just (prev ++ next, [List.length prev, index + 1]))
-                            else if index == 0
-                                then Ok (Just (prev ++ next, [List.length prev]))
-                                else Ok (Just (prev ++ next, [List.length prev, index]))
+                                then Ok ((), Just (prev ++ next, [List.length prev + 1]))
+                                else Ok ((), Just (prev ++ next, [List.length prev, index + 1]))
+                            else if index  == 0
+                                then Ok ((), Just (prev ++ next, [List.length prev]))
+                                else Ok ((), Just (prev ++ next, [List.length prev, index]))
                     _ -> if Tuple.first diff > 0
-                        then Ok (Just (prev ++ next, [List.length prev + 1]))
-                        else Ok (Just (prev ++ next, [List.length prev]))
+                        then Ok ((), Just (prev ++ next, [List.length prev + 1]))
+                        else Ok ((), Just (prev ++ next, [List.length prev]))
             ) (current model) newC
             |> \res -> case res of
-                Ok (Just (_,c)) -> {model | cursor = c}
+                Ok (_, Just (_,c)) -> {model | cursor = c}
                 _ -> model
 
 {- ## Scope traversal -}
@@ -463,10 +480,10 @@ type TraversalError_  =
     BrokenCaret -- For when the position cannot be found
     | CannotSplitArgument_
     | CannotModifySection_
-    | DoesNotEndInKeyword_ String
+    | NoTextToChange_
 
-traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition)))
-    -> Scope -> CaretPosition -> Result TraversalError_ (Maybe (List ScopeElement, CaretPosition))
+traverse: (ScopeDetail -> TraversalCase_ -> Result TraversalError_ (a, Maybe (List ScopeElement, CaretPosition)))
+    -> Scope -> CaretPosition -> Result TraversalError_ (a, Maybe (List ScopeElement, CaretPosition))
 traverse process (Scope detail children) caret = case caret of
     [] -> IntermediateCase [] children |> process detail
     [x] -> IntermediateCase (List.take x children) (List.drop x children) |> process detail
@@ -477,21 +494,48 @@ traverse process (Scope detail children) caret = case caret of
                 Nothing -> Err BrokenCaret
                 Just (Scope inDetail inChildren, override) -> traverse process (Scope inDetail inChildren) others
                     |> Result.andThen (\res -> case res of
-                        Nothing -> Ok (Just (prev ++ after, [x]))
-                        Just (newChildren, pos) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
-                            Ok (Just (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos))
+                        (r, Nothing) -> Ok (r, Just (prev ++ after, [x]))
+                        (r, Just (newChildren, pos)) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
+                            Ok (r, Just (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos))
                     )
             (Bracket kids :: after) -> traverse process (Scope detail kids) others
                 |> Result.map (\res -> case res of
-                    Nothing -> Just (prev ++ after, [x])
-                    Just (newChildren, pos) -> Just (prev ++ (Bracket newChildren) :: after, x::y::pos)
+                    (r, Nothing) -> (r, Just (prev ++ after, [x]))
+                    (r, Just (newChildren, pos)) -> (r, Just (prev ++ (Bracket newChildren) :: after, x::y::pos))
                 )
             (InnerScope (Scope inD inC) :: after) -> traverse process (Scope inD inC) others
                 |> Result.map (\res -> case res of
-                    Nothing -> Just (children, caret) -- InnerScopes cannot be deleted (they're for parameter inputs)
-                    Just (newChildren, pos) -> Just (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos)
+                    (r, Nothing) -> (r, Just (children, caret)) -- InnerScopes cannot be deleted (they're for parameter inputs)
+                    (r, Just (newChildren, pos)) -> (r, Just (prev ++ (InnerScope (Scope inD newChildren)) :: after, x::y::pos))
                 )
             _ -> Err BrokenCaret
+
+{- ## Check Matches -}
+
+matchDict_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Dict.Dict (Int, String) (String, Math.FunctionProperty Rules.FunctionProp)
+matchDict_ funcProp = Dict.toList funcProp
+    |> List.concatMap (\(k, v) -> k :: (v.property |> Math.getState |> .alternativeNames)
+        |> List.map (\match -> ((-(String.length match), match), (k, v.property)))
+    )
+    |> Dict.fromList
+
+checkMatches_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Model msg
+checkMatches_ funcProp model = let match word = matchDict_ funcProp |> Dict.foldl (\(_, w) _ res -> res || String.endsWith w word) False in
+    traverse (\_ c -> case c of
+        TextCase prev str num next -> Ok
+            (match (String.left num str), Just (prev ++ (StrElement str :: next), [List.length prev, num]))
+        IntermediateCase prev next -> let beforeLength = List.length prev - 1 in Ok
+            (   if beforeLength < 0 then False
+                else case List.drop beforeLength prev |> List.head of
+                    Just (StrElement str) -> match str
+                    _ -> False
+            ,   Just (prev ++ next, [List.length prev])
+            )
+    )
+    (current model) model.cursor
+    |> \res -> case res of
+        Ok (matchFound, _) -> {model | matchFound = matchFound}
+        _ -> model
 
 {- ## Insertion -}
 
@@ -500,7 +544,8 @@ insertChar_ char model = let (Scope detail children) = current model in
     traverse
     (\parent input -> if parent.inseparable && char == ',' then Err CannotSplitArgument_
         else Ok
-        (   case input of
+        (   ()
+        ,   case input of
             TextCase prev str num next -> (String.left num str) ++String.fromChar char ++ (String.dropLeft num str)
                 |> \newStr -> Just (prev ++ (StrElement newStr :: next), [List.length prev, num+1])
             IntermediateCase prev next -> case next of
@@ -514,7 +559,7 @@ insertChar_ char model = let (Scope detail children) = current model in
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
 insertSpace_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String (Model msg)
@@ -524,14 +569,16 @@ insertSpace_ funcProp model =
         updateIndex currentIndex index = case index of
             Nothing -> [currentIndex + 1]
             Just n -> [currentIndex, n, 0]
-        updateString prev front back next = case getSubstitution_ funcProp front of
-            Nothing -> Err (DoesNotEndInKeyword_ front)
-            Just ("", fixed, index) -> if back == ""
-                then Ok (Just (prev ++ (fixed :: next), updateIndex (List.length prev) index))
-                else Ok (Just (prev ++ (fixed :: StrElement back :: next), updateIndex (List.length prev) index))
-            Just (before, fixed, index) -> if back == ""
-                then Ok (Just (prev ++ (StrElement before :: fixed :: next), updateIndex (List.length prev + 1) index))
-                else Ok (Just (prev ++ (StrElement before :: fixed :: StrElement back :: next), updateIndex (List.length prev + 1) index))
+        updateString prev front back next = getSubstitution_ funcProp front
+            |> Result.map (\res -> case res of
+                ("", fixed, index) -> if back == ""
+                    then ((), Just (prev ++ (fixed :: next), updateIndex (List.length prev) index))
+                    else ((), Just (prev ++ (fixed :: StrElement back :: next), updateIndex (List.length prev) index))
+                (before, fixed, index) -> if back == ""
+                    then ((), Just (prev ++ (StrElement before :: fixed :: next), updateIndex (List.length prev + 1) index))
+                    else ((), Just (prev ++ (StrElement before :: fixed :: StrElement back :: next), updateIndex (List.length prev + 1) index))
+            )
+
     in
     traverse
     (\_ input -> case input of
@@ -539,26 +586,23 @@ insertSpace_ funcProp model =
         IntermediateCase prev next -> let beforeLength = List.length prev - 1 in
             case List.drop beforeLength prev of
                 [StrElement str] -> updateString (List.take beforeLength prev) str "" next
-                _ -> Err (DoesNotEndInKeyword_ "")
+                _ -> Err NoTextToChange_
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
-        Err (DoesNotEndInKeyword_ str) -> Err ("No keyword found at the end of '" ++ str ++ "'")
+        Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c, matchFound = False}
+        Err NoTextToChange_ -> Err "No text to convert to a symbol"
         _ -> Err "Something went wrong"
 
-getSubstitution_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> Maybe (String, ScopeElement, Maybe Int)
-getSubstitution_ funcProp str = Dict.toList funcProp
-    |> List.concatMap (\(k, v) -> k :: (v.property |> Math.getState |> .alternativeNames)
-        |> List.map (\match -> ((-(String.length match), match, k), v))
-    )
-    |> List.sortBy Tuple.first -- match longer strings first
-    |> List.foldl (\((_, match, key), prop) res -> case res of
+getSubstitution_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> String -> Result TraversalError_ (String, ScopeElement, Maybe Int)
+getSubstitution_ funcProp str = if String.isEmpty str then Err NoTextToChange_
+    else matchDict_ funcProp
+    |> Dict.foldl (\(_, match) (key, prop) res -> case res of
         Just _ -> res
         Nothing -> if String.endsWith match str
             then
                 let
-                    (fixed, latex, _) = funcPropToLatex_ key (Just prop)
+                    (fixed, latex, _) = funcPropToLatex_ key (Just {property=prop})
                     element = fixedFrom_ (if Set.member key defaultOps then key else "\\" ++ key) fixed Array.empty latex
                     first = case element of
                         Fixed n -> n.firstNode
@@ -567,12 +611,21 @@ getSubstitution_ funcProp str = Dict.toList funcProp
                 Just (String.left (String.length str - String.length match) str, element, first)
             else Nothing
     ) Nothing
+    |> \res -> case res of
+        Just r -> Ok r
+        Nothing ->
+            let
+                funcName = String.right 1 str
+                (_, latex, _) = funcPropToLatex_ funcName Nothing
+            in
+            Ok (String.dropRight 1 str, fixedFrom_ ("\\" ++ funcName) False Array.empty latex, Just 0)
 
 insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
 insertScopeElement_ firstNode element model = let (Scope detail children) = current model in
     traverse
     (\_ input -> Ok
-        (   case input of
+        (   ()
+        ,   case input of
                 TextCase prev str num next -> Just
                     (   prev
                         ++  ( StrElement (String.left num str) :: element
@@ -592,7 +645,7 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c, matchFound = False}
         _ -> Err "Something went wrong"
 
 latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
@@ -608,7 +661,8 @@ delete_: Bool -> Model msg -> Model msg
 delete_ forwards model = let (Scope detail children) = current model in
     traverse
     (\scopeDetail input -> if scopeDetail.immutable then Err CannotModifySection_
-        else Ok (   case input of
+        else Ok ( ()
+        ,   case input of
             TextCase prev str num next -> if forwards
                 then Just
                     (   prev ++ (StrElement (String.left num str ++ String.dropLeft (num+1) str) :: next)
@@ -645,8 +699,8 @@ delete_ forwards model = let (Scope detail children) = current model in
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (Just (l, c)) -> {model | history = History.stage (Scope detail l) model.history, cursor = c}
-        Ok Nothing -> {model | history = History.flushAndCommit (Scope detail []) model.history ,cursor = [0]}
+        Ok (_, Just (l, c)) -> {model | history = History.stage (Scope detail l) model.history, cursor = c}
+        Ok (_, Nothing) -> {model | history = History.flushAndCommit (Scope detail []) model.history ,cursor = [0]}
         _ -> model
 
 {- ## Extraction -}

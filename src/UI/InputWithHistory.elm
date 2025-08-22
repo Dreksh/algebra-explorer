@@ -182,8 +182,7 @@ createView_ converter funcDict model inputNum width height =
             ]
         ,   Html.ul
             [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
-            (   Html.span [] [] -- For creating an extra gap
-            ::  List.map
+            (   List.map
                 (\entry -> case entry of
                     Default val -> Html.li [HtmlEvent.onClick (Click val)]
                         [   Icon.default []
