@@ -129,7 +129,7 @@ type Extracted =
 view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}
     -> Model msg -> Html.Html msg
 view convert funcProp model =
-    node "dialog" [Attr.attribute "open" "true"]
+    node "dialog" [Attr.attribute "open" "true", Attr.id "dialog"]
     [   h1 [] [text model.title]
     ,   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
@@ -140,8 +140,10 @@ view convert funcProp model =
                 )
             )
             model.sections
-        ++  [   UI.Icon.cancel [UI.Icon.class "clickable", UI.Icon.class "cancelable", UI.HtmlEvent.onClick model.cancel]
-            ,   button [Attr.type_ "submit", Attr.class "noDefault"] [UI.Icon.tick [UI.Icon.class "clickable", UI.Icon.class "submitable"]]
+        ++  [   Html.div [Attr.class "buttonHolder"]
+                [   UI.Icon.cancel [UI.Icon.class "clickable", UI.Icon.class "cancelable", UI.HtmlEvent.onClick model.cancel]
+                ,   button [Attr.type_ "submit", Attr.class "noDefault"] [UI.Icon.tick [UI.Icon.class "clickable", UI.Icon.class "submitable"]]
+                ]
             ]
         )
     ]

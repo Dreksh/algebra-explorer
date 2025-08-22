@@ -409,9 +409,18 @@ dialog > form {
     display: flex;
     flex-direction: column;
 }
-dialog svg {
+.buttonHolder {
+    display: flex;
+    margin-top: 1rem;
+    align-self: center;
+    width: 50%;
+    flex-direction: row;
+}
+.buttonHolder * {
+    flex-grow: 1;
+    flex-shrink: 1;
     height: 2rem;
-    margin: 0 0.5rem;
+    margin: 0.5rem auto;
 }
 .radioSelection * {
     vertical-align: middle;

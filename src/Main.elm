@@ -31,6 +31,7 @@ import UI.Animation as Animation
 import UI.Dialog as Dialog
 import UI.Display as Display
 import UI.Draggable as Draggable
+import UI.FocusEvent as FocusEvent
 import UI.HtmlEvent as HtmlEvent
 import UI.Icon as Icon
 import UI.Input as Input
@@ -58,6 +59,8 @@ port evaluateResult: ({id: Int, value: Float} -> msg) -> Sub msg
 port onKeyDown: ({ctrl: Bool, shift: Bool, key: String} -> msg) -> Sub msg
 port svgMouseBegin: {id: String, x: Float, y: Float, pointerID: Encode.Value, svg: Bool} -> Cmd msg
 port svgMouseEvent: (SvgDrag.Raw -> msg) -> Sub msg
+port focusOutCmd: {id: String} -> Cmd msg
+port focusOutSub: ({id: String} -> msg) -> Sub msg
 
 setCapture: String -> Encode.Value -> Cmd msg
 setCapture e p = svgMouseBegin {id = e, x = 0 , y = 0, pointerID = p, svg = False}
@@ -78,6 +81,7 @@ type alias Model =
     ,   animation: Animation.Tracker
     ,   input: InputWithHistory.Model Event
     ,   svgDragMap: SvgDrag.Model Event
+    ,   focusEvent: FocusEvent.Model Event
     }
 
 type alias Swappable =
@@ -175,6 +179,8 @@ init flags url key =
             ,   ("mainInput", (\_ -> Input.Shift >> InputWithHistory.InputEvent >> InputEvent >> Just ))
             ]
             |> SvgDrag.init
+        , focusEvent = Dict.singleton "dialog" CloseDialog
+            |> FocusEvent.init
         }
     ,   Cmd.batch
         [   loadSources query.sources
@@ -196,6 +202,7 @@ subscriptions model = Sub.batch
     ,   evaluateResult EvalComplete
     ,   BrowserEvent.onResize WindowResize
     ,   svgMouseEvent SvgDragEvent
+    ,   focusOutSub (FocusEvent.resolve model.focusEvent NoOp)
     ,   if model.animation >= 0 then BrowserEvent.onAnimationFrameDelta AnimationDelta else Sub.none
     ]
 
@@ -213,7 +220,7 @@ update event core = let model = core.swappable in
                 Browser.External exReq -> exReq
             )
             |> \str -> if str == "" then (core, Cmd.none)
-                else ({core | dialog = Just (leaveDialog_ str, Nothing)}, Cmd.none)
+                else ({core | dialog = Just (leaveDialog_ str, Nothing)}, Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id= "dialog"}])
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation model.rules e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.map DisplayEvent dCmd)
@@ -284,9 +291,12 @@ update event core = let model = core.swappable in
         Save -> (core, saveFile model)
         OpenDialog d ->
             (   {core | dialog = Just (d, Nothing)}
-            ,   case d.focus of
-                Nothing -> Cmd.none
-                Just name -> Dialog.fieldID name |> focusTextBar_
+            ,   Cmd.batch
+                [   case d.focus of
+                    Nothing -> focusTextBar_ "dialog"
+                    Just name -> Dialog.fieldID name |> focusTextBar_
+                ,   focusOutCmd {id = "dialog"}
+                ]
             )
         CloseDialog -> ({core | dialog = Nothing}, Cmd.none)
         ProcessTopic preinstall url result -> case result of
@@ -354,13 +364,13 @@ update event core = let model = core.swappable in
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m False core
-                else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.none)
+                else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
             Actions.Substitute -> case model.display.selected of
                 Nothing -> submitNotification_ core "no equation is selected"
-                Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.none)
+                Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
             Actions.NumericalSubstitution root target ->
                 (   { core | dialog = Just (numSubDialog_ model.rules root target, Nothing)}
-                ,   focusTextBar_ (Dialog.fieldID "expr-input")
+                ,   Cmd.batch [focusTextBar_ (Dialog.fieldID "expr-input"), focusOutCmd {id = "dialog"}]
                 )
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)

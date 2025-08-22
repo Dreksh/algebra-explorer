@@ -23,6 +23,19 @@
                 e.preventDefault(); // Block browser's default undo/redo
             }
         });
+        app.ports.focusOutCmd.subscribe(function (val) {
+            let id = val["id"];
+            let cancelFunc;
+            let target = document.getElementById(id);
+            let onFocusOut = function (e) {
+                if (!target.contains(event.relatedTarget)) {
+                    app.ports.focusOutSub.send({"id": id});
+                    cancelFunc();
+                }
+            };
+            cancelFunc = function() {target.removeEventListener("focusout", onFocusOut);};
+            target.addEventListener("focusout", onFocusOut);
+        });
         app.ports.svgMouseBegin.subscribe(function (val) {
             let id = val["id"];
             let convertPoint = function(x, y) { return {"x": x, "y": y}; };
