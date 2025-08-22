@@ -1,4 +1,4 @@
-module UI.Dialog exposing (Extracted(..), Input(..), Model, Event, Section,
+module UI.Dialog exposing (Extracted(..), Input(..), Model, Event(..), Section,
     fieldID, processMathInput, update, view)
 
 import Array

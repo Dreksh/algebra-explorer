@@ -76,6 +76,9 @@
                 {"from": "-a-b", "to": ["-(a+b)"]},
                 {"from": "a+a", "to": ["2a"]},
                 {"from": "ma+mb", "to": ["m(a+b)"]},
+                {"from": "ma+m", "to": ["m(a+1)"]},
+                {"from": "ma-mb", "to": ["m(a-b)"]},
+                {"from": "ma-m", "to": ["m(a-1)"]},
                 {"from": "-a*b", "to": ["-(a*b)"]},
                 {"from": "1/a*1/b", "to": ["1/(a*b)"]}
             ]

@@ -177,6 +177,7 @@ init flags url key =
             [   ("equation-view-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Display.PointerDrag eqNum event |> DisplayEvent)))
             ,   ("Equation-", (\str event -> String.toInt str |> Maybe.map (\eqNum -> Draggable.Drag event |> Display.DraggableEvent eqNum |> DisplayEvent)))
             ,   ("mainInput", (\_ -> Input.Shift >> InputWithHistory.InputEvent >> InputEvent >> Just ))
+            ,   ("dialog_", (\str -> Input.Shift >> Dialog.InputEvent str >> DialogEvent >> Just))
             ]
             |> SvgDrag.init
         , focusEvent = Dict.singleton "dialog" CloseDialog
