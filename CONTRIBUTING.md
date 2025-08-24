@@ -294,6 +294,17 @@ Math
   * ungrouping can be when a block is dragged down into its parent
   * we should use start points instead of mid points
 
+* scenarios for buttons after clicking it
+  * button disappears and nothing is behind it, including subactions menu
+    * no need for suspension at all
+  * another button takes its place
+    * need suspension to prevent instant preview
+  * same button remains in the same place
+    * need suspension to prevent instant preview
+* the rules are:
+  * disable instantaneous pointerenter unsuspending hover
+  * but still force a pointerenter after 1s just in case they don't move the mouse at all
+
 ### What to use as Rules?
 * maybe need to remove some
   * e.g. a-b = -(b+a) is actually a-b = --(a-b) = -(-a--b) = (-a+b)

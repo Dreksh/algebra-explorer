@@ -201,8 +201,8 @@ matchToLatex attrs match =
     |> MathIcon.static []
     |> \child -> Html.span attrs [child]
 
-viewContextual: (Event -> msg) -> Bool -> List (String, (List Action)) -> List (String, Html.Html msg)
-viewContextual converter previewOnHover topics =
+viewContextual: (Event -> msg) -> Bool -> Bool -> msg -> List (String, (List Action)) -> List (String, Html.Html msg)
+viewContextual converter previewOnHover unsuspendOnEnter unsuspendHover topics =
     topics
     |> List.foldl (\(_, actions) foldEvents ->
         -- first convert to a dict so that actions across topics that share the same name can be mapped to the same button
@@ -221,26 +221,44 @@ viewContextual converter previewOnHover topics =
     |> Dict.toList
     |> List.map (\(name, events) -> let key = name ++ if previewOnHover then "-hover" else "" in
         case events of
-            [event] -> (key, displayContextualAction_ converter previewOnHover "contextualAction" (Html.text name) event)
-            _ -> (key, displayContextualActions_ converter previewOnHover name events)
+            [event] -> (key, displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover "contextualAction" (Html.text name) event)
+            _ -> (key, displayContextualActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events)
         )
 
-displayContextualAction_: (Event -> msg) -> Bool -> String -> Html.Html msg -> Event -> Html.Html msg
-displayContextualAction_ converter previewOnHover cls label event =
+displayContextualAction_: (Event -> msg) -> Bool -> Bool -> msg -> String -> Html.Html msg -> Event -> Html.Html msg
+displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event =
     let
-        classes = class cls :: if previewOnHover then [class "clickable"] else []
         inner = [Html.div [class "contextualActionButton"] [label]]
 
         unhoverable = Html.div
-            (HtmlEvent.onClick (converter event) :: classes)
-            inner  -- TODO: add a better symbol to indicate that there is a popup modal
-        hoverable_ = Html.div
-            ([  HtmlEvent.onPointerEnter (converter event)
-            ,   HtmlEvent.onPointerLeave (converter Reset)
-            ,   HtmlEvent.onClick (converter Commit)
-            ] ++ classes)
+            ([  class cls
+            ,   class "clickable"
+            ,   HtmlEvent.onClick (converter event)
+            ,   HtmlEvent.onPointerEnter unsuspendHover  -- needed to avoid blip in hover
+            ]
+            )
+            inner  -- TODO: add a symbol to indicate that there is a popup modal
+
+        hoverable = Html.div
+            (   [   class cls
+                ,   HtmlEvent.onClick (converter Commit)
+                ] ++
+                if previewOnHover
+                then
+                [   HtmlEvent.onPointerEnter (converter event)
+                ,   HtmlEvent.onPointerLeave (converter Reset)
+                ,   class "clickable"
+                ]
+                else
+                ([  HtmlEvent.onClick (converter event)
+                ,   class "clickableNoHover"
+                ]
+                ++  if unsuspendOnEnter
+                    then [HtmlEvent.onPointerEnter unsuspendHover]
+                    else []
+                )
+            )
             inner
-        hoverable = if previewOnHover then hoverable_ else unhoverable
     in case event of
         NumericalSubstitution _ _ -> unhoverable
         Substitute -> unhoverable
@@ -252,9 +270,9 @@ displayContextualAction_ converter previewOnHover cls label event =
                 _ -> unhoverable  -- note that we should now only ever have one match
         _ -> hoverable
 
-displayContextualActions_: (Event -> msg) -> Bool -> String -> List Event -> Html.Html msg
-displayContextualActions_ converter previewOnHover name events =
-    Html.div [class "contextualSelect", class "contextualAction"]
+displayContextualActions_: (Event -> msg) -> Bool -> Bool -> msg -> String -> List Event -> Html.Html msg
+displayContextualActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events =
+    Html.div [class "contextualSelect", class "contextualAction", HtmlEvent.onPointerEnter unsuspendHover]
     [   Html.div [class "contextualActionButton"]
         [   Html.text name
         ,   Html.div [class "contextualOptions", class "hideScrollbar"]
@@ -269,7 +287,7 @@ displayContextualActions_ converter previewOnHover name events =
                             )
                         _ -> (Html.text name, "contextualText")
                 in
-                    displayContextualAction_ converter previewOnHover cls label event
+                    displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event
                 )
             )
         ]

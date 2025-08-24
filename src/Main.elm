@@ -41,6 +41,7 @@ import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
 import Components.Rules as Rules
+import UI.Actions as Actions
 
 -- Overall Structure of the app: it's a document
 
@@ -269,10 +270,10 @@ update event core = let model = core.swappable in
                         ({core | animation = newT, input = newIn, swappable = {model | showMenu = True}}, Cmd.none)
             (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
+                Ok (display, animation) -> commitHistory_ {core | swappable = {model | display = display}, animation = animation}
             (True, True, "z") -> case Display.redo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
+                Ok (display, animation) -> commitHistory_ {core | swappable = {model | display = display}, animation = animation}
             (_, _, " ") -> update EnterCreateMode core
             _ -> (core, Cmd.none)
         EnterCreateMode -> let (inputModel, newT) = InputWithHistory.open core.animation core.input in
@@ -432,6 +433,16 @@ applyChange_ params commit model = let swappable = model.swappable in
 commitChange_: Model -> (Model, Cmd Event)
 commitChange_ model = let swappable = model.swappable in
     case Display.commit model.animation swappable.rules swappable.display of
+        Err errStr -> submitNotification_ model errStr
+        Ok (newDisplay, newTracker) -> let (susDisplay, susCmd) = Display.suspendHoverCmd newDisplay in
+            (   {model | swappable = {swappable | display = susDisplay}, animation = newTracker}
+            ,   Cmd.batch [updateQuery_ newDisplay, Cmd.map DisplayEvent susCmd]
+            )
+
+-- TODO: refactor to reduce repetition
+commitHistory_: Model -> (Model, Cmd Event)
+commitHistory_ model = let swappable = model.swappable in
+    case Display.commitHistory model.animation swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok (newDisplay, newTracker) -> let (susDisplay, susCmd) = Display.suspendHoverCmd newDisplay in
             (   {model | swappable = {swappable | display = susDisplay}, animation = newTracker}

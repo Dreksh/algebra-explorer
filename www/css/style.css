@@ -96,6 +96,9 @@ span.space {
 .clickable:hover {
     color: var(--color-hovered);
 }
+.clickableNoHover {
+    cursor: pointer;
+}
 /* Text bar */
 .input {
     width: 70dvw;
@@ -493,6 +496,9 @@ dialog > form {
 .contextualActionIcon {
     width: 1rem;
 }
+.contextualActionIcon > svg {
+    height: 100%;
+}
 
 /* only for undo and redo */
 .contextualDisabled {
@@ -552,6 +558,9 @@ dialog > form {
 }
 .brick:hover > .brickRect {
     stroke: var(--color-highlight);
+}
+.brick.staged > .brickRect {
+    fill-opacity: 0.75;
 }
 .brick.selected > .brickRect {
     fill: var(--color-selected);

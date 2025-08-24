@@ -1,7 +1,7 @@
 module UI.Bricks exposing (
     Model,
     init, advanceTime, updateTree,
-    flashMillis, flashTree,
+    flashTree,
     view
     )
 
@@ -53,13 +53,10 @@ for associable we need the midpoint and upper and lower bounds
 type alias Model =
     {   rects: Dict.Dict (Int, Int) Rect  -- the key here needs to be two Ints because DeclarativeNodes map to multiple rects
     ,   viewBox: Animation.EaseState Animation.Vector2
-    ,   backgroundOpacity: Animation.EaseState Float
     }
 
 smoothTime_: Float
 smoothTime_ = 750
-flashMillis: Float
-flashMillis = 500
 
 splitDeclarativeNodeFlag_: Bool
 splitDeclarativeNodeFlag_ = True
@@ -69,7 +66,7 @@ init tracker root =
     let
         (movingTree, viewBox, newT) = calculateTree_ tracker root Dict.empty
     in
-        ({rects = movingTree, viewBox = Animation.newEaseVector2 smoothTime_ viewBox, backgroundOpacity = Animation.newEaseFloat flashMillis 0}, newT)
+        ({rects = movingTree, viewBox = Animation.newEaseVector2 smoothTime_ viewBox}, newT)
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
@@ -83,9 +80,8 @@ advanceTime millis model =
                 }
             )
         newViewBox = model.viewBox |> Animation.advance millis
-        newOpacity = model.backgroundOpacity |> Animation.advance millis
     in
-        { model | rects = newRects, viewBox = newViewBox, backgroundOpacity = newOpacity}
+        { model | rects = newRects, viewBox = newViewBox}
 
 view: (Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute e)) -> Model -> Html e
 view createAttrs model =
@@ -106,9 +102,8 @@ view createAttrs model =
                 BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible attrs rect.text
             )
         (maxX, maxY) = Animation.current model.viewBox
-        op = Animation.current model.backgroundOpacity
     in
-        BrickSvg.bricks maxX maxY op bricks
+        BrickSvg.bricks maxX maxY bricks
 
 -- TODO: make falling bricks drop like gravity, and rising bricks pushed by new ones below
 updateTree: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Model -> (Model, Animation.Tracker)
@@ -121,9 +116,9 @@ updateTree tracker root model =
         ({model | rects = newRect, viewBox = finalViewBox}, t1)
 
 flashTree: Animation.Tracker -> Model -> (Model, Animation.Tracker)
-flashTree tracker model =
-    let (newOp, newT) = Animation.easeOut tracker 0.4 0 model.backgroundOpacity
-    in ({model | backgroundOpacity = newOp}, newT)
+flashTree tracker model = (model, tracker)
+    -- let (newOp, newT) = Animation.easeOut tracker 0.4 0 model.backgroundOpacity
+    -- in ({model | backgroundOpacity = newOp}, newT)
 
 calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict (Int, Int) Rect -> (Dict.Dict (Int, Int) Rect, Animation.Vector2, Animation.Tracker)
 calculateTree_ animation root rects =

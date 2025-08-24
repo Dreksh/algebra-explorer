@@ -15,8 +15,8 @@ horizontalPad_ = 0.1
 rectRadius_: Float
 rectRadius_ = 0.2
 
-bricks: Float -> Float -> Float -> List (Html event) -> Html event
-bricks xMax yMax backgroundOpacity children =
+bricks: Float -> Float -> List (Html event) -> Html event
+bricks xMax yMax children =
     svg
     [   viewBox
         (   String.fromFloat (horizontalPad_ / 2)
@@ -30,7 +30,6 @@ bricks xMax yMax backgroundOpacity children =
     ,   class "bricks"
     ,   width "100%"
     ,   height "100%"
-    ,   style ("background-color: rgba(0,255,0," ++ (String.fromFloat backgroundOpacity) ++ ")")
     ]
     children
 
@@ -61,8 +60,7 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
             ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari
-            ]
-            []
+            ] []
         ,   MathIcon.toSvgGroup
             [   transformAttr_ (Tuple.first labelOrigin) (Tuple.second labelOrigin)
             ,   class "brickText"
