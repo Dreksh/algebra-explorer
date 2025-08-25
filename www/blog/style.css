@@ -95,6 +95,8 @@ section {
     padding: 1rem;
     position: relative;
 }
+.centered { text-align: center; }
+.highlight { background-color: lightgreen;}
 .indented { margin-inline-start: 40px; } /* Copy blockquote's indentation */
 img.row2 { max-height: 8rem; }
 img.row3 { max-height: 12rem; }

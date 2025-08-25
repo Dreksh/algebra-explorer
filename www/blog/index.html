@@ -246,19 +246,71 @@
       <section id="exploration-of-patterns">
       <h2>Exploration of Patterns</h2>
       <p class="mainQuestion">What rules are we using?</p>
+      <h3>Algebra</h3>
       <p>
       Maths is sometimes called the "Science of Pattern". The key is to know when a pattern is
-      applicable to the exercise
+      applicable to the expression. This is where algebra is useful. When we use a letter, we
+      don't need to know exactly what the value of it is, but simply how it can be transformed.
       </p>
       <p>
-      This project is designed to be as flexible
+      Take factorisation for example, the requirement for factorising is that the two terms being added
+      must share the same factor (are multiplied by the same number). We don't know what that number is,
+      so let's call that <math><mi class="highlight">a</mi></math>. We can write it as the following pattern:
       </p>
+      <p class="centered">
+      <math><mi class="highlight">a</mi><mi>b</mi><mo>+</mo><mi class="highlight">a</mi><mi>c</mi><mo>=</mo><mi>a</mi><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo></math>
+      </p>
+      <p>
+      Here are some examples that fit the pattern on the left, and some that don't fit:
+      </p>
+      <p>
+      <table>
+        <tbody>
+          <tr>
+            <th>Matches</th>
+            <td><math><mn class="highlight">2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn class="highlight">2</mn><mo>&times;</mo><mn>5</mn></math></td>
+            <td><math><mn class="highlight">5</mn><mo>&times;</mo><mo>(</mo><mn>3</mn><mo>+</mo><mn>6</mn><mo>)</mo><mo>+</mo><mn>2</mn><mo>&times;</mo><mn class="highlight">5</mn></math></td>
+            <td><math><mn>3</mn><mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow><mo>+</mo><mn>7</mn>
+              <mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow></math></td>
+          </tr>
+          <tr>
+            <th>Mismatches</th>
+            <td><math><mn>2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn>4</mn><mo>&times;</mo><mn>5</mn></math></td>
+            <td><math><mn>2</mn><mo>+</mo><mn>3</mn><mo>+</mo><mn>4</mn></math></td>
+            <td><math><mn>3</mn><mo>&divide;</mo><mn>2</mn><mo>+</mo><mn>2</mn><mo>*</mo><mn>5</mn></math></td>
+          </tr>
+        </tbody>
+      </table>
+      </p>
+      <h3>Topics</h3>
+      <p>
+      This project is designed to be as flexible as possible, and apart from the main operations in
+      BODMAS/BIDMAS/PEMDAS, they are all defined by our custom topic files. They specify a list of
+      functions and constants to include, and then a bunch of actions that try to find matches
+      to then transform it when the action is selected.
+      </p>
+      <p>
+      All files can be found on <a href="https://github.com/Dreksh/algebra-explorer/tree/main/www/topics">our Github</a>.
+      You may notice a lot of backslashes, and that's because our plain-text-input relies on that for functions
+      as well as long variable names.
+      </p>
+      <p>
+      You can also make your custom topics to load into the webpage. You can find it in the menu.
+      </p>
+      <h3>Rock, Paper, Scissors</h3>
+      <p>Rock, Paper, Scissors is a simple example with 3 rules (ignoring the draws)</p>
+      <p class="indented">Rock beats Scissors</p>
+      <p class="indented">Scissors beats Paper</p>
+      <p class="indented">Paper beats Rock</p>
+      <p>With these rules, we can determine the winner of a competition. See it in action with the "Try it out"</p>
       <div class="try-it-out" data-target='["\\vs(\\rock,\\vs(\\scissors,\\paper))"]' data-source="blog/rps-source.json">
-        <p> Here is an example of Rock, Paper, Scissors!  </p>
         <p>
         This is special because it doesn't matter if they're on the left or right,
         the result will be the same (it is commutative). But! switching the matches with different combinations
-        will not come up with the same result.
+        will not come up with the same result (it is not associative).
+        </p>
+        <p>
+        Check out the rules that are used <a href="../topics/rps.json">here</a>.
         </p>
       </div>
       </section>
