@@ -13,6 +13,7 @@ function run() {
                     if (node.dataset.source) queries.push("source=" + encodeURIComponent(node.dataset.source));
                     let frame = document.createElement("iframe");
                     frame.src = "../index.html?" + queries.join("&");
+                    frame.setAttribute("class", "eq"+queries.length);
                     node.insertAdjacentElement("beforeend",frame);
                 }
             } else {
