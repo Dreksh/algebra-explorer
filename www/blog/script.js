@@ -44,3 +44,8 @@ function run() {
         node.insertAdjacentElement("afterbegin", button);
     }
 }
+function toggleMenu() {
+    let menu = document.getElementsByTagName("nav");
+    if (!menu) return;
+    menu[0].className = menu[0].className == "closed" ? "" : "closed";
+}

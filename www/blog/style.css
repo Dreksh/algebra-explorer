@@ -1,27 +1,58 @@
 :root {
     --background-color: lightgrey;
 }
-html,h2 {
+h2 {
     padding:0;
     margin: 0;
+}
+html {
+    background-color: var(--background-color);
+    padding: 0;
+    margin: 0;
+    overflow: auto;
+    height: fit-content;
 }
 body {
     display: flex;
     flex-direction: row;
+    height: fit-content;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 0;
 }
 nav {
     position: sticky;
+    box-sizing: border-box;
+    margin: 0 0.5rem;
+    padding: 0;
+    width: 20rem;
     top: 0;
+    height: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     background-color: var(--background-color);
-    height: 100vh;
-    width: fit-content;
-    font-size: 2rem;
-    max-width: 600;
+    font-size: 1.5rem;
     flex-shrink: 1;
+    max-width: 20rem;
+    transition: ease-out 0.5s max-width;
+}
+#menu {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    height: 2rem;
+    width: 2rem;
+    mask: url(img/menu.svg);
+    background-color: blue;
+}
+#menu:hover {
+    background-color: lightblue;
+}
+nav.closed {
+    max-width: 0;
+    transition: ease-out 0.5s max-width;
 }
 nav a {
     margin: 1rem 0;
@@ -38,13 +69,18 @@ a:hover {
     color: lightblue;
 }
 main {
-    display: flex;
-    flex-direction: column;
+    background-color: white;
+    position: relative;
+    height: fit-content;
     max-width: 1000;
     padding: 1rem;
+    margin: 1rem;
 }
 h2 {
     font-size: 2rem;
+}
+img {
+    width: 20rem;
 }
 section {
     display: block;
@@ -53,33 +89,47 @@ section {
 }
 .explanation {
     display: flex;
-    flex-direction: row;
+    max-width: 100%;
+    flex-flow: row wrap;
     justify-content: center;
 }
 .explanation:nth-of-type(even) {
-    flex-direction: row-reverse;
+    flex-flow: row-reverse wrap;
+}
+.explanation * {
+    max-height: 7rem;
+}
+.explanation p {
+    flex-shrink: 1;
+    min-width: 0;
+    min-height: 0;
+    width: auto;
 }
 div.try-it-out {
     position: relative;
     display: block;
     background-color: var(--background-color);
+    border-radius: 1rem;
     width: 90%;
+    box-sizing: border-box;
     margin: 0 auto;
-    padding: 0 0 1rem 0;
+    padding: 0.2rem 1rem 1rem 1rem;
     max-height: 2rem;
     overflow-y: hidden;
     transition: max-height 1s;
 }
-.try-it-out a {
-    display: block;
+.try-it-out h3 {
+    font-size: 1.5rem;
+    margin: 0;
+    vertical-align: middle;
 }
 .try-it-out.expand {
     max-height: 100dvh;
     transition: max-height 1s;
 }
 iframe {
-    width: 90%;
-    padding: 0 auto;
+    width: 100%;
+    margin: 0 auto;
     height: 50dvh;
     min-height: 20rem;
 }
