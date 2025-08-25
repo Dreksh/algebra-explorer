@@ -71,13 +71,15 @@
             }();
             cancelFunc = function() {
                 target.removeEventListener("pointermove", onMove);
-                target.removeEventListener("pointerup", onFinish);
-                target.removeEventListener("pointercancel", onFinish);
+                for (eventName of ["pointerup", "pointercancel", "pointerout"]) {
+                    target.removeEventListener(eventName, onFinish);
+                }
                 target.releasePointerCapture(val["pointerID"]);
             }
             target.addEventListener("pointermove", onMove);
-            target.addEventListener("pointerup", onFinish);
-            target.addEventListener("pointercancel", onFinish);
+            for (eventName of ["pointerup", "pointercancel", "pointerout"]) {
+                target.addEventListener(eventName, onFinish);
+            }
             target.setPointerCapture(val["pointerID"]);
             // TODO: start timer for activating hold semantic
             // Send the start version
