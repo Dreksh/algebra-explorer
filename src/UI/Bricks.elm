@@ -1,8 +1,6 @@
 module UI.Bricks exposing (
     Model,
-    init, advanceTime, updateTree,
-    flashTree,
-    view
+    init, advanceTime, updateTree, flashTree, view
     )
 
 import Array
@@ -81,7 +79,7 @@ advanceTime millis model =
             )
         newViewBox = model.viewBox |> Animation.advance millis
     in
-        { model | rects = newRects, viewBox = newViewBox}
+        {model | rects = newRects, viewBox = newViewBox}
 
 view: (Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute e)) -> Model -> Html e
 view createAttrs model =
@@ -116,9 +114,7 @@ updateTree tracker root model =
         ({model | rects = newRect, viewBox = finalViewBox}, t1)
 
 flashTree: Animation.Tracker -> Model -> (Model, Animation.Tracker)
-flashTree tracker model = (model, tracker)
-    -- let (newOp, newT) = Animation.easeOut tracker 0.4 0 model.backgroundOpacity
-    -- in ({model | backgroundOpacity = newOp}, newT)
+flashTree tracker model = (model, tracker)  -- TODO: make this jiggle the whole tree to signal a confirmation
 
 calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict (Int, Int) Rect -> (Dict.Dict (Int, Int) Rect, Animation.Vector2, Animation.Tracker)
 calculateTree_ animation root rects =

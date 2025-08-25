@@ -461,12 +461,15 @@ dialog > form {
 .contextualToolbar {
     grid-column: 1/3;
     grid-row: 3;
-    min-height: 2rem;
+    background-color: var(--color-toolbar);
+    display: flex;
+    flex-direction: column;
+}
+.contextualActions {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow: scroll;
-    background-color: var(--color-toolbar);
 }
 .hideScrollbar {
     scrollbar-width: none; /* Firefox */
@@ -526,6 +529,7 @@ dialog > form {
     overflow: scroll;
     background-color: var(--color-toolbar);
     opacity: 0.8;
+    animation: 0.5s ease-out hide-actions;
 }
 .contextualLatex > div > span > svg {
     height: 1.5rem;

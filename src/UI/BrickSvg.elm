@@ -2,7 +2,7 @@ module UI.BrickSvg exposing (bricks, brick)
 
 import Html exposing (Html)
 import Svg exposing (svg, g, rect, Attribute)
-import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform, style)
+import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform)
 -- ours
 import UI.Animation as Animation
 import UI.MathIcon as MathIcon

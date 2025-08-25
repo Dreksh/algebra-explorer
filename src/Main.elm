@@ -270,10 +270,10 @@ update event core = let model = core.swappable in
                         ({core | animation = newT, input = newIn, swappable = {model | showMenu = True}}, Cmd.none)
             (True, False, "z") -> case Display.undo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> commitHistory_ {core | swappable = {model | display = display}, animation = animation}
+                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
             (True, True, "z") -> case Display.redo core.animation model.display of
                 Err errStr -> submitNotification_ core errStr
-                Ok (display, animation) -> commitHistory_ {core | swappable = {model | display = display}, animation = animation}
+                Ok (display, animation) -> commitChange_ {core | swappable = {model | display = display}, animation = animation}
             (_, _, " ") -> update EnterCreateMode core
             _ -> (core, Cmd.none)
         EnterCreateMode -> let (inputModel, newT) = InputWithHistory.open core.animation core.input in
@@ -368,9 +368,9 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m (Display.previewOnHover model.display |> not) core
                 else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
-            Actions.Substitute -> case model.display.selected of
-                Nothing -> submitNotification_ core "no equation is selected"
-                Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
+            Actions.Substitute -> case model.display.recencyList of
+                [] -> submitNotification_ core "no equations to substitute"
+                (eq::_) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
             Actions.NumericalSubstitution root target ->
                 (   { core | dialog = Just (numSubDialog_ model.rules root target, Nothing)}
                 ,   Cmd.batch [focusTextBar_ (Dialog.fieldID "expr-input"), focusOutCmd {id = "dialog"}]
@@ -433,16 +433,6 @@ applyChange_ params commit model = let swappable = model.swappable in
 commitChange_: Model -> (Model, Cmd Event)
 commitChange_ model = let swappable = model.swappable in
     case Display.commit model.animation swappable.rules swappable.display of
-        Err errStr -> submitNotification_ model errStr
-        Ok (newDisplay, newTracker) -> let (susDisplay, susCmd) = Display.suspendHoverCmd newDisplay in
-            (   {model | swappable = {swappable | display = susDisplay}, animation = newTracker}
-            ,   Cmd.batch [updateQuery_ newDisplay, Cmd.map DisplayEvent susCmd]
-            )
-
--- TODO: refactor to reduce repetition
-commitHistory_: Model -> (Model, Cmd Event)
-commitHistory_ model = let swappable = model.swappable in
-    case Display.commitHistory model.animation swappable.display of
         Err errStr -> submitNotification_ model errStr
         Ok (newDisplay, newTracker) -> let (susDisplay, susCmd) = Display.suspendHoverCmd newDisplay in
             (   {model | swappable = {swappable | display = susDisplay}, animation = newTracker}

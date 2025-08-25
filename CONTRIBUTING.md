@@ -302,8 +302,10 @@ Math
   * same button remains in the same place
     * need suspension to prevent instant preview
 * the rules are:
-  * disable instantaneous pointerenter unsuspending hover
+  * disable pointerenter unsuspending hover, but only for a small amount of time
   * but still force a pointerenter after 1s just in case they don't move the mouse at all
+
+    `transform-box: fill-box;` is useful
 
 ### What to use as Rules?
 * maybe need to remove some
