@@ -122,8 +122,8 @@ span.space {
     justify-content: start;
 }
 .textbar img {
-    max-height: 2rem;
-    max-width: 2rem;
+    max-height: 2.5rem;
+    max-width: 2.5rem;
     margin: 0 1rem;
 }
 .input > ul {
