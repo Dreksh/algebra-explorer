@@ -186,15 +186,61 @@
       <section id="notation">
       <h2>Notation</h2>
       <p class="mainQuestion">Why do we need brackets?</p>
+      <h3>Langauge</h3>
+      <p>
+      On the surface, languages are simply letters on a page or sounds you make to pass information from one to another.
+      Maths notation (written maths) is exactly the same. They may contain concepts, but you mostly see
+      numbers and other symbols. One of these symbols is the bracket. To understand the bracket, we need to understand
+      what concept it conveys.
+      </p>
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
       <p>
-      BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
-      order that the operations should happen. But there is a subtle difference in which we
-      treat the Brackets and Orders/Indices vs Addition and Subtraction. The difference is
-      due to inverses.
+      As we have seen from the examples in the other sections, brackets help us to understand the order of operation.
+      The ones within the brackets are always handled first. If we kept all the brackets, it would look like
+      this:
       </p>
-      <!-- Reference factorisation, brackets may randomly appear -->
-      <!-- ab + ac = a(b+c) , initially no brackets, but then they appear-->
+      <p class="indented">
+      <math><mo>(</mo><mo>(</mo><mo>(</mo><mn>1</mn><mo>&times;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mo>(</mo><mn>3</mn><mo>&times;</mo><mn>4</mn><mo>)</mo><mo>)</mo>
+        <mo>-</mo><mo>(</mo><mn>5</mn><mo>&divide;</mo><mn>6</mn><mo>)</mo><mo>)</mo>
+      </math>
+      </p>
+      <p>Almost half of that is written with brackets! Let's also look at using a lot of brackets in English:</p>
+      <blockquote>
+      The (ordinarily sulky) cat eats (with a grin (on their (rather fluffy) face)).
+      </blockquote>
+      <p>
+      They are now too hard to read. We need to remove some of them; and that is where BODMAS/BIDMAS/PEMDAS comes in.
+      It is an agreed convention for understanding the order of operations, so that we can cut down on the number of brackets.
+      </p>
+      <table>
+      <thead>
+        <tr><th>Order</th><th>Name</th><th>Comments</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1st</td><td><b>B</b>rackets / <b>P</b>arenthesis </td><td>Allows for any expression inside of it to go first</td></tr>
+        <tr><td>2nd</td><td><b>O</b>rder / <b>I</b>ndices / <b>E</b>xponent </td><td>Repeated multiplcation</td></tr>
+        <tr><td>3rd</td><td><b>M</b>ultiplication / <b>D</b>ivision </td><td>Repeated addition (and its inverse)</td></tr>
+        <tr><td>4th</td><td><b>A</b>ddition / <b>S</b>ubtraction </td><td>Repeated counting (and its inverse)</td></tr>
+      </tbody>
+      </table>
+      <p>
+      Our example above can be fully written without any brackets, because all of the inner brackets have operations that
+      would be done earlier before the outer ones. So those brackets are redundant. The only times we need to use the bracket
+      is if we want to do something earlier that has a later order.
+      </p>
+      <h3>Factorisation</h3>
+      <p>
+      Factorisation is one of those cases where brackets are introduced. Instead of keeping the expression where multiplication
+      goes first, we rewrite it so that addition comes first. Since multiplication usually happens first according to BIDMAS/BODMAS/PEMDAS,
+      we need to insert brackets to tell others that we want addition to happen first.
+      </p>
+      <div class="try-it-out" data-target='["2*3+3*4"]'>
+      <p>
+      Click on the <math><mo>+</mo></math> sign, and find the 'Factorise' action.
+      When you factorise, you change the order of the operations, and brackets will appear.
+      To revert your change, either do an undo, or click on the <math><mo>&times;</mo></math> and find the 'Expand' action.
+      </p>
+      </div>
       </section>
 
       <section id="exploration-of-patterns">
