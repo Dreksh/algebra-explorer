@@ -13,19 +13,22 @@ html {
     height: fit-content;
 }
 body {
-    display: flex;
-    flex-direction: row;
-    height: fit-content;
     max-width: 1000px;
     margin: 0 auto;
     padding: 0;
+}
+#wrapper {
+    display: flex;
+    width: 100%;
+    flex-direction: row-reverse;
+    height: fit-content;
 }
 nav {
     position: sticky;
     box-sizing: border-box;
     margin: 0 0.5rem;
     padding: 0;
-    width: 20rem;
+    width: 40rem;
     top: 0;
     height: 100%;
     overflow-y: scroll;
@@ -33,12 +36,13 @@ nav {
     display: flex;
     flex-direction: column;
     background-color: var(--background-color);
+    flex-grow: 1;
     font-size: 1.5rem;
-    flex-shrink: 1;
-    max-width: 20rem;
+    max-width: 40rem;
     transition: ease-out 0.5s max-width;
 }
 #menu {
+    display: block;
     position: absolute;
     top: 1rem;
     left: 1rem;
@@ -72,6 +76,7 @@ main {
     background-color: white;
     position: relative;
     height: fit-content;
+    flex-shrink: 1;
     max-width: 1000;
     padding: 1rem;
     margin: 1rem;
@@ -79,31 +84,18 @@ main {
 h2 {
     font-size: 2rem;
 }
-img {
-    width: 20rem;
-}
 section {
     display: block;
     padding: 1rem;
     position: relative;
 }
-.explanation {
-    display: flex;
-    max-width: 100%;
-    flex-flow: row wrap;
-    justify-content: center;
-}
-.explanation:nth-of-type(even) {
-    flex-flow: row-reverse wrap;
-}
-.explanation * {
-    max-height: 7rem;
-}
-.explanation p {
-    flex-shrink: 1;
-    min-width: 0;
-    min-height: 0;
-    width: auto;
+.indented { margin-inline-start: 40px; } /* Copy blockquote's indentation */
+img.row2 { max-height: 8rem; }
+img.row3 { max-height: 12rem; }
+img {
+    max-height: 10rem;
+    padding: 0 auto;
+    width: 100%;
 }
 div.try-it-out {
     position: relative;

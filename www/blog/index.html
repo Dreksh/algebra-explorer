@@ -7,10 +7,9 @@
     <script src="script.js"></script>
   </head>
   <body onLoad="run()">
-    <nav>
-    </nav>
+    <div id="wrapper">
     <main>
-      <a id="menu" onclick="toggleMenu()"><object data="img/menu.svg" type="image/svg+xml"></object></a>
+      <a id="menu" onclick="toggleMenu()"></a>
       <h1><a href=\"index.html\">Algebra Explorer</a></h1>
       <section>
       Algebra Explorer is a tool that allows students to freely explore algebra without worrying about making mistakes.
@@ -40,24 +39,20 @@
       <p>
       We do this by visualising the notation via building blocks representation. <!-- [to become a footnote] representing the ‘abstract syntax tree’ of the maths-->
       </p>
-      <div class="explanation">
-        <img src="img/1_2.svg" title="Block representation of 1+2"/>
-        <p>
-        For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is represented by this block
-        where <math><mn>1</mn></math> and <math><mn>2</mn></math> are stacked on top of <math><mo>+</mo></math>,
-        implying that <math><mo>+</mo></math> <i>depends on</i> <math><mn>1</mn></math> and <math><mn>2</mn></math>.
-        </p>
-      </div>
+      <img class="row2" src="img/1_2.svg" title="Block representation of 1+2"/>
+      <p>
+      For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is represented by this block
+      where <math><mn>1</mn></math> and <math><mn>2</mn></math> are stacked on top of <math><mo>+</mo></math>,
+      implying that <math><mo>+</mo></math> <i>depends on</i> <math><mn>1</mn></math> and <math><mn>2</mn></math>.
+      </p>
       <p>
       Similarly, <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math> is:
       </p>
-      <div class="explanation">
-        <img src="img/1_2_3.svg" title="Block representation of 1+2x3"/>
-        <p>
-        This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using levels as an analogy for the dependency relationship between operations,
-        similar to the movements in "Towers of Hanoi" <!-- Add wiki link -->.
-        </p>
-      </div>
+      <img class="row3" src="img/1_2_3.svg" title="Block representation of 1+2x3"/>
+      <p>
+      This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using levels as an analogy for the dependency relationship between operations,
+      similar to the movements in "Towers of Hanoi" <!-- Add wiki link -->.
+      </p>
       <p>
       This best part of this tool is the <b>interactivity</b>! The rest of this article serves as a tutorial with that in mind,
       and along the way we hope to reveal some insights you might not have thought about before.
@@ -75,7 +70,7 @@
       <p>
       It may seem obvious that
       </p>
-      <p>
+      <p class="indented">
       <math>
         <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
       </math>
@@ -96,11 +91,11 @@
       In Algebra Explorer this can be performed by dragging blocks horizontally, just like <i>reordering</i> tabs in your browser.
       TODO: add .gif here
       </p>
-      <h3 class="clear"><s>Associativity</s> Grouping</h3>
+      <h3><s>Associativity</s> Grouping</h3>
       <p>
       It may also seem obvious that
       </p>
-      <p>
+      <p class="indented">
       <math>
         <mo>(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo>)</mo><mo>+</mo><mi>c</mi><mo>=</mo>
         <mi>a</mi><mo>+</mo><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo>
@@ -121,7 +116,7 @@
       This is performed by dragging vertically up to <i>group</i>, and down to <i>ungroup</i>.
       TODO: add .gif here
       </p>
-      <div class="try-it-out clear" data-target='["1+2+3+4+5"]'>
+      <div class="try-it-out" data-target='["1+2+3+4+5"]'>
         <p>
         Try out some of these actions:
         </p>
@@ -275,5 +270,8 @@
       </section>
 
     </main>
+    <nav class="closed">
+    </nav>
+    </div>
   </body>
 </html>
