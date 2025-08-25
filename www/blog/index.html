@@ -10,8 +10,8 @@
     <div id="wrapper">
     <main>
       <a id="menu" onclick="toggleMenu()"></a>
-      <h1><a href=\"index.html\">Algebra Explorer</a></h1>
-      <section>
+      <section id="top">
+      <h1><a href="../index.html">Algebra Explorer</a></h1>
       Algebra Explorer is a tool that allows students to freely explore algebra without worrying about making mistakes.
       Our aim is to let give students an intuition for:
       <ul>
@@ -60,9 +60,9 @@
       </p>
       </section>
 
+      <section id="commutativity-and-associativity">
       <h2>Commutativity and Associativity</h2>
-      <section>
-      <p>How can I understand the blocks?</p>
+      <p class="mainQuestion">How can I understand the blocks?</p>
       <p>
       Commutativity and Associativity are quite long and scary words, but in our tool they are represented via <i>dragging</i>.
       </p>
@@ -130,9 +130,9 @@
       </div>
       </section>
 
+      <section id="inverses">
       <h2>Inverses</h2>
-      <section>
-      <p>Why do some operations not allow swaps?</p>
+      <p class="mainQuestion">Why do some operations not allow swaps?</p>
       <h3>Negative Numbers</h3>
       <p>
       What does it mean to have -2 cats?
@@ -183,9 +183,9 @@
       </div>
       </section>
 
+      <section id="notation">
       <h2>Notation</h2>
-      <section>
-      <p>Why do we need brackets?</p>
+      <p class="mainQuestion">Why do we need brackets?</p>
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
       <p>
       BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
@@ -197,9 +197,9 @@
       <!-- ab + ac = a(b+c) , initially no brackets, but then they appear-->
       </section>
 
+      <section id="exploration-of-patterns">
       <h2>Exploration of Patterns</h2>
-      <section>
-      <p>What rules are we using?</p>
+      <p class="mainQuestion">What rules are we using?</p>
       <p>
       Maths is sometimes called the "Science of Pattern". The key is to know when a pattern is
       applicable to the exercise
@@ -217,8 +217,9 @@
       </div>
       </section>
 
+      <section id="extensions">
       <h2>Extensions</h2>
-      <section>
+      <p class="mainQuestion">What else can I do?</p>
       <p>
       We've covered the basics of this tool, but we've also added a bit more topics for you to play around with.
       You can try:
@@ -230,29 +231,9 @@
       <iframe src="../index.html"></iframe>
       </section>
 
-      <h2>To do</a></h2>
-      <section>
-      <p>
-      This is only the first version which we were able to complete by
-      the SoME 2025 deadline. There are many features which we would love to
-      do. For example:
-      </p>
-      <ul>
-        <li><p>Tutorials</p></li>
-        <li><p>Input Conditions for parameters</p></li>
-        <li><p>Mobile-friendly webpage</p></li>
-        <li><p>Accessibility Improvements</p></li>
-      </ul>
-      <p>
-      If you have any feature requests, or any issues with the tool, do create
-      an issue using the link: <br />
-      <a href="https://github.com/Dreksh/algebra-explorer/issues">https://github.com/Dreksh/algebra-explorer/issues</a> <br />
-      This includes asking to fill the gaps of our latex parser
-      </p>
-      </section>
-
+      <section id="about-us">
       <h2>About Us</h2>
-      <section>
+        <p class="mainQuestion">Who are we?</p>
         <p>
         We're Derek and Jonny! Two Electronics and Information Engineering graduates from
         Imperial College London. We share a passion in math, computing and education!
@@ -271,6 +252,13 @@
 
     </main>
     <nav class="closed">
+      <a href="#top">Top</a>
+      <a href="#commutativity-and-associativity">Commutativity and Associativity</a>
+      <a href="#inverses">Inverses</a>
+      <a href="#notation">Notation</a>
+      <a href="#exploration-of-patterns">Exploration of Patterns</a>
+      <a href="#extensions">Extensions</a>
+      <a href="#about-us">About Us</a>
     </nav>
     </div>
   </body>

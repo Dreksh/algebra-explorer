@@ -50,6 +50,7 @@ nav {
     width: 2rem;
     mask: url(img/menu.svg);
     background-color: blue;
+    z-index: 1;
 }
 #menu:hover {
     background-color: lightblue;
@@ -83,6 +84,11 @@ main {
 }
 h2 {
     font-size: 2rem;
+    text-align: center;
+}
+.mainQuestion {
+    text-align: center;
+    font-style: italic;
 }
 section {
     display: block;

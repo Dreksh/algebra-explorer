@@ -1,20 +1,4 @@
 function run() {
-    // Update --n variable in css & prepare anchors
-    let navbar = document.getElementsByTagName("nav");
-    if (navbar.length != 0) {
-        let bar = navbar[0];
-        for (let node of document.getElementsByTagName("h2")) {
-            let ref = document.createElement("a");
-            ref.innerHTML = node.innerHTML;
-            let id = node.innerHTML.replace(/\W+/g, '-').toLowerCase();
-            ref.href = "#" + id;
-            bar.insertAdjacentElement("beforeend", ref);
-
-            let anchor = document.createElement("a");
-            anchor.id = id;
-            node.insertAdjacentElement("beforebegin", anchor);
-        }
-    }
     // Set callbacks on try-it-out
     for (let node of document.getElementsByClassName("try-it-out")) {
         let removalTime = null;
@@ -45,6 +29,7 @@ function run() {
     }
 }
 function toggleMenu() {
+    console.log("yo");
     let menu = document.getElementsByTagName("nav");
     if (!menu) return;
     menu[0].className = menu[0].className == "closed" ? "" : "closed";
