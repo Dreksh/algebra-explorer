@@ -24,7 +24,6 @@ import Algo.Math as Math
 import Components.Evaluate as Evaluate
 import Components.Query as Query
 import Components.Rules as Rules
-import Components.Tutorial as Tutorial
 import Helper
 import UI.Actions as Actions
 import UI.Animation as Animation
@@ -87,7 +86,6 @@ type alias Model =
 type alias Swappable =
     {   display: Display.Model
     ,   rules: Rules.Model
-    ,   tutorial: Tutorial.Model
     ,   notification: Notification.Model
     ,   menu: Menu.Model
     ,   evaluator: Evaluate.Model EvalType Event
@@ -101,7 +99,6 @@ type Event =
     | DisplayEvent Display.Event
     | RuleEvent Rules.Event
     | ActionEvent Actions.Event
-    | TutorialEvent Tutorial.Event
     | NotificationEvent Notification.Event
     | MenuEvent Menu.Event
     | InputEvent InputWithHistory.Event
@@ -155,9 +152,8 @@ init flags url key =
     (   {   swappable =
             { display = newDisplay
             , rules = Rules.init
-            , tutorial = Tutorial.init
             , notification = nModel
-            , menu = Menu.init (Set.fromList ["Settings", "Equations", "Tutorials"])
+            , menu = Menu.init (Set.fromList ["Settings", "Equations", "Topics"])
             , evaluator = Evaluate.init evaluateString
             , showMenu = False
             }
@@ -222,8 +218,6 @@ update event core = let model = core.swappable in
         EventUrlChange _ -> (core, Cmd.none)
         DisplayEvent e -> let (dModel, newAnimation, dCmd) = Display.update core.size core.animation model.rules e model.display in
             ({core | swappable = {model | display = dModel}, animation = newAnimation}, Cmd.map DisplayEvent dCmd)
-        TutorialEvent e -> let (tModel, tCmd) = Tutorial.update e model.tutorial in
-            (updateCore {model | tutorial = tModel}, Cmd.map TutorialEvent tCmd)
         NotificationEvent e -> let (nModel, newT) = Notification.update core.animation e model.notification in
             ({core | animation = newT, swappable = {model | notification = nModel}}, Cmd.none)
         MenuEvent e -> (updateCore {model | menu = Menu.update e model.menu}, Cmd.none)
@@ -487,7 +481,6 @@ view core = let model = core.swappable in
                             ]
                         ,   Menu.Section {name = "Equations", icon = Just (\c -> a [HtmlEvent.onClick EnterCreateMode, class "clickable", class c] [text "+"])}
                             (Display.menu DisplayEvent model.display)
-                        ,   Tutorial.menu TutorialEvent model.tutorial
                         ,   Menu.Section {name = "Topics", icon = Just (\c -> a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable", class c] [text "+"])}
                             (Menu.rules RuleEvent model.rules)
                         ]
@@ -500,7 +493,6 @@ view core = let model = core.swappable in
                         )
                     ]
                 ]) |> Just
-            --,   ("tutorial", Tutorial.view TutorialEvent [] model.tutorial) |> Just
             ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view DialogEvent (Rules.functionProperties model.rules) d))
             ,   ("notification", Notification.view NotificationEvent [id "notification"] model.notification) |> Just
             ]
@@ -635,18 +627,17 @@ triplet x y z = (x,y,z)
 
 swappableDecoder: (List Display.FullEquation -> Cmd Display.Event) -> Decode.Decoder (Swappable, Animation.Tracker)
 swappableDecoder updateQuery = Decode.map2 Tuple.pair
-    (   Decode.map3 triplet
+    (   Decode.map2 Tuple.pair
         (Decode.field "display" (Display.decoder setCapture updateQuery displayMouseCmd))
         (Decode.field "rules" Rules.decoder)
-        (Decode.field "tutorial" Tutorial.decoder)
     )
     (   Decode.map3 triplet
         (Decode.field "menu" Menu.decoder)
         (Decode.field "evaluator" (Evaluate.decoder evaluateString evalTypeDecoder_))
         (Decode.field "showMenu" Decode.bool)
     )
-    |> Decode.map (\(((display, tracker), rules, tutorial),(menu,evaluator,showMenu)) ->
-       (Swappable display rules tutorial Notification.init menu evaluator showMenu, tracker)
+    |> Decode.map (\(((display, tracker), rules),(menu,evaluator,showMenu)) ->
+       (Swappable display rules Notification.init menu evaluator showMenu, tracker)
     )
 
 evalTypeDecoder_: Decode.Decoder EvalType
@@ -667,7 +658,6 @@ saveFile model = Encode.encode 0
     (   Encode.object
         [   ("display", Display.encode model.display)
         ,   ("rules", Rules.encode model.rules)
-        ,   ("tutorial", Tutorial.encode model.tutorial)
         ,   ("notification", Notification.encode model.notification)
         ,   ("menu", Menu.encode model.menu)
         ,   ("evaluator", Evaluate.encode (\t -> case t of
