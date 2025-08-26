@@ -11,7 +11,7 @@
     --color-textbox: white;
     --color-grab: rgb(230,230,230);
     --color-selected: lightgreen;
-    --color-selected-text: green;
+    --color-selected-text: rgb(150,255,150);
     --color-toolbar: rgb(180,180,180);
 }
 html, body {
