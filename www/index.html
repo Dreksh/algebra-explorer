@@ -81,7 +81,6 @@
                 target.addEventListener(eventName, onFinish);
             }
             target.setPointerCapture(val["pointerID"]);
-            // TODO: start timer for activating hold semantic
             // Send the start version
             app.ports.svgMouseEvent.send({"event": 0, "id": id, "x": startP.x, "y": startP.y, "time": 0});
         });

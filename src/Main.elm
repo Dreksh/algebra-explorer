@@ -40,6 +40,7 @@ import UI.Menu as Menu
 import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
 import Components.Rules as Rules
+import UI.Actions as Actions
 
 -- Overall Structure of the app: it's a document
 
@@ -355,11 +356,11 @@ update event core = let model = core.swappable in
                 -- don't spawn dialog on hover if multiple matches
                 then case Helper.listIndex 0 p.matches of
                     Nothing -> submitNotification_ core "Unable to extract the match"
-                    Just m -> applyChange_ m False core
+                    Just m -> applyChange_ m (Display.previewOnHover model.display |> not) core
                 else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
-            Actions.Substitute -> case model.display.selected of
-                Nothing -> submitNotification_ core "no equation is selected"
-                Just (eq, _, _) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
+            Actions.Substitute -> case model.display.recencyList of
+                [] -> submitNotification_ core "no equations to substitute"
+                (eq::_) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
             Actions.NumericalSubstitution root target ->
                 (   { core | dialog = Just (numSubDialog_ model.rules root target, Nothing)}
                 ,   Cmd.batch [focusTextBar_ (Dialog.fieldID "expr-input"), focusOutCmd {id = "dialog"}]
@@ -408,7 +409,8 @@ update event core = let model = core.swappable in
                         Ok (dModel, animation) -> commitChange_ {core | dialog = Nothing, swappable = {model | evaluator = eModel, display = dModel}, animation = animation}
                 Just (EvalType_ id) -> case Display.evaluateToNumber core.animation id reply.value model.display of
                     Err errStr -> submitNotification_ newCore errStr
-                    Ok (dModel, animation) -> ({core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}, Cmd.none)
+                    Ok (dModel, animation) -> {core | swappable = {model | evaluator = eModel, display = dModel}, animation = animation}
+                        |> if Display.previewOnHover model.display then (\m -> (m, Cmd.none)) else commitChange_
 
 
 applyChange_: Actions.SingleMatch -> Bool -> Model -> (Model, Cmd Event)
@@ -420,14 +422,17 @@ applyChange_ params commit model = let swappable = model.swappable in
 
 commitChange_: Model -> (Model, Cmd Event)
 commitChange_ model = let swappable = model.swappable in
-    case Display.commit swappable.rules swappable.display of
+    case Display.commit model.animation swappable.rules swappable.display of
         Err errStr -> submitNotification_ model errStr
-        Ok newDisplay -> ({model | swappable = {swappable | display = newDisplay}}, updateQuery_ newDisplay)
+        Ok (newDisplay, newTracker) -> let (susDisplay, susCmd) = Display.suspendHoverCmd newDisplay in
+            (   {model | swappable = {swappable | display = susDisplay}, animation = newTracker}
+            ,   Cmd.batch [updateQuery_ newDisplay, Cmd.map DisplayEvent susCmd]
+            )
 
 resetChange_: Model -> (Model, Cmd Event)
 resetChange_ model = let swappable = model.swappable in
     case Display.reset model.animation swappable.display of
-        Err _ -> (model, Cmd.none)  -- TODO: use a timer to handle case of resetting a committed Action
+        Err _ -> (model, Cmd.none)
         Ok (newDisplay, newAnim) -> ({model | swappable = {swappable | display = newDisplay}, animation = newAnim}, Cmd.none)
 
 submitNotification_: Model -> String -> (Model, Cmd Event)
@@ -438,14 +443,13 @@ submitNotification_ model str = let swappable = model.swappable in
 httpErrorToString_: String -> Http.Error -> String
 httpErrorToString_ url err = case err of
     Http.BadUrl _ -> "Invalid URL provided: " ++ url
-    Http.Timeout -> "Timed out waitiing for: " ++ url
+    Http.Timeout -> "Timed out waiting for: " ++ url
     Http.NetworkError -> "Unable to reach: " ++ url
     Http.BadStatus code -> "The url returned an error code [" ++ String.fromInt code ++ "]: " ++ url
     Http.BadBody str -> "The file is malformed:\n" ++ str
 
 updateQuery_: Display.Model -> Cmd Event
-updateQuery_ = Display.updateQueryCmd 0
-    >> \(_, _, c) -> Cmd.map DisplayEvent c
+updateQuery_ = Display.updateQueryCmd >> \c -> Cmd.map DisplayEvent c
 
 focusTextBar_: String -> Cmd Event
 focusTextBar_ id = Dom.focus id |> Task.attempt (\_ -> NoOp)
@@ -466,7 +470,7 @@ view core = let model = core.swappable in
     , body =
         Html.Keyed.node "div" [id "body"]
         (   ("draggableListener", div [id "draggableListener"] [])
-        ::   Display.views DisplayEvent ActionEvent model.display
+        ::  Display.views DisplayEvent ActionEvent model.display
         ++  List.filterMap identity
             [   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"

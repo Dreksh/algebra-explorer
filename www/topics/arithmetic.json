@@ -25,6 +25,18 @@
         },
         {
             "title": "Uncancel",
+            "description": "Reintroducing double inversion, or inserting nothing",
+            "matches": [
+                {"from": "a", "to": ["a+0"]},
+                {"from": "a", "to": ["a-0"]},
+                {"from": "a", "to": ["a*1"]},
+                {"from": "a", "to": ["a/1"]},
+                {"from": "a", "to": ["--a"]},
+                {"from": "a", "to": ["1/1/a"]}
+            ]
+        },
+        {
+            "title": "Uncancel",
             "description": "Introduce _term_s without changing the value",
             "parameters": {
                 "a": {
@@ -35,18 +47,6 @@
             "matches": [
                 {"from": "x", "to": ["x+a-a"]},
                 {"from": "x", "to": ["x*a/a"]}
-            ]
-        },
-        {
-            "title": "Uncancel",
-            "description": "Reintroducing double inversion, or inserting nothing",
-            "matches": [
-                {"from": "a", "to": ["a+0"]},
-                {"from": "a", "to": ["a-0"]},
-                {"from": "a", "to": ["a*1"]},
-                {"from": "a", "to": ["a/1"]},
-                {"from": "a", "to": ["--a"]},
-                {"from": "a", "to": ["1/1/a"]}
             ]
         },
         {
