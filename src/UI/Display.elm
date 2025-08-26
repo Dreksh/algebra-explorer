@@ -549,10 +549,11 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                         Initial -> updateSelected_ eqNum grab.id False rules noGrabModel
                             |> \newModel -> (newModel, tracker, Cmd.none)
                         NoOp -> reset tracker noGrabModel
+                            |> Result.map (\(newModel, newTracker) -> (updateSelected_ eqNum grab.id False rules newModel, newTracker))
                             |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
                             |> Result.withDefault default
                         _ -> commit tracker rules noGrabModel
-                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
+                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, updateQueryCmd newModel))
                             |> Result.withDefault default
     UnsuspendHover force -> ({model | hoverSuspensions = if force then 0 else max 0 (model.hoverSuspensions - 1)}, tracker, Cmd.none)
     UnsuspendEnter -> ({model | enterSuspended = False}, tracker, Cmd.none)
@@ -684,16 +685,16 @@ views converter actionConvert model =
                             ]
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
-                ,   Html.div [class "contextualToolbar"]
+                ,   Html.div [class "actionToolbar"]
                     [   Html.Keyed.node "div"
-                        [   class "contextualActions"
+                        [   class "actions"
                         ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 2)) ++ "rem")
                         ]
                         (if not eqSelected then [] else
                         [   undoOrRedoAction converter eqNum (History.canUndo entry.history) (previewOnHover model) (not model.enterSuspended) True
                         ,   undoOrRedoAction converter eqNum (History.canRedo entry.history) (previewOnHover model) (not model.enterSuspended) False
                         ]
-                        ++ Actions.viewContextual actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
+                        ++ Actions.view actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
                         )
                     ]
                 ]
@@ -704,7 +705,7 @@ undoOrRedoAction: (Event -> msg) -> Int -> Bool -> Bool -> Bool -> Bool -> (Stri
 undoOrRedoAction converter eqNum canUndo previewHover suspendEnter isUndo =
     (   (if isUndo then "undo" else "redo") ++ if previewHover then "-hover" else ""
     ,   div
-        (   class "contextualAction" :: if canUndo
+        (   class "action" :: if canUndo
             then
             (   if previewHover
                 then
@@ -721,9 +722,9 @@ undoOrRedoAction converter eqNum canUndo previewHover suspendEnter isUndo =
                     then [HtmlEvent.onPointerEnter (UnsuspendHover True |> converter)]
                     else []
             )
-            else [class "contextualDisabled"]
+            else [class "actionDisabled"]
         )
-        [div [class "contextualActionButton", class "contextualActionIcon"] [(if isUndo then Icon.undo else Icon.redo) []]]
+        [div [class "actionButton", class "actionIcon"] [(if isUndo then Icon.undo else Icon.redo) []]]
     )
 
 historyEntry_: (Event -> msg) -> Bool -> Int -> Int -> Html.Html msg -> Html.Html msg

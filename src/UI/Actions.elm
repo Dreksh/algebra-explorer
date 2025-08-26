@@ -1,6 +1,6 @@
 module UI.Actions exposing (
     Event(..), MatchedRule, SingleMatch, Action(..), Selection,
-    matchRules, matchToLatex, viewContextual
+    matchRules, matchToLatex, view
     )
 
 import Dict
@@ -134,45 +134,6 @@ matchRule_ selected rule = rule.title |>
 
 -- UI-related
 
-displayAction_: (Event -> msg) -> Action -> List (Html.Html msg)
-displayAction_ converter action = case action of
-    DisplayOnly name -> [Html.h3 [class "displayOnly"] [Html.text name]]
-    Disallowed name -> [Html.h3 [class "disallowed"] [Html.text name]]
-    Allowed event name ->
-        let
-            unhoverable ev =
-                [   class "clickable"
-                ,   HtmlEvent.onClick (converter ev)
-                ]
-            hoverable ev =
-                [   class "clickable"
-                ,   HtmlEvent.onPointerEnter (converter ev)
-                ,   HtmlEvent.onPointerLeave (converter Reset)
-                ,   HtmlEvent.onClick (converter Commit)
-                ]
-        in case event of
-            NumericalSubstitution _ _ -> [Html.h3 (unhoverable event) [Html.text name]]
-            Substitute -> [Html.h3 (unhoverable event) [Html.text name]]
-            Apply matched -> let noParams = Dict.isEmpty matched.parameters in
-                case matched.matches of
-                [_] -> [Html.h3 ((if noParams then hoverable else unhoverable) event) [Html.text name]]
-                _ ->
-                    [   Html.h3 [] [Html.text name]
-                    ,   Html.ul [class "matches"]
-                        (matched.matches |> List.map (\match ->
-                            -- only want one match per button so that hover+click is deterministic
-                            Html.li [class "match"]
-                            [   matchToLatex
-                                (   (Apply {matched | matches = List.singleton match})
-                                    |> if noParams then hoverable else unhoverable
-                                )
-                                match
-                            ]
-                            )
-                        )
-                    ]
-            _ -> [Html.h3 (hoverable event) [Html.text name]]
-
 matchToLatex: List (Html.Attribute msg) -> SingleMatch -> Html.Html msg
 matchToLatex attrs match =
     match.fromLatex
@@ -185,8 +146,8 @@ matchToLatex attrs match =
     |> MathIcon.static []
     |> \child -> Html.span attrs [child]
 
-viewContextual: (Event -> msg) -> Bool -> Bool -> msg -> List (String, (List Action)) -> List (String, Html.Html msg)
-viewContextual converter previewOnHover unsuspendOnEnter unsuspendHover topics =
+view: (Event -> msg) -> Bool -> Bool -> msg -> List (String, (List Action)) -> List (String, Html.Html msg)
+view converter previewOnHover unsuspendOnEnter unsuspendHover topics =
     topics
     |> List.foldl (\(_, actions) foldEvents ->
         -- first convert to a dict so that actions across topics that share the same name can be mapped to the same button
@@ -205,14 +166,14 @@ viewContextual converter previewOnHover unsuspendOnEnter unsuspendHover topics =
     |> Dict.toList
     |> List.map (\(name, events) -> let key = name ++ if previewOnHover then "-hover" else "" in
         case events of
-            [event] -> (key, displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover "contextualAction" (Html.text name) event)
-            _ -> (key, displayContextualActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events)
+            [event] -> (key, displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover "action" (Html.text name) event)
+            _ -> (key, displayActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events)
         )
 
-displayContextualAction_: (Event -> msg) -> Bool -> Bool -> msg -> String -> Html.Html msg -> Event -> Html.Html msg
-displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event =
+displayAction_: (Event -> msg) -> Bool -> Bool -> msg -> String -> Html.Html msg -> Event -> Html.Html msg
+displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event =
     let
-        inner = [Html.div [class "contextualActionButton"] [label]]
+        inner = [Html.div [class "actionButton"] [label]]
 
         unhoverable = Html.div
             ([  class cls
@@ -254,12 +215,12 @@ displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHove
                 _ -> unhoverable  -- note that we should now only ever have one match
         _ -> hoverable
 
-displayContextualActions_: (Event -> msg) -> Bool -> Bool -> msg -> String -> List Event -> Html.Html msg
-displayContextualActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events =
-    Html.div [class "contextualSelect", class "contextualAction", HtmlEvent.onPointerEnter unsuspendHover]
-    [   Html.div [class "contextualActionButton"]
+displayActions_: (Event -> msg) -> Bool -> Bool -> msg -> String -> List Event -> Html.Html msg
+displayActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events =
+    Html.div [class "actionSelect", class "action", HtmlEvent.onPointerEnter unsuspendHover]
+    [   Html.div [class "actionButton"]
         [   Html.text name
-        ,   Html.div [class "contextualOptions", class "hideScrollbar"]
+        ,   Html.div [class "actionOptions", class "hideScrollbar"]
             (events |> List.map (\event ->
                 let
                     (label, cls) = case event of
@@ -267,11 +228,11 @@ displayContextualActions_ converter previewOnHover unsuspendOnEnter unsuspendHov
                             (   List.head matchedRule.matches
                                 |> Maybe.map (matchToLatex [])
                                 |> Maybe.withDefault (Html.text name)  -- note that this should never default since one match is the invariant
-                            ,   "contextualLatex"
+                            ,   "actionLatex"
                             )
-                        _ -> (Html.text name, "contextualText")
+                        _ -> (Html.text name, "actionText")
                 in
-                    displayContextualAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event
+                    displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event
                 )
             )
         ]
