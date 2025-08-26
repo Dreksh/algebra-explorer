@@ -1,6 +1,5 @@
 module UI.Bricks exposing (
-    Model,
-    init, advanceTime, updateTree, flashTree, view
+    Model, init, advanceTime, updateTree, view
     )
 
 import Array
@@ -112,9 +111,6 @@ updateTree tracker root model =
     in
 
         ({model | rects = newRect, viewBox = finalViewBox}, t1)
-
-flashTree: Animation.Tracker -> Model -> (Model, Animation.Tracker)
-flashTree tracker model = (model, tracker)  -- TODO: make this jiggle the whole tree to signal a confirmation
 
 calculateTree_: Animation.Tracker -> Math.Tree (Matcher.State Animation.State) -> Dict.Dict (Int, Int) Rect -> (Dict.Dict (Int, Int) Rect, Animation.Vector2, Animation.Tracker)
 calculateTree_ animation root rects =

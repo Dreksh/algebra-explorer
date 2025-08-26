@@ -182,14 +182,6 @@ updateBricks tracker entry =
     in
         ({entry | ui = (newB, newM)}, newT)
 
-flashBricks: Animation.Tracker -> Entry -> (Entry, Animation.Tracker)
-flashBricks tracker entry =
-    let
-        (b, m) = entry.ui
-        (newB, newT) = Bricks.flashTree tracker b
-    in
-        ({entry | ui = (newB, m)}, newT)
-
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     {   model
@@ -231,7 +223,7 @@ undoOrRedo_ isUndo tracker model = List.head model.recencyList
     |> Maybe.andThen (\eq ->
         Dict.get eq model.equations |> Maybe.map (\entry -> (eq, entry))
         )
-    |> Result.fromMaybe "No equation selected to undo"
+    |> Result.fromMaybe ("No equation selected to " ++ (if isUndo then "undo" else "redo"))
     |> Result.andThen (\(eq, entry) ->
         if (if isUndo then History.canUndo else History.canRedo) entry.history
         then Ok (eq, entry)
@@ -262,7 +254,7 @@ suspendHoverCooldown: Float
 suspendHoverCooldown = 1500
 
 toolbarSmoothTime_: Float
-toolbarSmoothTime_ = 750
+toolbarSmoothTime_ = 500
 
 suspendHoverCmd: Model -> (Model, Cmd Event)
 suspendHoverCmd model =
@@ -336,12 +328,10 @@ commit tracker rules model = selectedEquation_ model
     |> Result.map (\(eq, ids, entry) ->
         let
             newHis = History.update History.Commit entry.history
-            (newEntry, newTracker) = flashBricks tracker {entry | history = newHis}
-
-            newEquations = Dict.insert eq newEntry model.equations
+            newEquations = Dict.insert eq {entry | history = newHis} model.equations
             newActions = updateActions_ eq model.staged rules newEquations
         in
-            ({model | equations = newEquations, selected = model.staged, staged = Set.empty, actions = newActions}, newTracker)
+            ({model | equations = newEquations, selected = model.staged, staged = Set.empty, actions = newActions}, tracker)
         )
 
 reset: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
@@ -457,7 +447,7 @@ updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if
 
 deleteEqOrder_: Int -> Model -> Model
 deleteEqOrder_ num model = let filtered = List.filter (\n -> n /= num) model.recencyList in
-    if List.head model.recencyList == Just num
+    if List.head model.recencyList /= Just num
     then { model | recencyList = filtered }
     else { model
         |   recencyList = filtered
@@ -480,8 +470,8 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
         Just entry -> updatePositions_
             {   model
             |   equations = Dict.insert eq {entry | show = not entry.show, grabbing = Nothing} model.equations
-            ,   recencyList = List.filter (\n -> n /= eq) model.recencyList
             }
+            |> deleteEqOrder_ eq
             |> (\m -> (m, tracker, updateQueryCmd m))
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
