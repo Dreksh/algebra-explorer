@@ -1,6 +1,6 @@
 module UI.Actions exposing (
     Event(..), MatchedRule, SingleMatch, Action(..), Selection,
-    matchRules, matchToLatex, view
+    matchRules, matchToLatex, view, viewSubactions
     )
 
 import Dict
@@ -13,6 +13,7 @@ import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import Components.Rules as Rules
 import UI.Animation as Animation
+import UI.Icon as Icon
 import UI.MathIcon as MathIcon
 import UI.HtmlEvent as HtmlEvent
 
@@ -31,6 +32,8 @@ type Event =
     | NumericalSubstitution Int Float -- root matching value
     | Substitute
     | Evaluate Int String -- root evalString
+    | ShowSubactions (List MatchedRule)
+    | HideSubactions
 
 type Action =
     DisplayOnly String
@@ -42,6 +45,7 @@ type alias MatchedRule =
     ,   parameters: Dict.Dict String Rules.Parameter
     ,   matches: List SingleMatch
     }
+
 type alias SingleMatch =
     {   from: Matcher.MatchResult Rules.FunctionProp Animation.State
     ,   fromLatex: Latex.Model ()
@@ -167,13 +171,26 @@ view converter previewOnHover unsuspendOnEnter unsuspendHover topics =
     |> List.map (\(name, events) -> let key = name ++ if previewOnHover then "-hover" else "" in
         case events of
             [event] -> (key, displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover "action" (Html.text name) event)
-            _ -> (key, displayActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events)
+            _ -> (key, displayActionMultipleMatches_ converter name events)
+        )
+
+viewSubactions: (Event -> msg) -> Bool -> Bool -> msg -> List MatchedRule -> List (Html.Html msg)
+viewSubactions converter previewOnHover unsuspendOnEnter unsuspendHover matchedRules = matchedRules
+    |> List.map (\matchedRule ->
+        let
+            (label, cls) =
+                (   List.head matchedRule.matches
+                    |> Maybe.map (matchToLatex [])
+                    |> Maybe.withDefault (Html.text "Invariant violated!")
+                ,   "actionLatex"
+                )
+        in
+            displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label (Apply matchedRule)
         )
 
 displayAction_: (Event -> msg) -> Bool -> Bool -> msg -> String -> Html.Html msg -> Event -> Html.Html msg
 displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event =
     let
-        inner = [Html.div [class "actionButton"] [label]]
 
         unhoverable = Html.div
             ([  class cls
@@ -182,7 +199,7 @@ displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls labe
             ,   HtmlEvent.onPointerEnter unsuspendHover  -- needed to avoid blip in hover
             ]
             )
-            inner  -- TODO: add a symbol to indicate that there is a popup modal
+            [Html.div [class "actionButton"] [label, Html.div [class "actionIcon"] [Icon.popup []]]]
 
         hoverable = Html.div
             (   [   class cls
@@ -203,7 +220,8 @@ displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls labe
                     else []
                 )
             )
-            inner
+            [Html.div [class "actionButton"] [label]]
+
     in case event of
         NumericalSubstitution _ _ -> unhoverable
         Substitute -> unhoverable
@@ -215,25 +233,20 @@ displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls labe
                 _ -> unhoverable  -- note that we should now only ever have one match
         _ -> hoverable
 
-displayActions_: (Event -> msg) -> Bool -> Bool -> msg -> String -> List Event -> Html.Html msg
-displayActions_ converter previewOnHover unsuspendOnEnter unsuspendHover name events =
-    Html.div [class "actionSelect", class "action", HtmlEvent.onPointerEnter unsuspendHover]
-    [   Html.div [class "actionButton"]
-        [   Html.text name
-        ,   Html.div [class "actionOptions", class "hideScrollbar"]
-            (events |> List.map (\event ->
-                let
-                    (label, cls) = case event of
-                        Apply matchedRule ->
-                            (   List.head matchedRule.matches
-                                |> Maybe.map (matchToLatex [])
-                                |> Maybe.withDefault (Html.text name)  -- note that this should never default since one match is the invariant
-                            ,   "actionLatex"
-                            )
-                        _ -> (Html.text name, "actionText")
-                in
-                    displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls label event
-                )
-            )
+displayActionMultipleMatches_: (Event -> msg) -> String -> List Event -> Html.Html msg
+displayActionMultipleMatches_ converter name events =
+    let
+        matchedRules = events |> List.foldr (\event foldList -> case event of
+            Apply matchedRule -> matchedRule::foldList
+            _ -> foldList  -- this case should never match since only Apply rules can have multiple matches
+            ) []
+    in
+        Html.div
+        [   class "actionSelect"
+        ,   class "action"
+        ,   class "clickableNoCursor"
+        ,   HtmlEvent.onPointerEnter (ShowSubactions matchedRules |> converter)
+        ,   HtmlEvent.onPointerLeave (HideSubactions |> converter)
         ]
-    ]
+        [   Html.div [class "actionButton"] [ Html.text name ]
+        ]

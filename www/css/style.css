@@ -100,6 +100,9 @@ span.space {
 .clickableNoHover {
     cursor: pointer;
 }
+.clickableNoCursor:hover {
+    color: var(--color-hovered)
+}
 /* Text bar */
 .input {
     width: 70dvw;
@@ -446,7 +449,7 @@ span.centered {
     overflow: hidden;
     display: grid;
     grid-template-columns: 1fr auto;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr auto auto;
 }
 .equation {
     grid-column: 1;
@@ -458,6 +461,13 @@ span.centered {
     overflow: scroll;
 }
 .actionToolbar {
+    grid-column: 1/3;
+    grid-row: 4;
+    background-color: var(--color-toolbar);
+    display: flex;
+    flex-direction: column;
+}
+.actionSubtoolbar {
     grid-column: 1/3;
     grid-row: 3;
     background-color: var(--color-toolbar);
@@ -480,6 +490,7 @@ span.centered {
 }
 .action {
     display: flex;
+    font-size: 1.1rem;
 }
 .actionButton {
     display: flex;
@@ -508,17 +519,7 @@ span.centered {
     color: var(--color-background);
 }
 
-.actionSelect:hover > div {
-    background-color: var(--color-action);
-    margin-top: 0;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-}
-
-.actionOptions {
-    display: none;
-}
-.actionSelect:hover .actionOptions {
+.subactions {
     display: flex;
     flex-direction: row;
     position: absolute;
@@ -530,8 +531,13 @@ span.centered {
     opacity: 0.8;
     animation: 0.5s ease-out hide-actions;
 }
+.actionLatex > div > span {
+    height: 1.8rem;
+}
 .actionLatex > div > span > svg {
-    height: 1.5rem;
+    height: 1.6rem;
+    margin-top: 0.1rem;
+    margin-bottom: 0.1rem;
 }
 .brickRect {
     stroke: black;

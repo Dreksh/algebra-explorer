@@ -1,9 +1,9 @@
 module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, default, bin, undo, redo)
+    verticalLine, history, default, bin, undo, redo, popup)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg)
-import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeLinecap, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
+import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeLinecap, strokeLinejoin, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
 class: String -> Html.Attribute msg
@@ -103,4 +103,9 @@ undo attr = svg (viewBox "0 0 24 24" :: attr)
 redo: List (Html.Attribute msg) -> Html.Html msg
 redo attr = svg (viewBox "0 0 24 24" :: attr)
     [ path [d "M11 21A9 9 0 1 1 20 12M23 6L20 12L14 9", stroke "currentColor", strokeWidth "2", fill "none", strokeLinecap "round"] []
+    ]
+
+popup: List (Html.Attribute msg) -> Html.Html msg
+popup attr = svg (viewBox "-2 0 24 24" :: attr)
+    [ path [d "M10 16L18 8 12 8M18 8L18 14M6 8L4 8 4 22 18 22 18 20", stroke "grey", strokeWidth "2.5", fill "none", strokeLinecap "round", strokeLinejoin "round"] []
     ]
