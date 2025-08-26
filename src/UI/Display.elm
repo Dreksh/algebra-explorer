@@ -1,18 +1,21 @@
 module UI.Display exposing (
     Model, Event(..), FullEquation, init, update, views, menu,
-    anyVisible, undo, redo, updateQueryCmd, refresh,
+    anyVisible, undo, redo, updateQueryCmd, previewOnHover, suspendHoverCmd, refresh,
     add, advanceTime, transform, substitute, commit, reset,
     partitionNumber, evaluateToNumber,
     encode, decoder
     )
 
 import Dict
-import Html exposing (Html, a, div, span, text)
-import Html.Attributes exposing (class)
+import Html exposing (Html, a, div, span)
+import Html.Attributes exposing (class, style)
+import Html.Keyed
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Set
 import Svg.Attributes
+import Task
+import Process
 -- Ours
 import Helper
 import Algo.History as History
@@ -29,6 +32,8 @@ import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 import UI.SvgDrag as SvgDrag
 import UI.Actions as Actions
+import UI.HtmlEvent as HtmlEvent
+import UI.Actions as Actions
 
 type alias State = Matcher.State Animation.State
 type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
@@ -36,9 +41,11 @@ type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
 type alias Model =
     {   equations: Dict.Dict Int Entry
     ,   nextEquationNum: Int
-    ,   selected: Maybe (Int, Set.Set Int, Set.Set Int)  -- eq, selected, staged
+    ,   selected: Set.Set Int
+    ,   staged: Set.Set Int
     ,   actions: List (String, (List Actions.Action))  -- actions a cache for displaying matched rules
-    ,   createModeForEquation: Maybe Int
+    ,   hoverSuspensions: Int  -- whether or not to preview on hover
+    ,   enterSuspended: Bool  -- whether or not to unsuspend preview on enter
     ,   recencyList: List Int
     -- Command creators
     ,   setCapture: String -> Encode.Value -> Cmd Event
@@ -58,6 +65,8 @@ type alias Entry =
     ,   show: Bool
     ,   ui: UIModel
     ,   grabbing: Maybe Grab
+    ,   toolbarHeight: Animation.EaseState Float
+    ,   subtoolbarHeight: Animation.EaseState Float
     }
 
 type alias Grab =
@@ -84,6 +93,8 @@ type Event =
     | DraggableEvent Int Draggable.Event
     | PointerDown Int Grab Encode.Value (Float, Float) -- eqNum root currentIndex midpoints position
     | PointerDrag Int SvgDrag.Event
+    | UnsuspendHover Bool -- force or not
+    | UnsuspendEnter
 
 newEntry_: Animation.Tracker -> Int -> Int -> FullEquation -> (Entry, Animation.Tracker)
 newEntry_ tracker size index eq =
@@ -98,6 +109,8 @@ newEntry_ tracker size index eq =
         ,   show = True
         ,   ui = (b, m)
         ,   grabbing = Nothing
+        ,   toolbarHeight = Animation.newEaseFloat toolbarSmoothTime_ 0
+        ,   subtoolbarHeight = Animation.newEaseFloat toolbarSmoothTime_ 0
         }
     ,   newT
     )
@@ -121,9 +134,11 @@ init setCapture updateQuery svgMouseCmd tracker l =
     in
         (   {   equations = Dict.fromList eqList
             ,   nextEquationNum = size
-            ,   selected = Nothing
+            ,   selected = Set.empty
+            ,   staged = Set.empty
             ,   actions = []
-            ,   createModeForEquation = Nothing
+            ,   hoverSuspensions = 0
+            ,   enterSuspended = False
             ,   recencyList = []
             ,   setCapture = setCapture
             ,   updateQuery = updateQuery
@@ -138,14 +153,12 @@ createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVis
 
 add: Animation.Tracker -> FullEquation -> Model -> (Model, Animation.Tracker)
 add tracker eq model = let (newEntry, newTracker) = newEntry_ tracker (model.nextEquationNum + 1) model.nextEquationNum eq in
-    (   {   model
-        |   nextEquationNum = model.nextEquationNum + 1
-        ,   equations = Dict.insert model.nextEquationNum newEntry model.equations
-        ,   recencyList = model.nextEquationNum :: model.recencyList
-        }
-        |> updatePositions_
-    ,   newTracker
-    )
+    {   model
+    |   nextEquationNum = model.nextEquationNum + 1
+    ,   equations = Dict.insert model.nextEquationNum newEntry model.equations
+    }
+    |> updateEqOrder_ tracker model.nextEquationNum
+    |> \(m, t) -> (updatePositions_ m, tracker)
 
 updatePositions_: Model -> Model
 updatePositions_ model =
@@ -165,60 +178,91 @@ updateBricks tracker entry =
         (eq, latex) = History.next entry.history
         (b, m) = entry.ui
         (newB, t0) = Bricks.updateTree tracker eq.root b
-        (newW, newT) = MathIcon.set t0 Nothing latex m
+        (newM, newT) = MathIcon.set t0 Nothing latex m
     in
-        ({entry | ui = (newB, newW)}, newT)
+        ({entry | ui = (newB, newM)}, newT)
 
 advanceTime: Float -> Model -> Model
 advanceTime millis model =
     {   model
     |   equations = Dict.map (\_ entry -> let (b, m) = entry.ui in
-            {entry | ui = (Bricks.advanceTime millis b, MathIcon.advanceTime millis m)}
+            {   entry
+            |   ui = (Bricks.advanceTime millis b, MathIcon.advanceTime millis m)
+            ,   toolbarHeight = Animation.advance millis entry.toolbarHeight
+            ,   subtoolbarHeight = Animation.advance millis entry.subtoolbarHeight
+            }
         ) model.equations
     }
 
 selectedEquation_: Model -> Result String (Int, Set.Set Int, Entry)
-selectedEquation_ model = case model.selected of
-    Nothing -> Err "No nodes were selected"
-    Just (eq, ids, _) -> case Dict.get eq model.equations of
-        Nothing -> Err "Equation is not found"
-        Just entry -> Ok (eq, ids, entry)
+selectedEquation_ model = case List.head model.recencyList of
+    Nothing -> Err "no equations to select"
+    Just eq -> case Dict.get eq model.equations of
+        Nothing -> Err "Equation is not found, invariant violated!"
+        Just entry -> Ok (eq, model.selected, entry)
 
-stageChange: Animation.Tracker -> Int -> Set.Set Int -> History.Model (FullEquation, Latex.Model State) -> Entry -> Model -> (Model, Animation.Tracker)
-stageChange tracker eq ids newHistory entry model =
+stageChangeNewIds: Animation.Tracker -> Int -> Set.Set Int -> Set.Set Int -> History.Model (FullEquation, Latex.Model State) -> Entry -> Model -> (Model, Animation.Tracker)
+stageChangeNewIds tracker eq ids newIds newHistory entry model =
     let
         (newEntry, newT) = updateBricks tracker {entry | history = newHistory}
-        newSelected = Just (eq, ids, matchPrevIDs ids (History.next newHistory |> Tuple.first))
     in
         (   {   model
             |   equations = Dict.insert eq newEntry model.equations
-            ,   selected = newSelected
+            ,   staged = newIds
             }
         ,   newT
         )
 
-undo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
-undo tracker model = selectedEquation_ model
-    |> Result.map (\(eq, ids, entry) ->
-        let newHis = History.update (History.Stage History.Undo) entry.history
-        in stageChange tracker eq ids newHis entry model
+stageChange: Animation.Tracker -> Int -> Set.Set Int -> History.Model (FullEquation, Latex.Model State) -> Entry -> Model -> (Model, Animation.Tracker)
+stageChange tracker eq ids newHistory entry model =
+    let newIds = (matchPrevIDs ids (History.next newHistory |> Tuple.first))
+    in stageChangeNewIds tracker eq ids newIds newHistory entry model
+
+undoOrRedo_: Bool -> Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
+undoOrRedo_ isUndo tracker model = List.head model.recencyList
+    |> Maybe.andThen (\eq ->
+        Dict.get eq model.equations |> Maybe.map (\entry -> (eq, entry))
+        )
+    |> Result.fromMaybe ("No equation selected to " ++ (if isUndo then "undo" else "redo"))
+    |> Result.andThen (\(eq, entry) ->
+        if (if isUndo then History.canUndo else History.canRedo) entry.history
+        then Ok (eq, entry)
+        else Err ("Nothing to " ++ (if isUndo then "undo" else "redo"))
+        )
+    |> Result.map (\(eq, entry) ->
+        let
+            newHis = History.update (History.Stage (if isUndo then History.Undo else History.Redo)) entry.history
+            (newEntry, newT) = updateBricks tracker {entry | history = newHis}
+        in
+            ({model | equations = Dict.insert eq newEntry model.equations}, newT)
         )
 
-redo: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
-redo tracker model = selectedEquation_ model
-    |> Result.map (\(eq, ids, entry) ->
-        let newHis = History.update (History.Stage History.Redo) entry.history
-        in stageChange tracker eq ids newHis entry model
-        )
+undo = undoOrRedo_ True
+redo = undoOrRedo_ False
 
-updateQueryCmd: Animation.Tracker -> Model -> (Model, Animation.Tracker, Cmd Event)
-updateQueryCmd t model =
-    (   model
-    ,   t
-    ,   Dict.values model.equations
-        |> List.filter (\entry -> entry.show)
-        |> List.map (\entry -> History.current entry.history |> Tuple.first)
-        |> model.updateQuery
+updateQueryCmd: Model -> Cmd Event
+updateQueryCmd model =
+    Dict.values model.equations
+    |> List.filter (\entry -> entry.show)
+    |> List.map (\entry -> History.current entry.history |> Tuple.first)
+    |> model.updateQuery
+
+previewOnHover: Model -> Bool
+previewOnHover model = model.hoverSuspensions == 0
+
+suspendHoverCooldown: Float
+suspendHoverCooldown = 1500
+
+toolbarSmoothTime_: Float
+toolbarSmoothTime_ = 500
+
+suspendHoverCmd: Model -> (Model, Cmd Event)
+suspendHoverCmd model =
+    (   {model | hoverSuspensions = model.hoverSuspensions + 1, enterSuspended = True}
+    ,   Cmd.batch
+        [   Task.perform (always (UnsuspendHover False)) (Process.sleep suspendHoverCooldown)
+        ,   Task.perform identity (Task.succeed UnsuspendEnter)  -- we only need to suspend onPointerEnter instantaneously to prevent an instant pointerenter event
+        ]
     )
 
 partitionNumber: Animation.Tracker -> Int -> Float -> Math.Tree (Maybe Rules.FunctionProp) -> Model -> Result String (Model, Animation.Tracker)
@@ -229,7 +273,7 @@ partitionNumber tracker root target replacement model = selectedEquation_ model
         |> Matcher.replaceRealNode root target replacement
         |> Result.map (\(newSelect, newEq) ->
             let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-            in stageChange tracker eq ids newHis entry model
+            in stageChangeNewIds tracker eq ids (Set.singleton newSelect) newHis entry model
             )
         )
 
@@ -238,7 +282,7 @@ evaluateToNumber tracker root number model = selectedEquation_ model
     |> Result.andThen (\(eq, ids, entry) ->
         let
             replacement = if number < 0
-                then Math.UnaryNode {state = (Just Rules.negateProp,Nothing), name = "-", child = Math.RealNode {state = (Nothing, Nothing), value = -number}}
+                then Math.UnaryNode {state = (Just Rules.negateProp, Nothing), name = "-", child = Math.RealNode {state = (Nothing, Nothing), value = -number}}
                 else Math.RealNode {state = (Nothing, Nothing), value = number}
         in
             History.current entry.history
@@ -246,7 +290,7 @@ evaluateToNumber tracker root number model = selectedEquation_ model
             |> Matcher.replaceSubtree (Set.singleton root) replacement Matcher.newResult
             |> Result.map (\(newSelect, newEq) ->
                 let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
-                in stageChange tracker eq ids newHis entry model
+                in stageChangeNewIds tracker eq ids (Set.singleton newSelect) newHis entry model
                 )
         )
 
@@ -279,20 +323,15 @@ substitute tracker eqSub model = case Dict.get eqSub model.equations of
                         )
             )
 
-commit: Rules.Model -> Model -> Result String Model
-commit rules model = selectedEquation_ model
+commit: Animation.Tracker -> Rules.Model -> Model -> Result String (Model, Animation.Tracker)
+commit tracker rules model = selectedEquation_ model
     |> Result.map (\(eq, ids, entry) ->
         let
             newHis = History.update History.Commit entry.history
-            -- do not need to call updateBricks because it should already be 'previewed'
             newEquations = Dict.insert eq {entry | history = newHis} model.equations
-            newSelected = let staged = model.selected |> Maybe.map (\(_, _, s) -> s) |> Maybe.withDefault Set.empty
-                in Just (eq, staged, Set.empty)
-            newActions = updateActions_ newSelected rules newEquations
+            newActions = updateActions_ eq model.staged rules newEquations
         in
-            -- TODO: make the blocks look see-through or something to show it being committed
-            --   if we want to animate it then this function likely needs to return a Tracker
-            {model | equations = newEquations, selected = newSelected, actions = newActions}
+            ({model | equations = newEquations, selected = model.staged, staged = Set.empty, actions = newActions}, tracker)
         )
 
 reset: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
@@ -304,81 +343,43 @@ reset tracker model = selectedEquation_ model
                 newHis = History.update History.Reset entry.history
                 (newEntry, newTracker) = updateBricks tracker {entry | history = newHis}
                 newEquations = Dict.insert eq newEntry model.equations
-                newSelected = Just (eq, ids, Set.empty)
-                -- do not need to call updateActions_ because it has not been committed yet
             in
-                ({model | equations = newEquations, selected = newSelected}, newTracker)
+                ({model | equations = newEquations, staged = Set.empty}, newTracker)
             )
         )
-
--- a fallback selection is needed in case another or no equation is selected
--- TODO: clean up since this is a bit ugly
-swapSelectedIfNecessary_: Int -> Rules.Model -> Model -> Model
-swapSelectedIfNecessary_ eq rules model =
-    let
-        selEq = model.selected |> Maybe.map (\(sel, _, _) -> sel)
-        newSelected = if selEq == Just eq
-            then model.selected
-            else (
-                model.equations
-                |> Dict.get eq
-                |> Maybe.map (\entry ->
-                    entry.history
-                    |> History.current
-                    |> Tuple.first
-                    |> .root
-                    |> Math.getState
-                    |> Matcher.getID
-                    |> \id -> (eq, Set.singleton id, Set.empty)
-                    )
-                )
-        newActions = if selEq == Just eq
-            then model.actions
-            else updateActions_ newSelected rules model.equations
-    in
-        { model | selected = newSelected, actions = newActions }
 
 revert_: Int -> Int -> Rules.Model -> Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
 revert_ eq idx rules tracker model = Dict.get eq model.equations
     |> Maybe.map (\entry ->
         let
-            newHis = History.update (History.Revert idx) entry.history
+            newHis = entry.history |> History.update (History.Stage (History.Revert idx))
             (newEntry, newTracker) = updateBricks tracker {entry | history = newHis}
             newEquations = Dict.insert eq newEntry model.equations
-            newRootId = newHis |> History.current |> Tuple.first |> .root |> Math.getState |> Matcher.getID
-            newSelected = Just (eq, Set.singleton newRootId, Set.empty)
-            newActions = updateActions_ newSelected rules newEquations
         in
-            ({model | equations = newEquations, selected = newSelected, actions = newActions}, newTracker)
+            ({model | equations = newEquations, selected = Set.empty, actions = []}, newTracker)
         )
     |> Result.fromMaybe "Entry being reverted does not exist, invariant violated"
 
 updateSelected_: Int -> Int -> Bool -> Rules.Model -> Model -> Model
 updateSelected_ eq node combine rules model =
     let
-        selected = case (combine, model.selected) of
-            (True, Just (e, current, _)) -> if e /= eq
-                then Just (eq, Set.singleton node, Set.empty)
-                else if Set.member node current
-                then let newSet = Set.remove node current in
-                    if Set.isEmpty newSet then Nothing
-                    else Just (eq, newSet, Set.empty)
-                else Just (eq, Set.insert node current, Set.empty)
-            _ -> Just (eq, Set.singleton node, Set.empty)
+        newSelected = if combine
+            then if Set.member node model.selected
+                then Set.remove node model.selected
+                else Set.insert node model.selected
+            else Set.singleton node
 
-        actions = updateActions_ selected rules model.equations
+        actions = updateActions_ eq newSelected rules model.equations
     in
-        { model | selected = selected, actions = actions }
+        { model | selected = newSelected, actions = actions }
 
-updateActions_: Maybe (Int, Set.Set Int, Set.Set Int) -> Rules.Model -> Dict.Dict Int Entry -> List (String, (List Actions.Action))
-updateActions_ selected rules equations =
+updateActions_: Int -> Set.Set Int -> Rules.Model -> Dict.Dict Int Entry -> List (String, (List Actions.Action))
+updateActions_ eq ids rules equations =
     let
-        selection = selected
-            |> Maybe.andThen (\(eq, ids, _) -> Dict.get eq equations
-                |> Maybe.map (.history >> History.current >> Tuple.first)
-                |> Maybe.andThen (\fullEq -> Matcher.selectedSubtree ids fullEq |> Result.toMaybe
-                    |> Maybe.map (\(root, nodes) -> {tree = fullEq, root = root, nodes = nodes})
-                )
+        selection = Dict.get eq equations
+            |> Maybe.map (.history >> History.current >> Tuple.first)
+            |> Maybe.andThen (\fullEq -> Matcher.selectedSubtree ids fullEq |> Result.toMaybe
+                |> Maybe.map (\(root, nodes) -> {tree = fullEq, root = root, nodes = nodes})
             )
     in
         Actions.matchRules rules (Dict.size equations) selection
@@ -419,71 +420,106 @@ refresh rules tracker model =
         )
         (model.equations, tracker)
         model.equations
-        |> \(eqs, newT) -> ({model | equations = eqs, actions = actions, selected = Nothing}, newT)
+        |> \(eqs, newT) -> ({model | equations = eqs, actions = actions, selected = Set.empty}, newT)
 
-updateEqOrder_: Int -> List Int -> List Int
-updateEqOrder_ num original = num :: (List.filter (\n -> n /= num) original)
+easeToolbar_: Animation.Tracker -> Int -> Float -> Model -> (Model, Animation.Tracker)
+easeToolbar_ tracker num height model = Dict.get num model.equations
+    |> Maybe.map (\entry ->
+        let (newHeight, newTracker) = Animation.setEase tracker height entry.toolbarHeight
+        in ({model | equations = Dict.insert num {entry | toolbarHeight = newHeight} model.equations}, newTracker)
+        )
+    |> Maybe.withDefault (model, tracker)
+
+updateEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
+updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if selEq == Just num
+    then (model, tracker)
+    else { model
+        |   recencyList = num :: (List.filter (\n -> n /= num) model.recencyList)
+        ,   selected = Set.empty
+        ,   staged = Set.empty
+        ,   actions = []
+        }
+        |> easeToolbar_ tracker num 1
+        |> (\(m, t) -> case selEq of
+            Nothing -> (m, t)
+            Just prevFocus -> easeToolbar_ t prevFocus 0 m
+            )
+
+deleteEqOrder_: Int -> Model -> Model
+deleteEqOrder_ num model = let filtered = List.filter (\n -> n /= num) model.recencyList in
+    if List.head model.recencyList /= Just num
+    then { model | recencyList = filtered }
+    else { model
+        |   recencyList = filtered
+        ,   selected = Set.empty
+        ,   staged = Set.empty
+        ,   actions = []
+        }
+
 
 update: Draggable.Size -> Animation.Tracker -> Rules.Model -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker rules event model = let default = (model, tracker, Cmd.none) in case event of
     Select eq node -> updateSelected_ eq node False rules model
-        |> \newModel -> ({newModel | recencyList = updateEqOrder_ eq newModel.recencyList}, tracker, Cmd.none)
+        |> updateEqOrder_ tracker eq
+        |> (\(m, t) -> (m, t, Cmd.none))
     Delete eq -> updatePositions_
-        {model | equations = Dict.remove eq model.equations, recencyList = List.filter (\n -> n /= eq) model.recencyList}
-        |> updateQueryCmd tracker
+        ({model | equations = Dict.remove eq model.equations} |> deleteEqOrder_ eq)
+        |> (\m -> (m, tracker, updateQueryCmd m))
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry -> updatePositions_
             {   model
             |   equations = Dict.insert eq {entry | show = not entry.show, grabbing = Nothing} model.equations
-            ,   recencyList = updateEqOrder_ eq model.recencyList
             }
-            |> updateQueryCmd tracker
+            |> deleteEqOrder_ eq
+            |> (\m -> (m, tracker, updateQueryCmd m))
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->
-            (   {   model
-                |   equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations
-                ,   recencyList = updateEqOrder_ eq model.recencyList
-                }
-            , tracker, Cmd.none)
+            {model | equations = Dict.insert eq {entry | showHistory = not entry.showHistory} model.equations}
+            |> updateEqOrder_ tracker eq
+            |> (\(m, t) -> (m, t, Cmd.none))
     HistoryEvent eq he ->
         let
-            newModel = {model | recencyList = updateEqOrder_ eq model.recencyList}
+            (newModel, newTracker) = updateEqOrder_ tracker eq model
+            stage staged = case staged of
+                History.Undo -> undo newTracker newModel
+                History.Redo -> redo newTracker newModel
+                History.Revert idx -> revert_ eq idx rules newTracker newModel
+                _ -> Err "Change should only be staged via Actions.Event, invariant violated"
+            doCommit (m, t) = commit t rules m
+
             resModelTracker = case he of
-                History.Stage staged -> case staged of
-                    History.Undo -> undo tracker (swapSelectedIfNecessary_ eq rules newModel)
-                    History.Redo -> redo tracker (swapSelectedIfNecessary_ eq rules newModel)
-                    _ -> Err "Change should only be staged via Actions.Event, invariant violated"
-                History.Reset -> reset tracker newModel
-                History.Revert idx -> revert_ eq idx rules tracker newModel
-                History.Commit -> commit rules newModel |> Result.map (\m -> (m, tracker))
+                History.Stage staged -> stage staged
+                History.StageAndCommit staged -> stage staged |> Result.andThen doCommit
+                History.Reset -> reset newTracker newModel
+                History.Commit -> doCommit (newModel, newTracker)
+
+            commitCmd m t = updateQueryCmd m
+                |> (\updCmd -> suspendHoverCmd m |> (\(susMod, susCmd) -> (susMod, t, Cmd.batch [updCmd, susCmd])))
         in
             case resModelTracker of
                 Err _ -> default
-                Ok (m, t) -> updateQueryCmd t m
+                Ok (m, t) -> case he of
+                    History.StageAndCommit _ -> commitCmd m t
+                    History.Commit -> commitCmd m t
+                    _ -> (m, t, Cmd.none)
+
     DraggableEvent eq dEvent -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry -> Draggable.update size dEvent (entry.view |> Tuple.second)
             |> \(dModel, action) ->
-                (   {   model
-                    |   equations = Dict.insert eq {entry | view = (True, dModel)} model.equations
-                    ,   recencyList = updateEqOrder_ eq model.recencyList
-                    }
-                ,   tracker
-                ,   Maybe.map (\v -> model.setCapture v.id v.pID) action
-                    |> Maybe.withDefault Cmd.none
-                )
+                {model | equations = Dict.insert eq {entry | view = (True, dModel)} model.equations}
+                |> updateEqOrder_ tracker eq
+                |> \(m, t) -> (m, t, Maybe.map (\v -> model.setCapture v.id v.pID) action |> Maybe.withDefault Cmd.none)
+
     PointerDown eq grab pid point -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->
-            (   {   model
-                |   equations = Dict.insert eq { entry | grabbing = Just grab } model.equations
-                ,   recencyList = updateEqOrder_ eq model.recencyList
-                }
-            ,   tracker
-            ,   model.svgMouseCmd eq pid point
-            )
+            {model | equations = Dict.insert eq { entry | grabbing = Just grab } model.equations}
+            |> updateEqOrder_ tracker eq
+            |> \(m, t) -> (m, t, model.svgMouseCmd eq pid point)
+
     PointerDrag eqNum dragEvent -> case dragEvent of
         SvgDrag.Start _ -> default -- Handled in MouseDown
         SvgDrag.Move _ (x, y) -> case Dict.get eqNum model.equations of
@@ -495,22 +531,31 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                         grabbingEntry = { entry | grabbing = Just newGrabbing }
                         grabbedL = Rules.toLatex grabbedEq
                         newHis = History.update (History.Stage (History.Change (grabbedEq, grabbedL))) grabbingEntry.history
-                        newSel = Just (eqNum, Set.singleton newGrabbing.id, Set.singleton newGrabbing.id)
+                        newSel = Set.singleton newGrabbing.id
                         -- don't use stageChange because it updates the selected nodes
                         (newEntry, newT) = updateBricks tracker {grabbingEntry | history = newHis}
+                        newEquations = Dict.insert eqNum newEntry model.equations
                     in
-                        ({model | equations = Dict.insert eqNum newEntry model.equations, selected = newSel}, newT, Cmd.none)
+                        ({model | equations = newEquations, selected = newSel, staged = newSel}, newT, Cmd.none)
 
-        SvgDrag.End time _ -> case Dict.get eqNum model.equations of
+        SvgDrag.End _ _ -> case Dict.get eqNum model.equations of
             Nothing -> default
             Just entry -> case entry.grabbing of
                 Nothing -> default
-                Just grab -> let noGrabModel = {model | equations = Dict.insert eqNum {entry | grabbing = Nothing} model.equations}
+                Just grab ->
+                    let
+                        noGrabModel = {model | equations = Dict.insert eqNum {entry | grabbing = Nothing} model.equations}
                     in case grab.moved of
                         Initial -> updateSelected_ eqNum grab.id False rules noGrabModel
-                                |> \newModel -> (newModel, tracker, Cmd.none)
-                        NoOp -> (noGrabModel, tracker, Cmd.none)
-                        _ -> update size tracker rules (HistoryEvent eqNum History.Commit) noGrabModel
+                            |> \newModel -> (newModel, tracker, Cmd.none)
+                        NoOp -> reset tracker noGrabModel
+                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
+                            |> Result.withDefault default
+                        _ -> commit tracker rules noGrabModel
+                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
+                            |> Result.withDefault default
+    UnsuspendHover force -> ({model | hoverSuspensions = if force then 0 else max 0 (model.hoverSuspensions - 1)}, tracker, Cmd.none)
+    UnsuspendEnter -> ({model | enterSuspended = False}, tracker, Cmd.none)
 
 commuteOrAssociate: Float -> Float -> Entry -> Result String (Grab, FullEquation)
 commuteOrAssociate x y entry = case entry.grabbing of
@@ -601,12 +646,9 @@ views converter actionConvert model =
     |> List.map (\(eqNum, entry) ->
         let
             (_, dModel) = entry.view
-            highlight = model.selected
-                |> Maybe.andThen (\(selEq, set, stage) -> if selEq == eqNum
-                    then Just (if Set.isEmpty stage then set else stage)
-                    else Nothing
-                    )
-                |> Maybe.withDefault Set.empty
+            eqSelected = List.head model.recencyList |> Maybe.map (\selEq -> selEq == eqNum) |> Maybe.withDefault False
+            highlight = if eqSelected then Set.union model.selected model.staged else Set.empty
+            staging = entry.history.staged /= Nothing
             grab = entry.grabbing |> Maybe.map .id
 
             (b,m) = entry.ui
@@ -620,7 +662,7 @@ views converter actionConvert model =
                             ]
                         ) [Svg.Attributes.class "mathIcons"] m
                         |> Html.map converter
-                    ,   Bricks.view (brickAttr_ highlight grab eqNum) b
+                    ,   Bricks.view (brickAttr_ highlight staging grab eqNum) b
                         |> Html.map converter
                     ]
                 ,   div [class "historyHolder"]
@@ -631,7 +673,7 @@ views converter actionConvert model =
                             ,   div [class "history"]
                                 (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
                                     case List.drop middle children |> List.head of
-                                        Nothing ->[historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
+                                        Nothing -> [historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
                                         Just after -> historyEntry_ converter current eqNum index (MathIcon.static [] latex)
                                             ::  (
                                                 List.map (div []) (List.take middle children)
@@ -642,35 +684,46 @@ views converter actionConvert model =
                             ]
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
-                ,   div [class "contextualToolbar"]
-                    (   div [class "contextualTopic"]
-                        [   div
-                            (   class "contextualAction" :: if History.canUndo entry.history then
-                                [   class "clickable"
-                                ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Undo) |> converter)
-                                ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
-                                ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
-                                -- TODO: allow user to undo a bunch of times without another pointerenter
-                                --   maybe just skip the preview and allow direct commit in that case
-                                ]
-                                else [class "contextualDisabled"]
-                            )
-                            [div [class "contextualActionLabel"] [Icon.undo []]]
-                        ,   div
-                            (   class "contextualAction" :: if History.canRedo entry.history then
-                                [   class "clickable"
-                                ,   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage History.Redo) |> converter)
-                                ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
-                                ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
-                                ]
-                                else [class "contextualDisabled"]
-                            )
-                            [div [class "contextualActionLabel"] [Icon.redo []]]
+                ,   Html.div [class "contextualToolbar"]
+                    [   Html.Keyed.node "div"
+                        [   class "contextualActions"
+                        ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 2)) ++ "rem")
                         ]
-                        :: if Set.isEmpty highlight then [] else Actions.viewContextual actionConvert model.actions
-                    )
+                        (if not eqSelected then [] else
+                        [   undoOrRedoAction converter eqNum (History.canUndo entry.history) (previewOnHover model) (not model.enterSuspended) True
+                        ,   undoOrRedoAction converter eqNum (History.canRedo entry.history) (previewOnHover model) (not model.enterSuspended) False
+                        ]
+                        ++ Actions.viewContextual actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
+                        )
+                    ]
                 ]
             )
+        )
+
+undoOrRedoAction: (Event -> msg) -> Int -> Bool -> Bool -> Bool -> Bool -> (String, Html.Html msg)
+undoOrRedoAction converter eqNum canUndo previewHover suspendEnter isUndo =
+    (   (if isUndo then "undo" else "redo") ++ if previewHover then "-hover" else ""
+    ,   div
+        (   class "contextualAction" :: if canUndo
+            then
+            (   if previewHover
+                then
+                [   HtmlEvent.onPointerEnter (HistoryEvent eqNum (History.Stage (if isUndo then History.Undo else History.Redo)) |> converter)
+                ,   HtmlEvent.onPointerLeave (HistoryEvent eqNum History.Reset |> converter)
+                ,   HtmlEvent.onClick (HistoryEvent eqNum History.Commit |> converter)
+                ,   class "clickable"
+                ]
+                else
+                [   HtmlEvent.onClick (HistoryEvent eqNum (History.StageAndCommit (if isUndo then History.Undo else History.Redo)) |> converter)
+                ,   class "clickableNoHover"
+                ]
+                ++  if suspendEnter
+                    then [HtmlEvent.onPointerEnter (UnsuspendHover True |> converter)]
+                    else []
+            )
+            else [class "contextualDisabled"]
+        )
+        [div [class "contextualActionButton", class "contextualActionIcon"] [(if isUndo then Icon.undo else Icon.redo) []]]
     )
 
 historyEntry_: (Event -> msg) -> Bool -> Int -> Int -> Html.Html msg -> Html.Html msg
@@ -679,13 +732,13 @@ historyEntry_ converter current eqNum index inner = Html.a
         then [class "selected"]
         else
             [   class "clickable"
-            ,   HtmlEvent.onClick (HistoryEvent eqNum (History.Revert index) |> converter)
+            ,   HtmlEvent.onClick (HistoryEvent eqNum (History.StageAndCommit (History.Revert index)) |> converter)
             ]
     )
     [inner]
 
-brickAttr_: Set.Set Int -> Maybe Int -> Int -> Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute Event)
-brickAttr_ highlight grabbed eqNum id commutable groupable ungroupable =
+brickAttr_: Set.Set Int -> Bool -> Maybe Int -> Int -> Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute Event)
+brickAttr_ highlight staged grabbed eqNum id commutable groupable ungroupable =
     let
         grab = Grab id commutable groupable ungroupable Initial
     in
@@ -693,6 +746,7 @@ brickAttr_ highlight grabbed eqNum id commutable groupable ungroupable =
         [   HtmlEvent.onPointerCapture identity (PointerDown eqNum grab) |> Just
         ,   Svg.Attributes.class "commutable" |> Helper.maybeGuard (commutable /= Nothing || groupable /= Nothing || ungroupable /= Nothing)
         ,   Svg.Attributes.class "selected" |> Helper.maybeGuard (Set.member id highlight)
+        ,   Svg.Attributes.class "staged" |> Helper.maybeGuard staged
         ,   Svg.Attributes.class "grabbed" |> Helper.maybeGuard (grabbed == Just id)
         ]
 
@@ -700,11 +754,6 @@ encode: Model -> Encode.Value
 encode model = Encode.object
     [   (   "equations", Encode.dict String.fromInt encodeEntry_ model.equations)
     ,   (   "nextEquationNum", Encode.int model.nextEquationNum)
-    ,   (   "createModeForEquation"
-        ,   case model.createModeForEquation of
-            Nothing -> Encode.null
-            Just n -> Encode.int n
-        )
     ]
 
 encodeEntry_: Entry -> Encode.Value
@@ -725,10 +774,9 @@ encodeHistoryState_ (eq, l) = Encode.object
 
 decoder: (String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
-decoder setCapture updateQuery svgMouseCmd = Decode.map3 (\(eq, t) next create -> (Model eq next Nothing [] create [] setCapture svgMouseCmd updateQuery, t))
+decoder setCapture updateQuery svgMouseCmd = Decode.map2 (\(eq, t) next -> (Model eq next Set.empty Set.empty [] 0 False [] setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (   Decode.field "nextEquationNum" Decode.int)
-    (   Decode.field "createModeForEquation" <| Decode.maybe Decode.int)
 
 type alias TmpEntry_ =
     {   history: History.Model (FullEquation, Latex.Model State)
@@ -756,6 +804,8 @@ addDefaultPositions_ orig =
                 ,   showHistory = tEntry.showHistory
                 ,   show = tEntry.show
                 ,   grabbing = Nothing
+                ,   toolbarHeight = Animation.newEaseFloat toolbarSmoothTime_ 0
+                ,   subtoolbarHeight = Animation.newEaseFloat toolbarSmoothTime_ 0
                 }
             ,   newT
             )

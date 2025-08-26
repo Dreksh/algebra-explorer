@@ -2,7 +2,7 @@ module UI.Animation exposing (
     State, stateOps,
     Vector2, minVector2, maxVector2, addVector2, subVector2, scaleVector2, descaleVector2,
     EaseState, newEase, newEaseFloat, newEaseVector2,
-    setEase, current, target, advance,
+    setEase, easeOut, current, target, advance,
     Tracker, updateTracker,
     stateDecoder, encodeState
     )
@@ -11,9 +11,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
 import Algo.Matcher as Matcher
-import Components.Latex as Latex
 import Components.Rules as Rules
-import Helper
 
 {- Animation State -}
 
@@ -73,7 +71,7 @@ setEase tracker value (EaseState n) = if n.target == value
     else let diff = n.scale -1 value |> n.addition n.current in
         if n.remainingTime == 0
         then
-            (  EaseState
+            (   EaseState
                 {   n
                 |   remainingTime = n.changeDuration
                 ,   firstSpline = diff
@@ -94,6 +92,18 @@ setEase tracker value (EaseState n) = if n.target == value
                 }
             , max tracker n.changeDuration
             )
+
+easeOut: Tracker -> t -> t -> EaseState t -> (EaseState t, Tracker)
+easeOut tracker start finish (EaseState n) = let diff = n.scale -1 finish |> n.addition start in
+    (   EaseState
+        {   n
+        |   remainingTime = n.changeDuration
+        ,   firstSpline = diff
+        ,   secondSpline = diff
+        ,   target = finish
+        }
+    ,   max tracker n.changeDuration
+    )
 
 current: EaseState t -> t
 current (EaseState n) = n.current

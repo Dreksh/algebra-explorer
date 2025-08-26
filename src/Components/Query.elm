@@ -3,7 +3,6 @@ module Components.Query exposing (Model, parseInit, pushEquations)
 import Browser.Navigation as Nav
 import Url
 -- Ours
-import Algo.Math as Math
 import Algo.Matcher as Matcher
 import Components.Rules as Rules
 

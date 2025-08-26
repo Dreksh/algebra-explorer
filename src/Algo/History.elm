@@ -19,6 +19,7 @@ type alias Commit_ c =
 type Staged c
     = Undo
     | Redo
+    | Revert Int
     | Change c
     | Changes (List c)
 
@@ -32,9 +33,9 @@ type alias Model component =
 
 type Event c
     = Stage (Staged c)
+    | StageAndCommit (Staged c)
     | Reset
     | Commit
-    | Revert Int
 
 init: component -> Model component
 init c =
@@ -49,9 +50,9 @@ update: Event component -> Model component -> Model component
 update event model =
     case event of
         Stage staged -> { model | staged = Just staged }
+        StageAndCommit staged -> { model | staged = Just staged } |> commit
         Reset -> { model | staged = Nothing }
         Commit -> commit model
-        Revert idx -> { model | visits = idx::model.visits, undone = [], staged = Nothing }
 
 canUndo: Model c -> Bool
 canUndo model = List.length model.visits > 0
@@ -85,6 +86,7 @@ next model =
                 Redo -> case model.undone of
                     [] -> current model
                     (idx::_) -> getFromIdx idx
+                Revert idx -> getFromIdx idx
                 Change c -> c
                 Changes cs -> List.head cs
                     |> Maybe.withDefault (current model)
@@ -118,6 +120,7 @@ commit model = case model.staged of
         Redo -> case model.undone of
             [] -> model
             (x::others) -> { model | visits = x::model.visits, undone = others, staged = Nothing }
+        Revert idx -> { model | visits = idx::model.visits, undone = [], staged = Nothing }
         Change c -> model |> commit_ c
         Changes cs -> model |> commitMany_ cs
 

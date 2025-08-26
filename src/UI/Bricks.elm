@@ -1,6 +1,5 @@
 module UI.Bricks exposing (
-    Model,
-    init, advanceTime, updateTree, view
+    Model, init, advanceTime, updateTree, view
     )
 
 import Array
@@ -79,7 +78,7 @@ advanceTime millis model =
             )
         newViewBox = model.viewBox |> Animation.advance millis
     in
-        { model | rects = newRects, viewBox = newViewBox }
+        {model | rects = newRects, viewBox = newViewBox}
 
 view: (Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute e)) -> Model -> Html e
 view createAttrs model =

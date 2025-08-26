@@ -10,6 +10,7 @@
     --color-text: black;
     --color-textbox: white;
     --color-grab: rgb(230,230,230);
+    --color-action: rgb(240,240,240);
     --color-selected: lightgreen;
     --color-selected-text: rgb(150,255,150);
     --color-toolbar: rgb(180,180,180);
@@ -95,6 +96,9 @@ span.space {
 }
 .clickable:hover {
     color: var(--color-hovered);
+}
+.clickableNoHover {
+    cursor: pointer;
 }
 /* Text bar */
 .input {
@@ -338,7 +342,7 @@ span.space {
     overflow-x: scroll;
 }
 .toggleActionsSidebar {
-    display: flex;
+    display: none;
     flex-direction: row;
 }
 .toggleActionsSidebar > span {
@@ -466,43 +470,78 @@ span.centered {
 .contextualToolbar {
     grid-column: 1/3;
     grid-row: 3;
-    min-height: 2rem;
+    background-color: var(--color-toolbar);
+    display: flex;
+    flex-direction: column;
+}
+.contextualActions {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow: scroll;
-    background-color: var(--color-toolbar);
 }
-.contextualTopic {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    margin-left: 0.1rem;
-    margin-right: 0.1rem;
-    white-space: nowrap;
+.hideScrollbar {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+}
+.hideScrollbar::-webkit-scrollbar { /* WebKit */
+    width: 0;
+    height: 0;
 }
 .contextualAction {
     display: flex;
 }
-.contextualActionLabel {
+.contextualActionButton {
     display: flex;
     justify-content: center;
     align-items: center;
+    white-space: nowrap;
     margin-top: 0.2rem;
     margin-bottom: 0.2rem;
     margin-left: 0.1rem;
     margin-right: 0.1rem;
     padding-left: 0.4rem;
     padding-right: 0.4rem;
-    background-color: var(--color-textbox-alternate);
+    background-color: var(--color-action);
     border-radius: 0.4rem;
 }
-.contextualActionLabel > svg {
-    height: 1rem;
+.contextualActionIcon {
+    width: 1rem;
 }
+.contextualActionIcon > svg {
+    height: 100%;
+}
+
+/* only for undo and redo */
 .contextualDisabled {
     pointer-events: none;
     color: var(--color-background);
+}
+
+.contextualSelect:hover > div {
+    background-color: var(--color-action);
+    margin-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.contextualOptions {
+    display: none;
+}
+.contextualSelect:hover .contextualOptions {
+    display: flex;
+    flex-direction: row;
+    position: absolute;
+    bottom: 2.2rem;  /* this is the height of the toolbar plus the height of the draggable bottom edge */
+    left: 0.2rem;
+    right: 0.2rem;
+    overflow: scroll;
+    background-color: var(--color-toolbar);
+    opacity: 0.8;
+    animation: 0.5s ease-out hide-actions;
+}
+.contextualLatex > div > span > svg {
+    height: 1.5rem;
 }
 .brickRect {
     stroke: black;
@@ -513,13 +552,16 @@ span.centered {
     dominant-baseline: central;
     fill: none;
     stroke: black;
-    stroke-width: 0.075;
+    stroke-width: 0.05;
     stroke-linecap: round;
     stroke-linejoin: round;
     user-select: none;
 }
 .brick:hover > .brickRect {
     stroke: var(--color-highlight);
+}
+.brick.staged > .brickRect {
+    fill-opacity: 0.75;
 }
 .brick.selected > .brickRect {
     fill: var(--color-selected);

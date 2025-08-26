@@ -1,7 +1,7 @@
 module UI.BrickSvg exposing (bricks, brick)
 
-import Html exposing (Html, div)
-import Svg exposing (svg, g, rect, text_, text, Attribute)
+import Html exposing (Html)
+import Svg exposing (svg, g, rect, Attribute)
 import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform)
 -- ours
 import UI.Animation as Animation
@@ -60,8 +60,7 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
             ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari
-            ]
-            []
+            ] []
         ,   MathIcon.toSvgGroup
             [   transformAttr_ (Tuple.first labelOrigin) (Tuple.second labelOrigin)
             ,   class "brickText"
