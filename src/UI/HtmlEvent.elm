@@ -47,16 +47,16 @@ onPointerCapture converter activate = on "pointerdown"
         clientPos_
     )
 
-propagatableEvents_: Set.Set String
-propagatableEvents_ = Set.fromList ["Tab", "Escape", "Enter"]
+propagatableEvents_: Set.Set (Int, String) -- Bool is not comparable
+propagatableEvents_ = Set.fromList [(0, "Tab"), (0, "Escape"), (0, "Enter"), (1, "+"), (1, "="), (1, "-")]
 
 onKeyDown: ({key: String, shift: Bool, meta: Bool, time: Float} -> msg) -> Html.Attribute msg
 onKeyDown event = custom "keydown"
     (   map4
         (\key shift meta time ->
             {   message = event {key = key, shift = shift, meta = meta, time = time}
-            ,   stopPropagation = Set.member key propagatableEvents_ |> not
-            ,   preventDefault = Set.member key propagatableEvents_ |> not
+            ,   stopPropagation = Set.member (if meta then 1 else 0, key) propagatableEvents_ |> not
+            ,   preventDefault = Set.member (if meta then 1 else 0, key) propagatableEvents_ |> not
             }
         )
         (field "key" string)

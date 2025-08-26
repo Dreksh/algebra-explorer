@@ -1,27 +1,73 @@
 :root {
     --background-color: lightgrey;
 }
-html,h2 {
-    padding:0;
+p, li {
+    font-size: 1.3rem;
+}
+blockquote {
+    font-size: 1.4rem;
+    font-style: italic;
+}
+h3 {
+    font-size: 1.5rem;
+}
+h2 {
+    font-size:1.5rem;
     margin: 0;
 }
+html {
+    background-color: var(--background-color);
+    padding: 0;
+    margin: 0;
+    overflow: auto;
+    height: fit-content;
+}
 body {
-    display: flex;
-    flex-direction: row;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 0;
 }
+#wrapper {
+    display: flex;
+    width: 100%;
+    flex-direction: row-reverse;
+    height: fit-content;
+}
 nav {
     position: sticky;
+    box-sizing: border-box;
+    margin: 0 0.5rem;
+    padding: 0;
+    width: 40rem;
     top: 0;
+    height: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     background-color: var(--background-color);
-    height: 100vh;
-    width: fit-content;
-    font-size: 2rem;
-    max-width: 600;
-    flex-shrink: 1;
+    flex-grow: 1;
+    font-size: 1.5rem;
+    max-width: 40rem;
+    transition: ease-out 0.5s max-width;
+}
+#menu {
+    display: block;
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    height: 2rem;
+    width: 2rem;
+    mask: url(img/menu.svg);
+    background-color: blue;
+    z-index: 1;
+}
+#menu:hover {
+    background-color: lightblue;
+}
+nav.closed {
+    max-width: 0;
+    transition: ease-out 0.5s max-width;
 }
 nav a {
     margin: 1rem 0;
@@ -38,48 +84,77 @@ a:hover {
     color: lightblue;
 }
 main {
-    display: flex;
-    flex-direction: column;
+    background-color: white;
+    position: relative;
+    height: fit-content;
+    flex-shrink: 1;
     max-width: 1000;
     padding: 1rem;
+    margin: 1rem;
 }
 h2 {
     font-size: 2rem;
+    text-align: center;
+}
+.mainQuestion {
+    text-align: center;
+    font-style: italic;
 }
 section {
     display: block;
     padding: 1rem;
     position: relative;
 }
-.explanation {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
+.centered { text-align: center; }
+.highlight { background-color: lightgreen;}
+.indented { margin-inline-start: 40px; } /* Copy blockquote's indentation */
+img.row2 { max-height: 8rem; }
+img.row3 { max-height: 12rem; }
+img.row4 { max-height: 16rem; }
+img {
+    max-height: 10rem;
+    padding: 0 auto;
+    width: 100%;
 }
-.explanation:nth-of-type(even) {
-    flex-direction: row-reverse;
+table {
+    text-align: center;
+    margin: 0 auto;
+    border-collapse: collapse;
+}
+table, th, td {
+    border: 1px solid;
+    padding: 0.2rem 1rem;
 }
 div.try-it-out {
     position: relative;
     display: block;
     background-color: var(--background-color);
+    border-radius: 1rem;
     width: 90%;
+    box-sizing: border-box;
     margin: 0 auto;
-    padding: 0 0 1rem 0;
+    padding: 0.2rem 1rem 1rem 1rem;
     max-height: 2rem;
     overflow-y: hidden;
     transition: max-height 1s;
 }
-.try-it-out a {
-    display: block;
+.try-it-out h3 {
+    font-size: 1.5rem;
+    margin: 0;
+    vertical-align: middle;
 }
 .try-it-out.expand {
     max-height: 100dvh;
     transition: max-height 1s;
 }
 iframe {
-    width: 90%;
-    padding: 0 auto;
-    height: 50dvh;
+    width: 100%;
+    margin: 0 auto;
     min-height: 20rem;
+}
+iframe.eq1 {
+    height: 40dvh;
+}
+iframe.eq2 {
+    height: 80dvh;
 }

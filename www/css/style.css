@@ -12,6 +12,7 @@
     --color-grab: rgb(230,230,230);
     --color-action: rgb(240,240,240);
     --color-selected: lightgreen;
+    --color-selected-text: rgb(150,255,150);
     --color-toolbar: rgb(180,180,180);
 }
 html, body {
@@ -126,8 +127,8 @@ span.space {
     justify-content: start;
 }
 .textbar img {
-    max-height: 2rem;
-    max-width: 2rem;
+    max-height: 2.5rem;
+    max-width: 2.5rem;
     margin: 0 1rem;
 }
 .input > ul {
@@ -413,6 +414,14 @@ dialog > form {
     display: flex;
     flex-direction: column;
 }
+dialog span > svg {
+    height: 2rem;
+}
+span.centered {
+    display: block;
+    text-align: center;
+    margin: 0 auto;
+}
 .buttonHolder {
     display: flex;
     margin-top: 1rem;
@@ -534,18 +543,6 @@ dialog > form {
 .contextualLatex > div > span > svg {
     height: 1.5rem;
 }
-.node {
-    padding: 0.2rem;
-    display: inline-block;
-    border: none
-}
-/* https://stackoverflow.com/a/73901232 to thank */
-.node:not(.selected):not(:has(.node:hover)):hover {
-    border: var(--color-highlight) thin solid;
-}
-.node.selected {
-    border: var(--color-selected) thin solid;
-}
 .brickRect {
     stroke: black;
     fill: #FFF;
@@ -589,7 +586,7 @@ dialog > form {
     stroke: var(--color-highlight);
 }
 .stroke.selected {
-    stroke: var(--color-selected);
+    stroke: var(--color-selected-text);
 }
 /* Equation */
 .historyHolder {

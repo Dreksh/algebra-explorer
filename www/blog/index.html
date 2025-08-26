@@ -1,19 +1,22 @@
 <html>
   <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- for rendering maths correctly on mobile -->
     <title>Algebra Explorer</title>
     <link rel="icon" type="image/svg+xml" href="../img/logo.svg"/>
     <link rel="stylesheet" href="style.css" />
     <script src="script.js"></script>
   </head>
   <body onLoad="run()">
-    <nav>
-    </nav>
+    <div id="wrapper">
     <main>
-      <h1><a href=\"index.html\">Algebra Explorer</a></h1>
-      <section>
+      <a id="menu" onclick="toggleMenu()"></a>
+      <section id="top">
+      <h1><a href="../index.html">Algebra Explorer</a></h1>
+      <p>
       Algebra Explorer is a tool that allows students to freely explore algebra without worrying about making mistakes.
-      Our aim is to let give students an intuition for:
+      Our aim is to give students an intuition for:
+      </p>
       <ul>
         <li>
           In <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math>
@@ -32,102 +35,100 @@
         <li>
           Why does <math><mn>1</mn><mo>+</mo><mn>2</mn></math>
           equal <math><mn>2</mn><mo>+</mo><mi>1</mi></math>
-          but <math><mn>1</mn><mo>-</mo><mi>2</mi></math>
-          does not equal <math><mn>2</mn><mo>-</mo><mi>1</mi></math>?
+          but <math><mn>1</mn><mo>&minus;</mo><mi>2</mi></math>
+          does not equal <math><mn>2</mn><mo>&minus;</mo><mi>1</mi></math>?
         </li>
       </ul>
       <p>
-      We do this by visualising the notation via building blocks representation <!-- [to become a footnote] representing the ‘abstract syntax tree’ of the maths-->. For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is
+      We do this by visualising the notation via a building blocks representation. <!-- [to become a footnote] representing the ‘abstract syntax tree’ of the maths-->
+      For example, <math><mn>1</mn><mo>+</mo><mn>2</mn></math> is:
       </p>
-TODO: add picture of blocks <!--
- _   _
-|1|_|2|
-|__+__|
--->
+      <img class="row2" src="img/1_2.svg" title="Block representation of 1+2"/>
       <p>
-      where <math><mn>1</mn></math> and <math><mn>2</mn></math> are stacked on top of <math><mo>+</mo></math>, implying that <math><mo>+</mo></math> <i>depends on</i> <math><mn>1</mn></math> and <math><mn>2</mn></math>. Similarly, <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math> is:
+      Where <math><mn>1</mn></math> and <math><mn>2</mn></math> are stacked on top of <math><mo>+</mo></math>,
+      implying that <math><mo>+</mo></math> <i>depends on</i> <math><mn>1</mn></math> and <math><mn>2</mn></math>.
       </p>
-TODO: add picture of blocks <!--
-     _   _
- _  |2|_|3|
-|1|_|__*__|
-|____+____|
--->
+      <p>
+      Similarly, <math><mn>1</mn><mo>+</mo><mn>2</mn><mo>&times;</mo><mn>3</mn></math> is:
+      </p>
+      <img class="row3" src="img/1_2_3.svg" title="Block representation of 1+2x3"/>
       <p>
       This alternative representation shows more clearly that <math><mn>2</mn><mo>&times;</mo><mn>3</mn></math> must go first, using levels as an analogy for the dependency relationship between operations,
-      similar to the movements in "Towers of Hanoi" <!-- Add wiki link -->.
+      similar to the movements in the game ‘Towers of Hanoi’. <!-- Add wiki link -->
       </p>
       <p>
-      This best part of this tool is the <b>interactivity</b>! The rest of this article serves as a tutorial with that in mind,
+      But the best part of the tool is the <b>interactivity!</b> The rest of this article serves as a tutorial with that in mind,
       and along the way we hope to reveal some insights you might not have thought about before.
       Enjoy Algebra Explorer!
       </p>
       </section>
 
+      <section id="commutativity-and-associativity">
       <h2>Commutativity and Associativity</h2>
-      <section>
-      <p>How can I understand the blocks?</p>
+      <p class="mainQuestion">How can I move around the blocks?</p>
       <p>
-      Commutativity and Associativity are quite long and scary words, but in our tool they are represented via <i>dragging</i>.
+      Commutativity and Associativity are quite long and scary words, but in Algebra Explorer they are represented via <i>dragging</i>.
       </p>
       <h3><s>Commutativity</s> Reordering</h3>
-      <div class="explanation">
-        <img />
-        <div>
-          <p>
-          It may seem obvious that
-          </p>
-          <p>
-          <math>
-            <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
-          </math>
-          </p>
-          but this is a special trait of <maths><mo>+</mo></maths> and <maths><mo>&times;</mo></maths> that is crucial to algebra.
-          Generally, functions cannot reorder their inputs. Consider the sentence
-          <blockquote>
-            My friend enjoys maths.
-          </blockquote>
-          where the verb is the function, with "My friend" and "maths" as the inputs. Swapping the order gives:
-          <blockquote>
-            Maths enjoys my friend.
-          </blockquote>
-          which doesn't make any sense at all!
-          </p>
-          <p>
-          In Algebra Explorer this can be performed by dragging blocks horizontally, just like <i>reordering</i> tabs in your browser.
-          TODO: add .gif here
-          </p>
-        </div>
-      </div>
+      <p>
+      It may seem obvious that
+      </p>
+      <p class="indented">
+      <math>
+        <mi>a</mi><mo>+</mo><mi>b</mi><mo>=</mo><mi>b</mi><mo>+</mo><mi>a</mi>
+      </math>
+      </p>
+      <p>
+      but this is a special trait of <maths><mo>+</mo></maths> and <maths><mo>&times;</mo></maths> that is crucial to algebra.
+      Generally, functions cannot reorder their inputs. Consider the sentence
+      </p>
+      <blockquote>
+        My friend enjoys maths.
+      </blockquote>
+      <p>
+      where the verb “enjoys” is a function with “My friend” and “maths” as its inputs. Swapping the order gives:
+      </p>
+      <blockquote>
+        Maths enjoys my friend.
+      </blockquote>
+      <p>
+      which doesn’t make any sense at all!
+      </p>
+      <img />
+      <p>
+      In Algebra Explorer this can be performed by dragging blocks horizontally, just like <i>reordering</i> tabs in your browser.
+      TODO: add .gif here
+      </p>
       <h3><s>Associativity</s> Grouping</h3>
-      <div class="explanation">
-        <img />
-        <div>
-          <p>
-          It may also seem obvious that
-          </p>
-          <p>
-          <math>
-            <mo>(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo>)</mo><mo>+</mo><mi>c</mi><mo>=</mo>
-            <mi>a</mi><mo>+</mo><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo>
-          </math>
-          </p>
-          but this time consider the sentence
-          <blockquote>
-            I have a friend with a cat who enjoys maths.
-          </blockquote>
-          compared to
-          <blockquote>
-            I have a friend (with a cat) who enjoys maths.
-          </blockquote>
-          This time the rewritten sentence does make sense (who knows what cats are doing when we're not looking...) but has a very different meaning.
-          </p>
-          <p>
-          This is performed by dragging vertically up to <i>group</i>, and down to <i>ungroup</i>.
-          TODO: add .gif here
-          </p>
-        </div>
-      </div>
+      <p>
+      It may also seem obvious that
+      </p>
+      <p class="indented">
+      <math>
+        <mo>(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo>)</mo><mo>+</mo><mi>c</mi><mo>=</mo>
+        <mi>a</mi><mo>+</mo><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo>
+      </math>
+      </p>
+      <p>
+      but this time consider the sentence
+      </p>
+      <blockquote>
+        I have a friend with a cat who enjoys maths.
+      </blockquote>
+      <p>
+      compared to
+      </p>
+      <blockquote>
+        I have a friend (with a cat) who enjoys maths.
+      </blockquote>
+      <p>
+      This time the rewritten sentence does make sense (who knows what cats are doing when we’re not looking...) but has a very different meaning.
+      </p>
+      <img />
+      <p>
+      This is performed by dragging vertically up to <i>group</i>, and down to <i>ungroup</i>.
+      TODO: add .gif here
+      </p>
       <div class="try-it-out" data-target='["1+2+3+4+5"]'>
         <p>
         Try out some of these actions:
@@ -142,50 +143,82 @@ TODO: add picture of blocks <!--
       </div>
       </section>
 
+      <section id="inverses">
       <h2>Inverses</h2>
-      <section>
-      <p>Why do some operations not allow swaps?</p>
-      <h3>Negative Numbers</h3>
+      <p class="mainQuestion">Why can I not reorder <math><mo>&minus;</mo></math> or <math><mo>&divide;</mo></math>?</p>
+      <h3>Subtraction</h3>
       <p>
-      What does it mean to have -2 cats?
+      Let’s have a look at what <math><mn>1</mn><mo>&minus;</mo><mn>2</mn></math> looks like in the block representation:
+      </p>
+      <img class="row3" src="img/1m2.svg" title="Block representation of 1-2"/>
+      <p>
+      You will notice that there is an entire block with only a minus symbol inside it. This is because subtraction is defined as adding a <i>negation</i>, which is a <i>function</i> with a single input. Reordering the blocks on top of <math><mn>+</mn></math> here results in
+      </p>
+      <img class="row3" src="img/m2_1.svg" title="Block representation of -2+1"/>
+      <p>
+      Which in standard notation is
+      <math><mn>&minus;2</mn><mo>+</mo><mn>1</mn></math>.
+      This reveals why we cannot reorder the inputs around a minus: the full notation for
+      <math><mn>1</mn><mo>&minus;</mo><mi>2</mi></math>
+      is
+      <math><mn>1</mn><mo>+</mo><mi>(&minus;2)</mi></math>
+      and you must move the entire
+      <math><mn>(&minus;2)</mn></math>
+      to obey the rules of the previous section.
+      <p>
+      This can be confusing because standard notation removes any
+      <math><mn>+</mn></math>
+      preceding a negation. This is similar to how “do not” is abbreviated into “don’t” in English.
+      Explicitly keeping the
+      <math><mn>&minus;</mn></math>
+      separate also reveals why we cannot add brackets anywhere when there is a minus involved, taking
+      <math><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>+</mo><mn>3</mn></math>
+      as an example:
+      </p>
+      <img class="row3" src="img/1m2_3.svg" title="Block representation of 1-2+3"/>
+      <p>
+      Grouping the left-hand numbers results in
+      <math><mo>(</mo><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mn>3</mn></math>:
+      </p>
+      <img class="row4" src="img/b1m2b_3.svg" title="Block representation of (1-2)+3"/>
+      <p>
+      However, grouping the right-hand numbers results in
+      </p>
+      <img class="row4" src="img/1_bm2_3b.svg" title="Block representation of 1+(-2+3)"/>
+      <p>
+      which is
+      <math><mn>1</mn><mo>+</mo><mn>(&minus;2</mn><mo>+</mo><mn>3)</mn></math>,
+      <b>not</b>
+      <math><mn>1</mn><mo>&minus;</mo><mo>(</mo><mn>2</mn><mo>+</mo><mn>3</mn><mo>)</mo></math>.
+      Explicitly showing the minus is useful for explaining the basic rules of algebra, even if the shorthand version is usually more useful for manipulation!
+      </p>
+      <h3>Division</h3>
+      <p>
+      Division is to multiplication what subtraction is to addition: multiplying with the <i>reciprocal</i>, also a <i>function</i> that takes one input.
+      The beauty of the blocks representation is that the exact reordering and grouping rules apply.
+      Let’s see what <math><mn>2</mn><mo>&divide;</mo><mn>3</mn></math> looks like:
+      </p>
+      <img class="row3" src="img/2d3.svg" title="Block representation of 2/3"/>
+      <p>
+      Now where things might feel a bit strange is if we reorder the blocks on top of the
+      <math><mn>&times;</mn></math>
+      to get
+      </p>
+      <img class="row3" src="img/1d3t2.svg" title="Block representation of 1/3*2"/>
+      <p>
+      How would we write this in standard notation? The answer is
+      <math><mn>1</mn><mo>&divide;</mo><mn>3</mn><mo>&times;</mo><mn>2</mn></math>,
+      but you may notice that somehow <b>an extra 1 has appeared that is not shown in the blocks!</b>
+      Standard notation also usually uses fractions to represent the reciprocal function, resulting in <math><mn>⅓</mn><mo>&times;</mo><mn>2</mn></math>, but this also still has a <math><mn>1</mn></math>.
       </p>
       <p>
-      I don't know either.
+      In fact, we could even argue that the ‘complete’ representation of
+      <math><mn>&minus;2</mn><mo>+</mo><mn>1</mn></math>
+      from earlier should be
+      <math><mn>0</mn><mo>&minus;</mo><mn>2</mn><mo>+</mo><mn>1</mn></math>
+      if we wanted to be completely explicit about what is being subtracted from what.
+      These are all examples of pitfalls in our notation that can be confusing, but hopefully seeing and playing with the blocks can help students learn to avoid them.
       </p>
-      <!-- Starting from here -->
-      <p>
-      +(-..) shortened to just -. This of this as abbreviation, similar to "do not" into "don't", "it was" into "'twas"
-      </p>
-      <p>
-      Let's first define what Addition and Multiplication can mean in simple terms: <br />
-      </p>
-      <p>
-      Addition: Let's get <math><mi>n</mi></math> more things <br />
-      Multiplication: Let's make <math><mi>n</mi></math> copies
-      </p>
-      <p>
-      Inverses can be roughly thought of as "the same operation, but in the other direction".
-      These would be the definitions in simple terms: <br '>'
-      Subtraction: Let's remove <math><mi>n</mi></math> things <br />
-      Division: Let's split this into <math><mi>n</mi></math> copies
-      </p>
-      <p>
-      To represent the "the same operation, but in the other direction", it's useful to simply
-      mark the ones that are inverted. This is where the "unary minus" operation comes in, where
-      we simply add <math><mo>-</mo></math> in front of anything, and we understand that it's
-      to be taken away. This is exactly how we got negative numbers, by using this in front of
-      positive numbers.
-      </p>
-      <p>
-      To represent the unary inverse, or simply 'marking' which inputs go the other direction,
-      we add a block just below the input.
-      </p>
-      <p>
-      Multiplication, on the other hand, does not have a "unary division". But to illustrate
-      its similarities to Addition and Subtraction, we have opted to represent the block as
-      a unary inverse. The text view of this will add an additional <math><mn>1</mn></math>
-      (the multiplicative identity) in front, so it appears like a binary operation
-      (which it is, but not how we're using it).
       </p>
       <div class="try-it-out" data-target='["2+3-(4+5)","2*3/(4*5)"]'>
         <p>
@@ -195,78 +228,157 @@ TODO: add picture of blocks <!--
       </div>
       </section>
 
+      <section id="notation">
       <h2>Notation</h2>
-      <section>
-      <p>Why do we need brackets?</p>
+      <p class="mainQuestion">Why do we need brackets?</p>
+      <h3>Langauge</h3>
+      <p>
+      On the surface, languages are simply letters on a page or sounds you make to pass information from one to another.
+      Maths notation (written maths) is exactly the same. They may contain concepts, but you mostly see
+      numbers and other symbols. One of these symbols is the bracket. To understand the bracket, we need to understand
+      what concept it conveys.
+      </p>
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
       <p>
-      BODMAS/BIDMAS is all about mathematical grammar. It is a way for us to understand the
-      order that the operations should happen. But there is a subtle difference in which we
-      treat the Brackets and Orders/Indices vs Addition and Subtraction. The difference is
-      due to inverses.
+      As we have seen from the examples in the other sections, brackets help us to understand the order of operation.
+      The ones within the brackets are always handled first. If we kept all the brackets, it would look like
+      this:
       </p>
-      <!-- Reference factorisation, brackets may randomly appear -->
-      <!-- ab + ac = a(b+c) , initially no brackets, but then they appear-->
+      <p class="indented">
+      <math><mo>(</mo><mo>(</mo><mo>(</mo><mn>1</mn><mo>&times;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mo>(</mo><mn>3</mn><mo>&times;</mo><mn>4</mn><mo>)</mo><mo>)</mo>
+        <mo>-</mo><mo>(</mo><mn>5</mn><mo>&divide;</mo><mn>6</mn><mo>)</mo><mo>)</mo>
+      </math>
+      </p>
+      <p>Almost half of that is written with brackets! Let's also look at using a lot of brackets in English:</p>
+      <blockquote>
+      The (ordinarily sulky) cat eats (with a grin (on their (rather fluffy) face)).
+      </blockquote>
+      <p>
+      They are now too hard to read. We need to remove some of them; and that is where BODMAS/BIDMAS/PEMDAS comes in.
+      It is an agreed convention for understanding the order of operations, so that we can cut down on the number of brackets.
+      </p>
+      <table>
+      <thead>
+        <tr><th>Order</th><th>Name</th><th>Comments</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1st</td><td><b>B</b>rackets / <b>P</b>arenthesis </td><td>Allows for any expression inside of it to go first</td></tr>
+        <tr><td>2nd</td><td><b>O</b>rder / <b>I</b>ndices / <b>E</b>xponent </td><td>Repeated multiplcation</td></tr>
+        <tr><td>3rd</td><td><b>M</b>ultiplication / <b>D</b>ivision </td><td>Repeated addition (and its inverse)</td></tr>
+        <tr><td>4th</td><td><b>A</b>ddition / <b>S</b>ubtraction </td><td>Repeated counting (and its inverse)</td></tr>
+      </tbody>
+      </table>
+      <p>
+      Our example above can be fully written without any brackets, because all of the inner brackets have operations that
+      would be done earlier before the outer ones. So those brackets are redundant. The only times we need to use the bracket
+      is if we want to do something earlier that has a later order.
+      </p>
+      <h3>Factorisation</h3>
+      <p>
+      Factorisation is one of those cases where brackets are introduced. Instead of keeping the expression where multiplication
+      goes first, we rewrite it so that addition comes first. Since multiplication usually happens first according to BIDMAS/BODMAS/PEMDAS,
+      we need to insert brackets to tell others that we want addition to happen first.
+      </p>
+      <div class="try-it-out" data-target='["2*3+3*4"]'>
+      <p>
+      Click on the <math><mo>+</mo></math> sign, and find the 'Factorise' action.
+      When you factorise, you change the order of the operations, and brackets will appear.
+      To revert your change, either do an undo, or click on the <math><mo>&times;</mo></math> and find the 'Expand' action.
+      </p>
+      </div>
       </section>
 
+      <section id="exploration-of-patterns">
       <h2>Exploration of Patterns</h2>
-      <section>
-      <p>What rules are we using?</p>
+      <p class="mainQuestion">What rules are we using?</p>
+      <h3>Algebra</h3>
       <p>
-      Maths is sometimes called the "Science of Pattern". The key is to know when a pattern is
-      applicable to the exercise
+      Maths is sometimes called the “Science of Pattern”. The key is to know when a pattern is
+      applicable to the expression. This is where algebra is useful. When we use a letter, we
+      don't need to know exactly what the value of it is, but simply how it can be transformed.
       </p>
       <p>
-      This project is designed to be as flexible
+      Take factorisation for example, the requirement for factorising is that the two terms being added
+      must share the same factor (are multiplied by the same number). We don't know what that number is,
+      so let's call that <math><mi class="highlight">a</mi></math>. We can write it as the following pattern:
       </p>
+      <p class="centered">
+      <math><mi class="highlight">a</mi><mi>b</mi><mo>+</mo><mi class="highlight">a</mi><mi>c</mi><mo>=</mo><mi>a</mi><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo></math>
+      </p>
+      <p>
+      Here are some examples that fit the pattern on the left, and some that don't fit:
+      </p>
+      <p>
+      <table>
+        <tbody>
+          <tr>
+            <th>Matches</th>
+            <td><math><mn class="highlight">2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn class="highlight">2</mn><mo>&times;</mo><mn>5</mn></math></td>
+            <td><math><mn class="highlight">5</mn><mo>&times;</mo><mo>(</mo><mn>3</mn><mo>+</mo><mn>6</mn><mo>)</mo><mo>+</mo><mn>2</mn><mo>&times;</mo><mn class="highlight">5</mn></math></td>
+            <td><math><mn>3</mn><mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow><mo>+</mo><mn>7</mn>
+              <mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow></math></td>
+          </tr>
+          <tr>
+            <th>Mismatches</th>
+            <td><math><mn>2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn>4</mn><mo>&times;</mo><mn>5</mn></math></td>
+            <td><math><mn>2</mn><mo>+</mo><mn>3</mn><mo>+</mo><mn>4</mn></math></td>
+            <td><math><mn>3</mn><mo>&divide;</mo><mn>2</mn><mo>+</mo><mn>2</mn><mo>*</mo><mn>5</mn></math></td>
+          </tr>
+        </tbody>
+      </table>
+      </p>
+      <h3>Topics</h3>
+      <p>
+      This project is designed to be as flexible as possible, and apart from the main operations in
+      BODMAS/BIDMAS/PEMDAS, they are all defined by our custom topic files. They specify a list of
+      functions and constants to include, and then a bunch of actions that try to find matches
+      to then transform it when the action is selected.
+      </p>
+      <p>
+      All files can be found on <a href="https://github.com/Dreksh/algebra-explorer/tree/main/www/topics">our Github</a>.
+      You may notice a lot of backslashes, and that's because our plain-text-input relies on that for functions
+      as well as long variable names.
+      </p>
+      <p>
+      You can also make your custom topics to load into the webpage. You can find it in the menu.
+      </p>
+      <h3>Rock, Paper, Scissors</h3>
+      <p>Rock, Paper, Scissors is a simple example with 3 rules (ignoring the draws)</p>
+      <p class="indented">Rock beats Scissors</p>
+      <p class="indented">Scissors beats Paper</p>
+      <p class="indented">Paper beats Rock</p>
+      <p>With these rules, we can determine the winner of a competition. See it in action with the "Try it out"</p>
       <div class="try-it-out" data-target='["\\vs(\\rock,\\vs(\\scissors,\\paper))"]' data-source="blog/rps-source.json">
-        <p> Here is an example of Rock, Paper, Scissors!  </p>
         <p>
-        This is special because it doesn't matter if they're on the left or right,
+        This is special because it doesn’t matter if they’re on the left or right,
         the result will be the same (it is commutative). But! switching the matches with different combinations
-        will not come up with the same result.
+        will not come up with the same result (it is not associative).
+        </p>
+        <p>
+        Check out the rules that are used <a href="../topics/rps.json">here</a>.
         </p>
       </div>
       </section>
 
+      <section id="extensions">
       <h2>Extensions</h2>
-      <section>
+      <p class="mainQuestion">What else can I do?</p>
       <p>
-      We've covered the basics of this tool, but we've also added a bit more topics for you to play around with.
+      We’ve covered the basics of this tool, but we’ve also added a bit more topics for you to play around with.
       You can try:
       </p>
       <ul>
-        <li>Solving Quadratic Equations, with "Find Zeros"</li>
-        <li>Solving Simultaneous Equations, with "Substitution"</li>
+        <li>Solving Quadratic Equations, with “Find Zeros”</li>
+        <li>Solving Simultaneous Equations, with “Substitution”</li>
       </ul>
-      <iframe src="../index.html"></iframe>
+      <iframe class="eq2" src="../index.html"></iframe>
       </section>
 
-      <h2>To do</a></h2>
-      <section>
-      <p>
-      This is only the first version which we were able to complete by
-      the SoME 2025 deadline. There are many features which we would love to
-      do. For example:
-      </p>
-      <ul>
-        <li><p>Tutorials</p></li>
-        <li><p>Input Conditions for parameters</p></li>
-        <li><p>Mobile-friendly webpage</p></li>
-        <li><p>Accessibility Improvements</p></li>
-      </ul>
-      <p>
-      If you have any feature requests, or any issues with the tool, do create
-      an issue using the link: <br />
-      <a href="https://github.com/Dreksh/algebra-explorer/issues">https://github.com/Dreksh/algebra-explorer/issues</a> <br />
-      This includes asking to fill the gaps of our latex parser
-      </p>
-      </section>
-
+      <section id="about-us">
       <h2>About Us</h2>
-      <section>
+        <p class="mainQuestion">Who are we?</p>
         <p>
-        We're Derek and Jonny! Two Electronics and Information Engineering graduates from
+        We’re Derek and Jonny! Two Electronics and Information Engineering graduates from
         Imperial College London. We share a passion in math, computing and education!
         </p>
         <!-- Insert imagae here -->
@@ -278,9 +390,26 @@ TODO: add picture of blocks <!--
         <h3>Jonny</h3>
         - PhD in visualisations
         - Just a great person who want to help people with maths
-        - It's cool, that it's interesting to visualise things.
+        - It’s cool, that it’s interesting to visualise things.
+
+        <p>
+        If you have any feature requests, or any issues with the tool, do create
+        an issue using the link: <br />
+        <a href="https://github.com/Dreksh/algebra-explorer/issues">https://github.com/Dreksh/algebra-explorer/issues</a> <br />
+        This includes asking to fill the gaps of our latex parser
+        </p>
       </section>
 
     </main>
+    <nav class="closed">
+      <a href="#top">Top</a>
+      <a href="#commutativity-and-associativity">Commutativity and Associativity</a>
+      <a href="#inverses">Inverses</a>
+      <a href="#notation">Notation</a>
+      <a href="#exploration-of-patterns">Exploration of Patterns</a>
+      <a href="#extensions">Extensions</a>
+      <a href="#about-us">About Us</a>
+    </nav>
+    </div>
   </body>
 </html>

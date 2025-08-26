@@ -109,11 +109,20 @@ init =
 functionProperties: Model -> Dict.Dict String {property: Math.FunctionProperty FunctionProp, count: Int}
 functionProperties model = model.constants
     |> Dict.foldl
-        (\k (javascript, count) d -> Math.createConstant {javascript = Maybe.map PrefixOp javascript, latex = Just [Latex.Text {state=(), style=Just Latex.Emphasis} k], alternativeNames = []} k
+        (\k (javascript, count) d -> Math.createConstant True
+            {   javascript = Maybe.map PrefixOp javascript
+            ,   latex = case Dict.get k Latex.greekLetters of
+                Nothing -> Just [Latex.Text {state=(), style=Just Latex.Emphasis} k]
+                Just l -> Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} l]
+            ,   alternativeNames = []
+            } k
             |> \entry -> Dict.insert k {property = entry, count = count} d
         ) model.functions
-    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant {javascript = Nothing, latex = Just [Latex.SymbolPart {state=(), style=Just Latex.Emphasis} symbol], alternativeNames = []} name
-        |> \entry -> Dict.insert name {property = entry, count = 1} d
+    |> \dict -> Dict.foldl (\name symbol d -> Math.createConstant False {javascript = Nothing, latex = Just [Latex.SymbolPart {state=(), style=Nothing} symbol], alternativeNames = []} name
+        |> \entry -> Dict.update name (\val -> case val of
+            Just _ -> val -- Don't override constants with variables
+            Nothing -> Just {property = entry, count = 1}
+         ) d
         ) dict Latex.greekLetters
 
 {- Functions -}
@@ -449,7 +458,7 @@ topicDecoder = Dec.map3 (\a b c -> (a,b,c))
         if Dict.size (Dict.diff vars functions) /= Dict.size vars then Dec.fail "Can't have a variable named as a function as well"
         else
             let
-                knownProps = Dict.foldl (\k _ inner ->  Math.createConstant
+                knownProps = Dict.foldl (\k _ inner ->  Math.createConstant True
                         {   javascript = FuncOp k |> Just
                         ,   latex = case Dict.get k Latex.greekLetters of
                             Nothing -> Just [Latex.Text {state=(), style=Just Latex.Emphasis} k]
