@@ -153,10 +153,17 @@ Encoding and Decoding to catch the state of the element
 --}
 
 encodeState: State -> Encode.Value
-encodeState s = Encode.object [("prevID", Encode.int s.prevID), ("corrID", Encode.int s.corrID)]
+encodeState s = Encode.object
+    (   [   ("prevID", Encode.int s.prevID)
+        ,   ("corrID", Encode.int s.corrID)
+        ]
+        ++ case s.function of
+            Just function -> Rules.encodeFunctionProp function
+            Nothing -> []
+    )
 
 stateDecoder: Decode.Decoder State
 stateDecoder = Decode.map3 State
     (Decode.field "prevID" Decode.int)
     (Decode.field "corrID" Decode.int)
-    (Decode.maybe <| Decode.field "function" Rules.functionPropDecoder)
+    (Decode.maybe Rules.functionPropDecoder)
