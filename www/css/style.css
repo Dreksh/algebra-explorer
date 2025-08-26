@@ -337,16 +337,6 @@ span.space {
     flex-direction: row;
     overflow-x: scroll;
 }
-.toggleActionsSidebar {
-    display: flex;
-    flex-direction: row;
-}
-.toggleActionsSidebar > span {
-    min-width: 0.5rem;
-}
-.toggleActionsSidebar > div {
-    height: 1rem;
-}
 /* Notifications */
 #notification {
     height: 100%;
@@ -626,13 +616,6 @@ div.history a:first-child:last-child:before, div.history div:first-child:last-ch
     font-size: 1.5rem;
     margin-block: 0.2rem;
 }
-.actions {
-    padding-inline-start: 1rem;
-}
-.action > h3 {
-    font-size: 1rem;
-    margin-block: 0.2rem;
-}
 .match > span > svg {
     height: 1.5rem;
 }
@@ -640,14 +623,4 @@ div.history a:first-child:last-child:before, div.history div:first-child:last-ch
     text-decoration: line-through;
     pointer-events: none;
     color: var(--color-background);
-}
-#actionsToggle {
-    position: absolute;
-    height: 1.5rem;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 1;
-}
-#actionsToggle.closed {
-    right: 0.5rem;
 }

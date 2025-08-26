@@ -1,6 +1,6 @@
 module UI.Actions exposing (
     Event(..), MatchedRule, SingleMatch, Action(..), Selection,
-    matchRules, matchToLatex, view, viewContextual
+    matchRules, matchToLatex, viewContextual
     )
 
 import Dict
@@ -135,22 +135,6 @@ matchRule_ selected rule = rule.title |>
 
 
 -- UI-related
-
-view: (Event -> msg) -> List (String, (List (Action))) -> Html.Html msg
-view converter topics =
-    Html.ul [class "topics"]
-    (   topics |> List.map (\(name, actions) ->
-            Html.li [class "topic"]
-            [   Html.h2 [] [Html.text name]
-            ,   Html.ul [class "actions"]
-                (   actions |> List.map (\action ->
-                        Html.li [class "action"] (displayAction_ converter action)
-                        )
-                )
-            ]
-            )
-    )
-
 
 displayAction_: (Event -> msg) -> Action -> List (Html.Html msg)
 displayAction_ converter action = case action of
