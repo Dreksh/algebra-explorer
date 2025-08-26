@@ -144,8 +144,8 @@ encodeFunctionProperty stateEnc fp =
     )
     |> Encode.object
 
-createConstant: prop -> String -> FunctionProperty prop
-createConstant state key = VariableNode {state = state, name = key, constant = True}
+createConstant: Bool -> prop -> String -> FunctionProperty prop
+createConstant isConstant state key = VariableNode {state = state, name = key, constant = isConstant}
 
 -- Parser implementation
 
@@ -320,7 +320,7 @@ term_ funcProps = Parser.oneOf
             (Nothing, Nothing) -> VariableNode {state = Nothing, constant = False, name = name} |> Parser.succeed
             (Nothing, Just children) -> GenericNode {state = Nothing, name = name, arguments = Nothing, children = children} |> Parser.succeed
             (Just p, Nothing) -> case p.property of
-                VariableNode n -> VariableNode {state = Just n.state, constant = True, name = name} |> Parser.succeed
+                VariableNode n -> VariableNode {state = Just n.state, constant = n.constant, name = name} |> Parser.succeed
                 _ -> Parser.problem (ExpectingFunction_ name)
             (Just p, Just children) -> case p.property of
                 UnaryNode n -> case children of
@@ -337,7 +337,7 @@ term_ funcProps = Parser.oneOf
     ,   Parser.andThen (\name -> case Dict.get name funcProps of
             Nothing -> Parser.succeed (VariableNode {state = Nothing, name = name, constant = False})
             Just p -> case p.property of
-                VariableNode n -> Parser.succeed (VariableNode {state = Just n.state, name = name, constant = True})
+                VariableNode n -> Parser.succeed (VariableNode {state = Just n.state, name = name, constant = n.constant})
                 _ -> Parser.problem (ExpectingFunction_ name)
         ) tokenShortName_
     ]

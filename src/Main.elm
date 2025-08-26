@@ -548,7 +548,7 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
     ,   sections =
         [   case params.matches of
                 [] -> {subtitle = "", lines = []}
-                [m] -> {subtitle = "", lines = [[Dialog.FormattedInfo (Actions.matchToLatex [] m)]]}
+                [m] -> {subtitle = "", lines = [[Dialog.FormattedInfo (Actions.matchToLatex [class "centered"] m)]]}
                 _ -> { subtitle = ""
                     , lines =
                         [   [Dialog.Info {text = "Select the pattern"}]

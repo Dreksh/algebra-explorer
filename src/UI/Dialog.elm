@@ -135,7 +135,7 @@ view convert funcProp model =
         (   List.map (\section -> Html.section []
                 (   List.concat
                     [   if String.isEmpty section.subtitle then [] else [h2 [] [text section.subtitle]]
-                    ,   List.map (listView_ convert funcProp model.inputFields) section.lines
+                    ,   List.concatMap (listView_ convert funcProp model.inputFields) section.lines
                     ]
                 )
             )
@@ -149,7 +149,7 @@ view convert funcProp model =
     ]
 
 listView_: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}
-    -> Dict.Dict String (Input.Model msg) -> List (Input msg) -> Html.Html msg
+    -> Dict.Dict String (Input.Model msg) -> List (Input msg) -> List (Html.Html msg)
 listView_ convert funcDict inputs = List.filterMap (\input -> case input of
         Text t -> Just (label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []])
         Button m -> Just (button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text])
@@ -162,7 +162,6 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
             |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
         Link l -> Just (a [Attr.class "clickable", Attr.target "_blank", Attr.href l.url] [text l.url])
     )
-    >> span []
 
 toRadioButtons_: String -> Dict.Dict Int (Html.Html msg) -> Html.Html msg
 toRadioButtons_ name =

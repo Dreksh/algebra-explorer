@@ -460,7 +460,14 @@ refreshFuncPropInTree_ dict updater original =
     in
     case original of
         Math.RealNode _ -> (original, False)
-        Math.VariableNode _ -> (original, False)
+        Math.VariableNode n -> case Dict.get n.name dict of
+            Nothing -> (original, False)
+            Just prop -> case prop.property of
+                Math.VariableNode m -> if n.constant == m.constant
+                    then (original, False)
+                    else let (State_ num inner) = n.state in
+                        (Math.VariableNode {n | state = State_ num (updater (Just m.state) inner |> Tuple.first), constant = m.constant}, True)
+                _ -> (original, False)
         Math.UnaryNode n -> let (child, change) = refreshFuncPropInTree_ dict updater n.child in
             case n.state of
                 State_ num inner -> let (newState, thisChange) = updater (Dict.get n.name dict |> Maybe.map (.property >> Math.getState)) inner in

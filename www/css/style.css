@@ -410,6 +410,14 @@ dialog > form {
     display: flex;
     flex-direction: column;
 }
+dialog span > svg {
+    height: 2rem;
+}
+span.centered {
+    display: block;
+    text-align: center;
+    margin: 0 auto;
+}
 .buttonHolder {
     display: flex;
     margin-top: 1rem;
