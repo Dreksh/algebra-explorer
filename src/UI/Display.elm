@@ -1,5 +1,5 @@
 module UI.Display exposing (
-    Model, Event(..), FullEquation, init, update, views, menu,
+    Model, Event(..), FullEquation, init, update, views, menu, updateSubactions,
     anyVisible, undo, redo, updateQueryCmd, previewOnHover, suspendHoverCmd, refresh,
     add, advanceTime, transform, substitute, commit, reset,
     partitionNumber, evaluateToNumber,
@@ -44,6 +44,7 @@ type alias Model =
     ,   selected: Set.Set Int
     ,   staged: Set.Set Int
     ,   actions: List (String, (List Actions.Action))  -- actions a cache for displaying matched rules
+    ,   subactions: List Actions.MatchedRule  -- for displaying multiple matches with same name
     ,   hoverSuspensions: Int  -- whether or not to preview on hover
     ,   enterSuspended: Bool  -- whether or not to unsuspend preview on enter
     ,   recencyList: List Int
@@ -137,6 +138,7 @@ init setCapture updateQuery svgMouseCmd tracker l =
             ,   selected = Set.empty
             ,   staged = Set.empty
             ,   actions = []
+            ,   subactions = []
             ,   hoverSuspensions = 0
             ,   enterSuspended = False
             ,   recencyList = []
@@ -384,6 +386,12 @@ updateActions_ eq ids rules equations =
     in
         Actions.matchRules rules (Dict.size equations) selection
 
+updateSubactions: Animation.Tracker -> List Actions.MatchedRule -> Model -> Result String (Model, Animation.Tracker)
+updateSubactions tracker matchedRules model = selectedEquation_ model
+    |> Result.map (\(eq, ids, entry) ->
+        {model | subactions = matchedRules}
+        |> easeSubtoolbar_ tracker eq (if List.isEmpty matchedRules then 0 else 1)
+        )
 
 matchPrevIDs: Set.Set Int -> FullEquation -> Set.Set Int
 matchPrevIDs prevSelected nextEquation =
@@ -430,6 +438,14 @@ easeToolbar_ tracker num height model = Dict.get num model.equations
         )
     |> Maybe.withDefault (model, tracker)
 
+easeSubtoolbar_: Animation.Tracker -> Int -> Float -> Model -> (Model, Animation.Tracker)
+easeSubtoolbar_ tracker num height model = Dict.get num model.equations
+    |> Maybe.map (\entry ->
+        let (newHeight, newTracker) = Animation.setEase tracker height entry.subtoolbarHeight
+        in ({model | equations = Dict.insert num {entry | subtoolbarHeight = newHeight} model.equations}, newTracker)
+        )
+    |> Maybe.withDefault (model, tracker)
+
 updateEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
 updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if selEq == Just num
     then (model, tracker)
@@ -442,7 +458,9 @@ updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if
         |> easeToolbar_ tracker num 1
         |> (\(m, t) -> case selEq of
             Nothing -> (m, t)
-            Just prevFocus -> easeToolbar_ t prevFocus 0 m
+            Just prevFocus ->
+                easeToolbar_ t prevFocus 0 m
+                |> (\(m2, t2) -> easeSubtoolbar_ t2 prevFocus 0 m2)
             )
 
 deleteEqOrder_: Int -> Model -> Model
@@ -549,10 +567,11 @@ update size tracker rules event model = let default = (model, tracker, Cmd.none)
                         Initial -> updateSelected_ eqNum grab.id False rules noGrabModel
                             |> \newModel -> (newModel, tracker, Cmd.none)
                         NoOp -> reset tracker noGrabModel
+                            |> Result.map (\(newModel, newTracker) -> (updateSelected_ eqNum grab.id False rules newModel, newTracker))
                             |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
                             |> Result.withDefault default
                         _ -> commit tracker rules noGrabModel
-                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, Cmd.none))
+                            |> Result.map (\(newModel, newTracker) -> (newModel, newTracker, updateQueryCmd newModel))
                             |> Result.withDefault default
     UnsuspendHover force -> ({model | hoverSuspensions = if force then 0 else max 0 (model.hoverSuspensions - 1)}, tracker, Cmd.none)
     UnsuspendEnter -> ({model | enterSuspended = False}, tracker, Cmd.none)
@@ -684,16 +703,26 @@ views converter actionConvert model =
                             ]
                         else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
                     ]
-                ,   Html.div [class "contextualToolbar"]
+                ,   Html.div [class "actionSubtoolbar"]
+                    [   Html.div
+                        [   class "actions"
+                        ,   style "height" ((String.fromFloat ((Animation.current entry.subtoolbarHeight) * 2)) ++ "rem")
+                        ,   HtmlEvent.onPointerEnter (Actions.ShowSubactions model.subactions |> actionConvert)
+                        ,   HtmlEvent.onPointerLeave (Actions.HideSubactions |> actionConvert)
+                        ]
+                        (   Actions.viewSubactions actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.subactions
+                        )
+                    ]
+                ,   Html.div [class "actionToolbar"]
                     [   Html.Keyed.node "div"
-                        [   class "contextualActions"
+                        [   class "actions"
                         ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 2)) ++ "rem")
                         ]
                         (if not eqSelected then [] else
                         [   undoOrRedoAction converter eqNum (History.canUndo entry.history) (previewOnHover model) (not model.enterSuspended) True
                         ,   undoOrRedoAction converter eqNum (History.canRedo entry.history) (previewOnHover model) (not model.enterSuspended) False
                         ]
-                        ++ Actions.viewContextual actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
+                        ++ Actions.view actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
                         )
                     ]
                 ]
@@ -704,7 +733,7 @@ undoOrRedoAction: (Event -> msg) -> Int -> Bool -> Bool -> Bool -> Bool -> (Stri
 undoOrRedoAction converter eqNum canUndo previewHover suspendEnter isUndo =
     (   (if isUndo then "undo" else "redo") ++ if previewHover then "-hover" else ""
     ,   div
-        (   class "contextualAction" :: if canUndo
+        (   class "action" :: if canUndo
             then
             (   if previewHover
                 then
@@ -721,9 +750,9 @@ undoOrRedoAction converter eqNum canUndo previewHover suspendEnter isUndo =
                     then [HtmlEvent.onPointerEnter (UnsuspendHover True |> converter)]
                     else []
             )
-            else [class "contextualDisabled"]
+            else [class "actionDisabled"]
         )
-        [div [class "contextualActionButton", class "contextualActionIcon"] [(if isUndo then Icon.undo else Icon.redo) []]]
+        [div [class "actionButton", class "actionIcon"] [(if isUndo then Icon.undo else Icon.redo) []]]
     )
 
 historyEntry_: (Event -> msg) -> Bool -> Int -> Int -> Html.Html msg -> Html.Html msg
@@ -774,7 +803,7 @@ encodeHistoryState_ (eq, l) = Encode.object
 
 decoder: (String -> Encode.Value -> Cmd Event) -> (List FullEquation -> Cmd Event) -> (Int -> Encode.Value -> (Float, Float) -> Cmd Event) ->
     Decode.Decoder (Model, Animation.Tracker)
-decoder setCapture updateQuery svgMouseCmd = Decode.map2 (\(eq, t) next -> (Model eq next Set.empty Set.empty [] 0 False [] setCapture svgMouseCmd updateQuery, t))
+decoder setCapture updateQuery svgMouseCmd = Decode.map2 (\(eq, t) next -> (Model eq next Set.empty Set.empty [] [] 0 False [] setCapture svgMouseCmd updateQuery, t))
     (   Decode.field "equations" <| Decode.map addDefaultPositions_ <| Helper.intDictDecoder entryDecoder_)
     (   Decode.field "nextEquationNum" Decode.int)
 

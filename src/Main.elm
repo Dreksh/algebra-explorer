@@ -367,6 +367,10 @@ update event core = let model = core.swappable in
                 )
             Actions.Evaluate id evalStr -> let (eModel, cmd) = Evaluate.send (EvalType_ id) evalStr model.evaluator in
                 (updateCore {model | evaluator = eModel}, cmd)
+            Actions.ShowSubactions matchedRules -> case Display.updateSubactions core.animation matchedRules model.display of
+                Ok (newDisplay, newAnimation) -> ({core | swappable = {model | display=newDisplay}, animation=newAnimation}, Cmd.none)
+                Err errStr -> submitNotification_ core errStr
+            Actions.HideSubactions -> (core, Task.perform identity (Task.succeed (Actions.ShowSubactions [] |> ActionEvent)))  -- need to delay by one frame to allow leaving toolbar and entering subtoolbar
         ApplyParameters params -> case core.dialog of
             Just (_, Just existing) -> ( case Dict.get "_method" params of
                     Just (Dialog.IntValue n) -> Helper.listIndex n existing.matches
