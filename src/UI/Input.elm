@@ -151,7 +151,9 @@ view convert functions attr model =
             [   if model.matchFound
                 then Html.p [class "reminder"] [Html.text "Press [space] to insert"]
                 else Html.p [class "helpable"] [Html.text "Click an icon to insert"]
-            ,   Html.Keyed.node "div" [class "holder"] children
+            ,   Html.p [] [Html.text ":"]
+            ,   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
+            ,   Html.div [class "holderMask"] []
             ]
             |> Html.map convert
         ) model.suggestions)

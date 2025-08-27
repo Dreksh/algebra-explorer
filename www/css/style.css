@@ -31,6 +31,7 @@ body {
     overflow: hidden;
     background-color: var(--color-background);
 }
+input { font-size: inherit; } /* from https://stackoverflow.com/a/6520729 */
 #body, #body > div {
     position: absolute;
     top: 0;
@@ -120,7 +121,7 @@ span.space {
     box-sizing: border-box;
     display: block;
     padding-right: 1.5rem;
-    height: 3rem;
+    height: fit-content;
     width: 100%;
     background-color: var(--color-textbox);
     border-radius: 1.5rem;
@@ -128,6 +129,7 @@ span.space {
     flex-direction: row;
     align-items: center;
     justify-content: start;
+    font-size: 3rem;
 }
 .textbar img {
     max-height: 2.5rem;
@@ -163,11 +165,11 @@ span.space {
     height: 1rem;
     margin: 0 0.5rem;
 }
-.textbar > .mathInput {
-    height: 100%;
+.input .mathInput {
+    width: 90%;
 }
 .mathInput {
-    height: 2rem;
+    min-height: 1em;
     width: 100%;
     position: relative;
     display: block;
@@ -180,7 +182,7 @@ span.space {
     box-shadow: 0 1px grey;
     top: 0;
     left: 0;
-    height: 100%;
+    height: 1em;
     width: 100%;
     caret-color: transparent;
 }
@@ -190,54 +192,77 @@ span.space {
     margin: 0;
     top: 0;
     left: 0;
-    height: 100%;
+    height: 1em;
     max-width: 100%;
 }
 .mathInput > .popup {
-    z-index: 1;
-    position: absolute;
+    position: relative;
     background-color: var(--color-textbox);
-    height: 6rem;
+    font-size: 0.4em;
+    height: 1em;
     width: 100%;
+    margin-top: 2.5em;
     box-sizing: border-box;
-    border: solid var(--color-menu) thin;
-    top: 0;
-    transform: translateY(-110%);
-    padding: 1rem;
+    padding: 1em 0.2em;
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: row;
+    justify-content: end;
     align-items: center;
+    transition: linear 0.5s height, linear 0.5s padding;
+    @starting-style {
+        height: 0;
+        padding: 0;
+    }
 }
-.mathInput > .popup > p {
-    padding: 0.3rem 0 0 0;
-    margin: 0;
+.popup > p {
     display: block;
+    margin: 0 0.5rem;
     width: fit-content;
     opacity: 1;
+    flex-grow: 0;
+    flex-shrink: 0;
 }
-.mathInput > .popup > .holder {
+.popup > .holder {
     display: flex;
     position: relative;
-    width: 100%;
     flex-grow: 1;
     flex-shrink: 1;
-    flex-flow: column wrap;
+    flex-direction: row;
+    max-width: 8em;
+    gap: 0.5rem;
     align-items: center;
     justify-items: center;
     overflow-x: scroll;
     overflow-y: hidden;
-    scrollbar-width: thin;
+}
+.holder > .space {
+    display: block;
+    flex-shrink: 0;
+    flex-grow: 0;
+    height: 1em;
+    width: 1.5em;
+}
+.popup > .holderMask {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 2em;
+    height: 100%;
+    pointer-events: none;
+    background-image: linear-gradient(to right,rgb(255 255 255 / 0.4), white);
 }
 .mathInput > .popup a {
     display: block;
-    height: 50%; /* Split into 2 rows */
-    margin: 0 0.5rem;
+    flex-shrink: 0;
+    flex-grow: 0;
+    height: fit-content;
 }
 .mathInput > .popup svg {
     display: block;
     margin: 0;
     padding: 0;
-    height: 100%;
+    height: 1em;
 }
 /* Menu */
 #menuToggle {
@@ -406,6 +431,10 @@ dialog {
 dialog > form {
     display: flex;
     flex-direction: column;
+}
+dialog .mathInput {
+    font-size: 2.5rem;
+    display: flex;
 }
 dialog span > svg {
     height: 2rem;
