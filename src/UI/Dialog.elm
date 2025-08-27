@@ -165,12 +165,14 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
 
 toRadioButtons_: String -> Dict.Dict Int (Html.Html msg) -> Html.Html msg
 toRadioButtons_ name =
-    Dict.foldl (\num t list -> let n = String.fromInt num in
-        let id = name ++ n |> fieldID in list ++
-        [   Html.br [] []
-        ,   Html.input [Attr.type_ "radio", Attr.name name, Attr.id id, Attr.value n, Attr.checked (List.isEmpty list)] []
-        ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
-        ]
+    Dict.foldr (\num t list -> let n = String.fromInt num in
+        let id = name ++ n |> fieldID in (
+            Html.div [Attr.class "radioOptions"]
+            [   Html.br [] []
+            ,   Html.input [Attr.type_ "radio", Attr.name name, Attr.id id, Attr.value n, Attr.checked (List.isEmpty list)] []
+            ,   Html.label [Attr.for id, Attr.class "clickable"] [t]
+            ]
+            ) :: list
     ) []
     >> span [Attr.class "radioSelection"]
 
