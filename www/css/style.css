@@ -525,7 +525,6 @@ span.centered {
     position: relative;
     grid-column: 1/3;
     grid-row: 4;
-    background-color: var(--color-toolbar);
     display: flex;
     flex-direction: column;
 }
@@ -533,12 +532,11 @@ span.centered {
     position: relative;
     grid-column: 1/3;
     grid-row: 3;
-    background-color: var(--color-toolbar);
     display: flex;
     flex-direction: column;
 }
 .actionToolbar .scrollMask, .actionSubtoolbar .scrollMask {
-    background-image: linear-gradient(to right, var(--color-toolbar-faded), var(--color-toolbar) 80%);
+    background-image: linear-gradient(to right, rgba(0,0,0,0), var(--color-window) 80%);
 }
 .actions {
     display: flex;
@@ -565,7 +563,7 @@ span.centered {
 }
 .action {
     display: flex;
-    font-size: 1.1rem;
+    font-size: 1.5rem;
 }
 .actionButton {
     display: flex;
@@ -579,10 +577,13 @@ span.centered {
     padding-left: 0.4rem;
     padding-right: 0.4rem;
     background-color: var(--color-action);
-    border-radius: 0.4rem;
+    border-radius: 1rem;
+    border-width: 0.2rem;
+    border-style: solid;
+    border-color: black;
 }
 .actionIcon {
-    width: 1rem;
+    width: 1.5rem;
 }
 .actionIcon > svg {
     height: 100%;
@@ -594,25 +595,13 @@ span.centered {
     color: var(--color-background);
 }
 
-.subactions {
-    display: flex;
-    flex-direction: row;
-    position: absolute;
-    bottom: 2.2rem;  /* this is the height of the toolbar plus the height of the draggable bottom edge */
-    left: 0.2rem;
-    right: 0.2rem;
-    overflow: scroll;
-    background-color: var(--color-toolbar);
-    opacity: 0.8;
-    animation: 0.5s ease-out hide-actions;
-}
 .actionLatex > div > span {
-    height: 1.8rem;
+    height: 2.2rem;
 }
 .actionLatex > div > span > svg {
     height: 1.6rem;
-    margin-top: 0.1rem;
-    margin-bottom: 0.1rem;
+    margin-top: 0.3rem;
+    margin-bottom: 0.3rem;
 }
 .brickRect {
     stroke: var(--color-black);
