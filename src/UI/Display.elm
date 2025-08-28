@@ -444,7 +444,8 @@ easeSubtoolbar_ tracker num height model = Dict.get num model.equations
     |> Maybe.withDefault (model, tracker)
 
 updateEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
-updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if selEq == Just num
+updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in
+    if selEq == Just num
     then (model, tracker)
     else { model
         |   recencyList = num :: (List.filter (\n -> n /= num) model.recencyList)
@@ -460,34 +461,33 @@ updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if
                 |> (\(m2, t2) -> easeSubtoolbar_ t2 prevFocus 0 m2)
             )
 
-deleteEqOrder_: Int -> Model -> Model
-deleteEqOrder_ num model = let filtered = List.filter (\n -> n /= num) model.recencyList in
+deleteEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
+deleteEqOrder_ tracker num model =
+    let filtered = {model | recencyList = List.filter (\n -> n /= num) model.recencyList} in
     if List.head model.recencyList /= Just num
-    then { model | recencyList = filtered }
-    else { model
-        |   recencyList = filtered
-        ,   selected = Set.empty
-        ,   staged = Set.empty
-        ,   actions = []
-        }
-
+    then (filtered, tracker)
+    else {filtered | selected = Set.empty, staged = Set.empty, actions = []}
+        |> (\m -> case List.head filtered.recencyList of
+            Nothing -> (m, tracker)
+            Just newSelect -> easeToolbar_ tracker newSelect 1 m
+            )
 
 update: Draggable.Size -> Animation.Tracker -> Rules.Model -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker rules event model = let default = (model, tracker, Cmd.none) in case event of
     Select eq node -> updateSelected_ eq node False rules model
         |> updateEqOrder_ tracker eq
         |> (\(m, t) -> (m, t, Cmd.none))
-    Delete eq -> updatePositions_
-        ({model | equations = Dict.remove eq model.equations} |> deleteEqOrder_ eq)
-        |> (\m -> (m, tracker, updateQueryCmd m))
+    Delete eq -> {model | equations = Dict.remove eq model.equations}
+        |> deleteEqOrder_ tracker eq
+        |> (\(m, t) -> (updatePositions_ m, t, updateQueryCmd m))
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> default
-        Just entry -> updatePositions_
+        Just entry ->
             {   model
             |   equations = Dict.insert eq {entry | show = not entry.show, grabbing = Nothing} model.equations
             }
-            |> deleteEqOrder_ eq
-            |> (\m -> (m, tracker, updateQueryCmd m))
+            |> deleteEqOrder_ tracker eq
+            |> (\(m, t) -> (updatePositions_ m, t, updateQueryCmd m))
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->

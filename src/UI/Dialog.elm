@@ -165,7 +165,7 @@ listView_ convert funcDict inputs = List.filterMap (\input -> case input of
 
 toRadioButtons_: String -> Dict.Dict Int (Html.Html msg) -> Html.Html msg
 toRadioButtons_ name =
-    Dict.foldr (\num t list -> let n = String.fromInt num in
+    Dict.foldl (\num t list -> let n = String.fromInt num in
         let id = name ++ n |> fieldID in (
             Html.div [Attr.class "radioOptions"]
             [   Html.br [] []
@@ -174,6 +174,7 @@ toRadioButtons_ name =
             ]
             ) :: list
     ) []
+    >> List.reverse
     >> span [Attr.class "radioSelection"]
 
 decoder_: Model msg -> Decode.Decoder msg

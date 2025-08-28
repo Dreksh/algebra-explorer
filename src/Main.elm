@@ -571,7 +571,7 @@ substitutionDialog_: List Display.FullEquation -> Dialog.Model Event
 substitutionDialog_ eqs =
     let
         eqDict = eqs
-            |> List.indexedMap (\idx eq -> (idx, eq))
+            |> List.indexedMap Tuple.pair
             |> Dict.fromList
     in
     {   title = "Substitute a variable for a formula"
