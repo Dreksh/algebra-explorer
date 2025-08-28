@@ -603,6 +603,9 @@ span.centered {
     margin-top: 0.3rem;
     margin-bottom: 0.3rem;
 }
+.actionLatex > div > span > svg > path {
+    stroke-width: 0.15rem;
+}
 .brickRect {
     stroke: var(--color-black);
 }
