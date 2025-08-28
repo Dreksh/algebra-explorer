@@ -13,7 +13,7 @@
     --color-grab: rgb(230,230,230);
     --color-action: rgb(240,240,240);
     --color-selected: lightgreen;
-    --color-selected-text: rgb(150,255,150);
+    --color-selected-text: rgb(100,200,100);
     --color-toolbar: rgb(180,180,180);
     --color-toolbar-faded: rgb(180,180,180, 0);
 }
@@ -600,7 +600,7 @@ span.centered {
     stroke-width: 0.06;
     stroke-linecap: round;
     stroke-linejoin: round;
-    user-select: none;
+    pointer-events: none;
 }
 .brick:hover > .brickRect {
     stroke: var(--color-highlight);
@@ -613,10 +613,9 @@ span.centered {
 }
 .brick.grabbed > .brickRect {
     stroke: var(--color-grab);
-    cursor: grabbing;
 }
 .brick.commutable > .brickRect {
-    cursor: ew-resize;
+    cursor: move;
 }
 .mathStroke {
     stroke: currentColor;

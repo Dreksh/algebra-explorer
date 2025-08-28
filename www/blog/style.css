@@ -5,8 +5,33 @@
 }
 p, li {
     font-size: 1.2rem;
+}
+p {
     margin-top: 1.3rem;
     margin-bottom: 1.3rem;
+}
+li {
+    margin-top: 0.8rem;
+    margin-bottom: 0.8rem;
+}
+img {
+    margin-top: 1.3rem;
+    margin-bottom: 1.3rem;
+}
+math {
+    font-size: 1.4rem;
+}
+p.indented > math {
+    font-size: 1.8rem;
+}
+video {
+    width: 22rem;
+}
+div.blocks-video {
+    margin: 0 auto;
+    text-align: center;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
 }
 blockquote {
     font-size: 1.4rem;
