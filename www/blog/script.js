@@ -30,8 +30,17 @@ function run() {
     }
 }
 function toggleMenu() {
-    console.log("yo");
     let menu = document.getElementsByTagName("nav");
-    if (!menu) return;
-    menu[0].className = menu[0].className == "closed" ? "" : "closed";
+    let main = document.getElementsByTagName("main");
+    let menuIcon = document.getElementById("menu");
+    if (menu.length == 0 || main.length == 0 || !menuIcon) return;
+    if (menu[0].className == "closed") {
+        menu[0].className = "";
+        main[0].className = "";
+        menuIcon.className = "";
+    } else {
+        menu[0].className = "closed";
+        main[0].className = "closed";
+        menuIcon.className = "closed";
+    }
 }

@@ -1,7 +1,8 @@
 :root {
-    /* --background-color: lightgrey; */
     /* font-family: "STIX Two Text", serif; */
     font-family: sans-serif;
+    --nav-color: lightgray;
+    --nav-width: 15rem;
 }
 p, li {
     font-size: 1.2rem;
@@ -49,61 +50,55 @@ h2 {
     margin: 0;
 }
 html {
-    background-color: var(--background-color);
     padding: 0;
     margin: 0;
-    overflow: auto;
-    height: fit-content;
 }
 body {
-    max-width: 50rem;
-    margin: 0 auto;
+    margin: 0;
     padding: 0;
-}
-#wrapper {
-    display: flex;
-    width: 100%;
-    flex-direction: row-reverse;
-    height: fit-content;
 }
 nav {
-    position: sticky;
+    position: fixed;
     box-sizing: border-box;
-    margin: 0 0.5rem;
-    padding: 0;
-    width: 40rem;
+    left: 0;
     top: 0;
-    height: 100%;
+    margin: 0;
+    padding: 0;
+    width: var(--nav-width);
+    max-width: var(--nav-width);
     overflow-y: scroll;
     overflow-x: hidden;
     display: flex;
+    height: 100dvh;
     flex-direction: column;
-    background-color: var(--background-color);
-    flex-grow: 1;
+    background-color: var(--nav-color);
     font-size: 1.5rem;
-    max-width: 40rem;
     transition: ease-out 0.5s max-width;
-}
-#menu {
-    display: block;
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    height: 2rem;
-    width: 2rem;
-    mask: url(img/menu.svg);
-    background-color: blue;
-    z-index: 1;
-}
-#menu:hover {
-    background-color: lightblue;
 }
 nav.closed {
     max-width: 0;
     transition: ease-out 0.5s max-width;
 }
 nav a {
-    margin: 1rem 0;
+    margin: 1rem 1rem;
+}
+#menu {
+    display: block;
+    position: fixed;
+    top: 1rem;
+    left: calc(var(--nav-width) + 1rem);
+    height: 2rem;
+    width: 2rem;
+    mask: url(img/menu.svg);
+    background-color: blue;
+    transition: ease-out 0.5s left;
+}
+#menu:hover {
+    background-color: lightblue;
+}
+#menu.closed {
+    left: 1rem;
+    transition: ease-out 0.5s left;
 }
 h1 {
     font-size: 3rem;
@@ -122,10 +117,16 @@ main {
     background-color: white;
     position: relative;
     height: fit-content;
-    flex-shrink: 1;
-    max-width: 1000;
-    padding: 1rem;
-    margin: 1rem;
+    max-width: 50rem;
+    min-width: 20rem;
+    padding: 1rem 0;
+    margin: 1rem auto;
+    padding-left: var(--nav-width);
+    transition: ease-out 0.5s padding-left;
+}
+main.closed {
+    padding-left: 0;
+    transition: ease-out 0.5s padding-left;
 }
 h2 {
     font-size: 2rem;
