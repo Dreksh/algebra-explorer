@@ -21,7 +21,7 @@
     --color-grab: rgb(230,230,230);
     --color-action: rgb(240,240,240);
     --color-selected: lightgreen;
-    --color-selected-text: rgb(100,200,100);
+    --color-selected-text: rgb(150,150,150);
     --color-toolbar: rgb(180,180,180);
     --color-toolbar-faded: rgb(180,180,180, 0);
     --thickness: 3.5pt;
@@ -627,32 +627,62 @@ span.centered {
     stroke-linejoin: round;
     pointer-events: none;
 }
-.brick:hover > .brickRect {
-    stroke: var(--color-highlight);
-}
 .brick.staged > .brickRect {
     fill-opacity: 0.75;
 }
-.leaf {
+.brick.leaf > .brickRect {
     fill: var(--color-leaf)
 }
-.branch {
+.brick.branch > .brickRect{
     fill: var(--color-branch)
 }
-.root {
+.brick.root > .brickRect {
     fill: var(--color-root)
 }
-.brick.selected > .brickRect.leaf {
+.brick.leaf.selected > .brickRect {
     fill: var(--color-leaf-saturated);
 }
-.brick.selected > .brickRect.branch {
+.brick.branch.selected > .brickRect {
     fill: var(--color-branch-saturated);
 }
-.brick.selected > .brickRect.root {
+.brick.root.selected > .brickRect {
     fill: var(--color-root-saturated);
 }
-.brick.grabbed > .brickRect {
-    stroke: var(--color-grab);
+.brick.leaf:hover > .brickText {
+    stroke: var(--color-leaf-saturated);
+}
+.brick.branch:hover > .brickText {
+    stroke: var(--color-branch-saturated);
+}
+.brick.root:hover > .brickText {
+    stroke: var(--color-root-saturated);
+}
+.brick.leaf:hover > .brickRect {
+    fill: white;
+}
+.brick.branch:hover > .brickRect {
+    fill: white;
+}
+.brick.root:hover > .brickRect {
+    fill: white;
+}
+.brick.leaf.grabbed > .brickRect {
+    fill: var(--color-leaf-saturated);
+}
+.brick.branch.grabbed > .brickRect {
+    fill: var(--color-branch-saturated);
+}
+.brick.root.grabbed > .brickRect {
+    fill: var(--color-root-saturated);
+}
+.brick.leaf.grabbed > .brickText {
+    stroke: white;
+}
+.brick.branch.grabbed > .brickText {
+    stroke: white;
+}
+.brick.root.grabbed > .brickText {
+    stroke: white;
 }
 .brick.commutable > .brickRect {
     cursor: move;
@@ -667,7 +697,7 @@ span.centered {
     stroke: var(--color-text);
 }
 .stroke:not(.selected):hover {
-    stroke: var(--color-highlight);
+    stroke: var(--color-selected-text);
 }
 .stroke.selected {
     stroke: var(--color-selected-text);

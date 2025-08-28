@@ -26,11 +26,11 @@ bricks xMax yMax children =
     [   viewBox
         (   String.fromFloat (horizontalPad_ / 2)
         ++  " "
-        ++  String.fromFloat -yMax
+        ++  String.fromFloat -(yMax + strokeWidth_ / 2)
         ++  " "
         ++  String.fromFloat (xMax - horizontalPad_)
         ++  " "
-        ++  String.fromFloat yMax
+        ++  String.fromFloat (yMax + strokeWidth_)
         )
     ,   class "bricks"
     ,   width "100%"
@@ -42,9 +42,9 @@ brick: Float -> Float -> Float -> Float -> Float -> Colour -> Bool -> List (Attr
 brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
     let
         x_ = xMin + (strokeWidth_ / 2) + (horizontalPad_ / 2)
-        y_ = -(yMax - (strokeWidth_ / 2))  -- use yMax because the y-axis in SVG extends downwards
+        y_ = -yMax  -- use yMax because the y-axis in SVG extends downwards
         width_ = (xMax - xMin) - strokeWidth_ - horizontalPad_
-        height_ = (yMax - yMin) - strokeWidth_
+        height_ = (yMax - yMin)
         labelOrigin =
             (   (width_ - (Animation.current label.botRight |> Tuple.first))/2
             ,   height_/2 + 0.25 - (Animation.current label.botRight |> Tuple.second)
@@ -57,6 +57,7 @@ brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
     in
         g
         (   [   class "brick"
+            ,   class colour
             ,   transformAttr_ x_ y_
             ]
         ++ attrs
@@ -66,7 +67,6 @@ brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
             ,   height (String.fromFloat height_)
             ,   strokeWidth (String.fromFloat strokeWidth_)
             ,   class "brickRect"
-            ,   class colour
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
             ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari
