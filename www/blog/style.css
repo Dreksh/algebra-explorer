@@ -168,3 +168,26 @@ iframe.eq1 {
 iframe.eq2 {
     height: 80dvh;
 }
+#groupPicture {
+    height: 20rem;
+    max-height:fit-content;
+    margin: 0 auto;
+    object-fit: contain;
+}
+.social {
+    display: inline-flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    margin: 0 0.5rem;
+    justify-items: end;
+    align-items: center;
+}
+.social a {
+    height: 1em;
+    width: 1em;
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+.social a > img {
+    height: 100%;
+}
