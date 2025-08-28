@@ -6,6 +6,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 -- Ours
 import UI.HtmlEvent exposing (onPointerCapture)
+import UI.Icon as Icon
 import UI.SvgDrag as SvgDrag
 
 -- These will be in raw pixel amounts (technically ints)
@@ -37,6 +38,7 @@ type Direction =
     | TopRight
     | BottomLeft
     | BottomRight
+    | Mover
 
 type alias Action = {id: String, pID: Encode.Value}
 
@@ -46,48 +48,16 @@ type Event =
 
 div: (Event -> msg) -> Model -> List (Html.Attribute msg) -> List (Html.Html msg) -> Html.Html msg
 div converter model attrs children = Html.div (divAttrs_ model)
-    [  span
-        [ class "border", onPointerCapture converter (DragStart Top)
-        , style "left" "0", style "top" "0", style "width" "100%", style "height" "1rem", style "cursor" "move"
-        , style "text-align" "center"
-        ]
-        [Html.text model.id]
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart Left)
-        , style "left" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"
-        ]
-        []
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart Bottom)
-        , style "left" "0", style "bottom" "0", style "width" "100%", style "height" "0.2rem", style "cursor" "ns-resize"
-        ]
-        []
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart Right)
-        , style "right" "0", style "top" "0", style "height" "100%", style "width" "0.2rem", style "cursor" "ew-resize"
-        ]
-        []
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart TopLeft)
-        , style "left" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"
-        ]
-        []
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart BottomLeft)
-        , style "left" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"
-        ]
-        []
-    ,   span
-        [ class "border", onPointerCapture converter (DragStart TopRight)
-        , style "right" "0", style "top" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nesw-resize"
-        ]
-        []
-    ,   span
-        [   class "border", onPointerCapture converter (DragStart BottomRight)
-        ,   style "right" "0", style "bottom" "0", style "height" "0.2rem", style "width" "0.2rem", style "cursor" "nwse-resize"
-        ]
-        []
+    [   span [class "border", class "top", onPointerCapture converter (DragStart Top)] []
+    ,   span [class "border", class "left", onPointerCapture converter (DragStart Left)] []
+    ,   span [class "border", class "bottom", onPointerCapture converter (DragStart Bottom)] []
+    ,   span [class "border", class "right", onPointerCapture converter (DragStart Right) ] []
+    ,   span [class "border", class "topLeft", onPointerCapture converter (DragStart TopLeft)] []
+    ,   span [class "border", class "bottomLeft", onPointerCapture converter (DragStart BottomLeft)] []
+    ,   span [class "border", class "topRight", onPointerCapture converter (DragStart TopRight)] []
+    ,   span [class "border", class "bottomRight", onPointerCapture converter (DragStart BottomRight)] []
     ,   Html.div attrs children
+    ,   Icon.menu [Icon.class "mover", onPointerCapture converter (DragStart Mover)]
     ]
 
 divAttrs_: Model -> List (Html.Attribute msg)
@@ -125,10 +95,9 @@ updateCoordinate_ (screenX, screenY) start to =
         (diffX, diffY) = diff start.from to
         (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
         orig = start.original
+        (menuX, menuY) = (orig.left + 3400/screenX, orig.top + 3400/screenY) -- 1 rem margin + 1 rem size  + extra(x 100)
     in case start.direction of
-        Top -> let newDy = dy |> max (-orig.top) |> min (99 - orig.top) in
-            let newDx = dx |> max (1 - orig.right)  |> min (99 - orig.left) in
-            {left = orig.left + newDx, right = orig.right + newDx, top = orig.top + newDy, bottom = orig.bottom + newDy }
+        Top -> {orig | left = orig.top + dy |> min (orig.bottom - 2) }
         Left -> {orig |left = orig.left + dx |> min (orig.right - 2) }
         Right -> {orig | right = orig.right + dx |> max (orig.left + 2)}
         Bottom -> {orig | bottom = orig.bottom + dy |> max (orig.top + 2)}
@@ -136,6 +105,9 @@ updateCoordinate_ (screenX, screenY) start to =
         TopRight -> {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)}
         BottomLeft -> {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
         BottomRight -> {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
+        Mover -> let newDy = dy |> max (-orig.top) |> min (100 - menuY) in
+            let newDx = dx |> max (-orig.left)  |> min (100 - menuX) in
+            {left = orig.left + newDx, right = orig.right + newDx, top = orig.top + newDy, bottom = orig.bottom + newDy }
 
 diff: Point -> Point -> Point
 diff (fromX, fromY) (toX, toY) = (toX - fromX, toY - fromY)
