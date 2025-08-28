@@ -23,6 +23,7 @@ import Algo.Math as Math
 import Algo.Matcher as Matcher
 import Components.Latex as Latex
 import Components.Rules as Rules
+import UI.Actions as Actions
 import UI.Animation as Animation
 import UI.Bricks as Bricks
 import UI.Draggable as Draggable
@@ -31,9 +32,6 @@ import UI.Icon as Icon
 import UI.MathIcon as MathIcon
 import UI.Menu as Menu
 import UI.SvgDrag as SvgDrag
-import UI.Actions as Actions
-import UI.HtmlEvent as HtmlEvent
-import UI.Actions as Actions
 
 type alias State = Matcher.State Animation.State
 type alias FullEquation = Matcher.Equation Rules.FunctionProp Animation.State
@@ -709,11 +707,14 @@ views converter actionConvert model =
                         ,   HtmlEvent.onPointerLeave (Actions.HideSubactions |> actionConvert)
                         ]
                         (   Actions.viewSubactions actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.subactions
+                        ++ [Html.div [class "space"] []]
                         )
+                    ,   Html.div [class "scrollMask"] []
                     ]
                 ,   Html.div [class "actionToolbar"]
                     [   Html.Keyed.node "div"
                         [   class "actions"
+                        ,   class "hideScrollbar"
                         ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 2)) ++ "rem")
                         ]
                         (if not eqSelected then [] else
@@ -721,7 +722,9 @@ views converter actionConvert model =
                         ,   undoOrRedoAction converter eqNum (History.canRedo entry.history) (previewOnHover model) (not model.enterSuspended) False
                         ]
                         ++ Actions.view actionConvert (previewOnHover model) (not model.enterSuspended) (UnsuspendHover True |> converter) model.actions
+                        ++ [("space_", Html.div [class "space"] [])]
                         )
+                    ,   Html.div [class "scrollMask"] []
                     ]
                 ]
             )

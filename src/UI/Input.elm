@@ -153,7 +153,7 @@ view convert functions attr model =
                 else Html.p [class "helpable"] [Html.text "Click an icon to insert"]
             ,   Html.p [] [Html.text ":"]
             ,   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
-            ,   Html.div [class "holderMask"] []
+            ,   Html.div [class "scrollMask"] []
             ]
             |> Html.map convert
         ) model.suggestions)
