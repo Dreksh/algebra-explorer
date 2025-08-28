@@ -1,4 +1,12 @@
 :root {
+    --color-window: #FFFAD9;
+    --color-leaf: #BAFCDE;
+    --color-branch: #C9DCFF;
+    --color-root: #FFD1D1;
+    --color-leaf-saturated: #00D7A1;
+    --color-branch-saturated: #6EA8FF;
+    --color-root-saturated: #FF8888;
+    --color-black: #000000;
     --color-background: lightgray;
     --color-cancel: red;
     --color-highlight: yellow;
@@ -20,7 +28,7 @@
 html, body {
     margin: 0;
     padding: 0;
-    font: sans-serif;
+    font-family: "Instrument Sans", sans-serif;
 }
 * {
     -webkit-touch-callout: none;
@@ -31,7 +39,6 @@ body {
     height: 100vh;
     width: 100vw;
     overflow: hidden;
-    background-color: var(--color-background);
 }
 input { font-size: inherit; } /* from https://stackoverflow.com/a/6520729 */
 #body, #body > div {
@@ -478,7 +485,7 @@ span.centered {
 }
 /* Equation */
 .equationHolder {
-    background-color: var(--color-background);
+    background-color: var(--color-window);
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -589,15 +596,14 @@ span.centered {
     margin-bottom: 0.1rem;
 }
 .brickRect {
-    stroke: black;
-    fill: #FFF;
+    stroke: var(--color-black);
 }
 .brickText {
     text-anchor: middle;
     dominant-baseline: central;
     fill: none;
-    stroke: black;
-    stroke-width: 0.06;
+    stroke: var(--color-black);
+    stroke-width: 0.05;
     stroke-linecap: round;
     stroke-linejoin: round;
     pointer-events: none;
@@ -608,8 +614,23 @@ span.centered {
 .brick.staged > .brickRect {
     fill-opacity: 0.75;
 }
-.brick.selected > .brickRect {
-    fill: var(--color-selected);
+.leaf {
+    fill: var(--color-leaf)
+}
+.branch {
+    fill: var(--color-branch)
+}
+.root {
+    fill: var(--color-root)
+}
+.brick.selected > .brickRect.leaf {
+    fill: var(--color-leaf-saturated);
+}
+.brick.selected > .brickRect.branch {
+    fill: var(--color-branch-saturated);
+}
+.brick.selected > .brickRect.root {
+    fill: var(--color-root-saturated);
 }
 .brick.grabbed > .brickRect {
     stroke: var(--color-grab);
