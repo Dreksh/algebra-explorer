@@ -235,6 +235,9 @@ toAnimationDict_ scale = processFrame_ (\frame origin inScale dict -> case frame
     )
     (0,0) scale Dict.empty
 
+fontStrokeWidth: Maybe Latex.Style -> String
+fontStrokeWidth style = if style == Just Latex.Faded then "2" else "1.3"
+
 newAnimation_: (Int, Int) -> {strokes: List Stroke, style: Maybe Latex.Style, origin: Vector2, scale: Float} -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker) -> (Dict.Dict (Int, Int) AnimationFrame, Animation.Tracker)
 newAnimation_ key value (dict, t) = let targetOp = if value.style == Just Latex.Faded then 0.5 else 1 in
     let (op, newT) = Animation.newEaseFloat animationTime_ 0 |> Animation.setEase t targetOp in
@@ -243,7 +246,7 @@ newAnimation_ key value (dict, t) = let targetOp = if value.style == Just Latex.
         ,   origin = Animation.newEaseVector2 animationTime_ value.origin
         ,   scale = Animation.newEaseFloat animationTime_ value.scale
         ,   style = value.style
-        ,   width = if value.style == Just Latex.Emphasis then "3" else "2"
+        ,   width = fontStrokeWidth value.style
         ,   opacity = op
         }
         dict
@@ -601,7 +604,7 @@ charStrokes_ c = case c of
     '9' -> ([Move (0.8,-0.7), Curve (0.6,-1) (0.1,-0.7) (0.1,-0.4), Curve (0.1,-0.1) (0.7,0) (0.8,-0.8), Line (0.8,0.4)], (0, -1), (1, 0.5))
     '-' -> ([Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
     '+' -> ([Move (0.3,-0.2), Line (0.3,0.2), Move (0.1,0), Line (0.5,0)], (0, -0.3), (0.6, 0.3))
-    '=' -> ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.3), (0.6, 0.2))
+    '=' -> ([Move (0.1,-0.2), Line (0.5,-0.2), Move (0.1,0.1), Line (0.5,0.1)], (0, -0.4), (0.6, 0.3))
     ' ' -> ([], (0, 0), (0.4, 0))
     '\'' -> ([Move (0.1, -0.7), Line (0,-0.3)], (0, -0.8), (0.2, -0.2))
     _ -> ([Move (0.1, -0.4), Line (0.1,0.4), Line (0.9,0.4), Line (0.9,-0.4), Line (0.1, -0.4), Line (0.9,0.4)], (0, -0.5), (1,0.5))
@@ -688,7 +691,7 @@ static: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 static attrs l = let frames = latexToFrames l in let (topLeft, botRight) = capHeight frames in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
+                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", strokeWidth (fontStrokeWidth detail.style)]
                 []
                 :: list
             _ -> list -- Ignore cursor, border and position
@@ -702,7 +705,7 @@ staticWithCursor: List (Html.Attribute msg) -> Latex.Model a -> Html.Html msg
 staticWithCursor attrs model = let frames = latexToFrames model in let (topLeft, botRight) = capHeight frames in
     processFrame_ (\frame origin scale list -> case frame.data of
             BaseFrame detail -> Svg.path
-                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", if detail.style == Just Latex.Emphasis then strokeWidth "3" else strokeWidth "2"]
+                [d (strokeToPath_ origin scale detail.strokes), class "mathStroke", strokeWidth (fontStrokeWidth detail.style)]
                 []
                 :: list
             Cursor -> Svg.path

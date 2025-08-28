@@ -1,4 +1,4 @@
-module UI.BrickSvg exposing (bricks, brick)
+module UI.BrickSvg exposing (bricks, brick, Colour(..))
 
 import Html exposing (Html)
 import Svg exposing (svg, g, rect, Attribute)
@@ -8,8 +8,13 @@ import UI.Animation as Animation
 import UI.MathIcon as MathIcon
 
 
+type Colour =
+    Leaf
+    | Branch
+    | Root
+
 strokeWidth_: Float
-strokeWidth_ = 0.08
+strokeWidth_ = 0.05
 horizontalPad_: Float  -- space between adjacent blocks on same row
 horizontalPad_ = 0.1
 rectRadius_: Float
@@ -33,8 +38,8 @@ bricks xMax yMax children =
     ]
     children
 
-brick: Float -> Float -> Float -> Float -> Float -> Bool -> List (Attribute event) -> MathIcon.Model -> Html event
-brick xMin xMax yMin yMax opacity_ canHover attrs label =
+brick: Float -> Float -> Float -> Float -> Float -> Colour -> Bool -> List (Attribute event) -> MathIcon.Model -> Html event
+brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
     let
         x_ = xMin + (strokeWidth_ / 2) + (horizontalPad_ / 2)
         y_ = -(yMax - (strokeWidth_ / 2))  -- use yMax because the y-axis in SVG extends downwards
@@ -45,6 +50,10 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
             ,   height_/2 + 0.25 - (Animation.current label.botRight |> Tuple.second)
             )
         pointerEvents_ = if canHover then "auto" else "none"
+        colour = case colour_ of
+            Leaf -> "leaf"
+            Branch -> "branch"
+            Root -> "root"
     in
         g
         (   [   class "brick"
@@ -57,6 +66,7 @@ brick xMin xMax yMin yMax opacity_ canHover attrs label =
             ,   height (String.fromFloat height_)
             ,   strokeWidth (String.fromFloat strokeWidth_)
             ,   class "brickRect"
+            ,   class colour
             ,   opacity (String.fromFloat opacity_)
             ,   pointerEvents pointerEvents_
             ,   rx (String.fromFloat rectRadius_)  -- ideally this would be in css but it doesn't work in Safari

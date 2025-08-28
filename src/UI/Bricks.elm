@@ -15,18 +15,6 @@ import UI.Animation as Animation
 import UI.BrickSvg as BrickSvg
 import UI.MathIcon as MathIcon
 
-type alias Rect =
-    {   text: MathIcon.Model
-    ,   prevID: Int
-    ,   visible: Bool  -- False means it existed before but needs to fade away
-    ,   bottomLeft: Animation.EaseState Animation.Vector2
-    ,   topRight: Animation.EaseState Animation.Vector2
-    ,   opacity: Animation.EaseState Float
-    ,   commutable: Maybe (Int, List Float)  -- nthChild index, siblings midpoints
-    ,   groupable: Maybe (Float, Float)  -- midpoint x, top y
-    ,   ungroupable: Maybe Float  -- bottom y
-    }
-
 {-
 Diagram for commutable and associable drag semantics, where we are dragging the upper middle block:
 
@@ -46,10 +34,22 @@ for commutable we therefore need the midpoints of all siblings
 for associable we need the midpoint and upper and lower bounds
 -}
 
-
 type alias Model =
     {   rects: Dict.Dict (Int, Int) Rect  -- the key here needs to be two Ints because DeclarativeNodes map to multiple rects
     ,   viewBox: Animation.EaseState Animation.Vector2
+    }
+
+type alias Rect =
+    {   text: MathIcon.Model
+    ,   prevID: Int
+    ,   visible: Bool  -- False means it existed before but needs to fade away
+    ,   bottomLeft: Animation.EaseState Animation.Vector2
+    ,   topRight: Animation.EaseState Animation.Vector2
+    ,   opacity: Animation.EaseState Float
+    ,   commutable: Maybe (Int, List Float)  -- nthChild index, siblings midpoints
+    ,   groupable: Maybe (Float, Float)  -- midpoint x, top y
+    ,   ungroupable: Maybe Float  -- bottom y
+    ,   colour: BrickSvg.Colour
     }
 
 smoothTime_: Float
@@ -82,8 +82,6 @@ advanceTime millis model =
 
 view: (Int -> Maybe (Int, List Float) -> Maybe (Float, Float) -> Maybe Float -> List (Html.Attribute e)) -> Model -> Html e
 view createAttrs model =
-    -- TODO: allow blocks to share a border to make it look like mitosis
-    -- TODO: can pass in some extra params here to allow dragging to move the node with cursor
     let
         -- we want ids that exist to be drawn on top, so make sure not visible ones are drawn first
         -- Dicts are already sorted on the keys by default, and DeclarativeNodes should have low ids
@@ -96,7 +94,7 @@ view createAttrs model =
                 (blX, blY) = Animation.current rect.bottomLeft
                 (trX, trY) = Animation.current rect.topRight
             in
-                BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.visible attrs rect.text
+                BrickSvg.brick blX trX blY trY (Animation.current rect.opacity) rect.colour rect.visible attrs rect.text
             )
         (maxX, maxY) = Animation.current model.viewBox
     in
@@ -128,7 +126,7 @@ calculateTree_ animation root rects =
         (visibleRects, newAnimation, easedIds) = items |> Dict.foldl (\(id, id2) item (foldRects, a0, foldEased) ->
             let
                 (offset, opTarget) = if id == declID
-                    then ((0, 0.5), 0.4)  -- move DeclarativeNodes up a bit to differentiate them from children
+                    then ((0, 0.5), 1)  -- move DeclarativeNodes up a bit to differentiate them from children
                     else ((0, 0), 1)
 
                 blTarget = Animation.addVector2 (getColX item.colStart grid.lines, toFloat item.rowStart) offset
@@ -153,7 +151,7 @@ calculateTree_ animation root rects =
                             (Animation.newEaseVector2 smoothTime_ blTarget)
                             (Animation.newEaseVector2 smoothTime_ trTarget)
                             (Animation.newEaseFloat (smoothTime_/2) 0)
-                            Nothing Nothing Nothing
+                            Nothing Nothing Nothing item.colour
                         ,   (-1, -1)
                         ,   newA
                         )
@@ -243,6 +241,7 @@ type alias GridItem =
     ,   rowEnd: Int
     ,   commutable: Maybe (Int, List (Int, Int))  -- nth-child index, siblings' (colStart, colEnd)
     ,   associable: (Bool, Bool)  -- groupable, ungroupable
+    ,   colour: BrickSvg.Colour
     }
 
 type alias Grid =
@@ -307,6 +306,7 @@ stack root = let initialGrid = (Grid Dict.empty Array.empty Nothing, -1) in
                             text 0 (colEnd-1) 0 1
                             (Just (n.state |> Matcher.getID, childRanges))  -- reuse the commutable field because it fits our use case perfectly
                             (False, False)
+                            BrickSvg.Root
                         )
                 in
                     { grid | items = newItems, declarative = declarative }
@@ -343,10 +343,16 @@ stackRecursive_: Int -> Math.Tree (Matcher.State Animation.State) -> (Grid, Int)
 stackRecursive_ depth node (grid, colStart) =
     let
         (text, width) = extractText_ node
+        colour = case node of
+            Math.DeclarativeNode _ -> BrickSvg.Root
+            Math.RealNode _ -> BrickSvg.Leaf
+            Math.VariableNode _ -> BrickSvg.Leaf
+            _ -> BrickSvg.Branch
+
         insertItem colEnd dict =
             GridItem
             (Math.getState node |> Matcher.getState |> .prevID)
-            text colStart colEnd depth (depth + 1) Nothing (False, False)
+            text colStart colEnd depth (depth + 1) Nothing (False, False) colour
             |> \item -> Dict.insert (Math.getState node |> Matcher.getID) item dict
     in
         case Math.getChildren node of

@@ -189,7 +189,7 @@ iframe {
     min-height: 20rem;
 }
 iframe.eq1 {
-    height: 40dvh;
+    height: 50dvh;
 }
 iframe.eq2 {
     height: 80dvh;
