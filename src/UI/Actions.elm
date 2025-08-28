@@ -30,7 +30,7 @@ type Event =
     | Reset
     | Apply MatchedRule
     | NumericalSubstitution Int Float -- root matching value
-    | Substitute
+    | Substitute (List (Matcher.Equation Rules.FunctionProp Animation.State))
     | Evaluate Int String -- root evalString
     | ShowSubactions (List MatchedRule)
     | HideSubactions
@@ -53,26 +53,37 @@ type alias SingleMatch =
     }
 
 type alias Selection =
-    {   tree: Matcher.Equation Rules.FunctionProp Animation.State
-    ,   root: Int
-    ,   nodes: Set.Set Int
+    {   eq: Matcher.Equation Rules.FunctionProp Animation.State
+    ,   otherEqs: List (Matcher.Equation Rules.FunctionProp Animation.State)
+    ,   ids: Set.Set Int
+    ,   subtree: Math.Tree (Matcher.State Animation.State)
+    ,   subtreeId: Int
     }
 
-matchRules: Rules.Model -> Int -> Maybe Selection -> List (String, (List Action))
-matchRules rules numEqs selected =
+matchRules: Rules.Model
+    -> Set.Set Int
+    -> Maybe (Matcher.Equation Rules.FunctionProp Animation.State)
+    -> List (Matcher.Equation Rules.FunctionProp Animation.State)
+    -> List (String, (List Action))
+matchRules rules ids selected others =
     let
         loadedTopics = Rules.loadedTopics rules
 
-        -- group these together to reuse the result of getNode
-        selectedNode = selected
-            |> Maybe.andThen (\n -> Matcher.getNode n.root n.tree |> Maybe.map (\m -> (n, m)))
+        selection = selected |> Maybe.andThen (\eq ->
+            Matcher.selectedSubtree ids eq
+            |> Result.toMaybe
+            |> Maybe.andThen (\(subtreeId, _) ->
+                Matcher.getNode subtreeId eq
+                |> Maybe.map (\subtree -> Selection eq others ids subtree subtreeId)
+                )
+            )
     in
         -- return List instead of Dict because we don't want alphabetical order
         (
-            ("Core", coreTopic_ rules numEqs selectedNode |> coreToList_)
+            ("Core", coreTopic_ rules selection |> coreToList_)
         ::  (List.map (\topic ->
                 (   topic.name
-                ,   List.map (matchRule_ selectedNode) topic.rules
+                ,   List.map (matchRule_ selection) topic.rules
                 )
                 )
                 loadedTopics
@@ -93,34 +104,41 @@ coreToList_ actions =
     ,   actions.substitute "Substitution"
     ]
 
-coreTopic_: Rules.Model -> Int -> Maybe (Selection, Math.Tree (Matcher.State Animation.State)) -> CoreTopicAction_
-coreTopic_ rules numEqs selection = case selection of
+coreTopic_: Rules.Model -> Maybe Selection -> CoreTopicAction_
+coreTopic_ rules selection = case selection of
     Nothing -> CoreTopicAction_ DisplayOnly DisplayOnly DisplayOnly
-    Just (selected, root) ->
+    Just sel ->
         let
-            evaluateAction = case Rules.evaluateStr rules root of
+            evaluateAction = case Rules.evaluateStr rules sel.subtree of
                 Err _ -> Disallowed
-                Ok str -> Evaluate selected.root str |> Allowed
-            substituteAction = if numEqs > 1
-                then Substitute |> Allowed
-                else Disallowed
+                Ok str -> Evaluate sel.subtreeId str |> Allowed
+
+            substituteAction = sel.otherEqs
+                |> List.filter (\otherEq -> case Matcher.replaceAllOccurrences sel.ids otherEq sel.eq of
+                    Err _ -> False
+                    Ok _ -> True
+                    )
+                |> (\subs -> case subs of
+                    [] -> Disallowed
+                    _ -> Substitute subs |> Allowed
+                    )
+
             result = CoreTopicAction_ substituteAction Disallowed evaluateAction
-        in
-        case root of
-            Math.RealNode n -> {result | numSubstitute = NumericalSubstitution selected.root n.value |> Allowed, substitute = Disallowed}
+        in case sel.subtree of
+            Math.RealNode n -> {result | numSubstitute = NumericalSubstitution sel.subtreeId n.value |> Allowed}
             Math.UnaryNode n -> if n.name /= "-" then result
                 else case n.child of
-                    Math.RealNode m -> {result | numSubstitute = NumericalSubstitution selected.root -m.value |> Allowed, substitute = Disallowed}
+                    Math.RealNode m -> {result | numSubstitute = NumericalSubstitution sel.subtreeId -m.value |> Allowed}
                     _ -> result
             _ -> result
 
-matchRule_: Maybe (Selection, Math.Tree (Matcher.State Animation.State)) -> Rules.Rule -> Action
-matchRule_ selected rule = rule.title |>
-    case selected of
+matchRule_: Maybe Selection -> Rules.Rule -> Action
+matchRule_ selection rule = rule.title |>
+    case selection of
         Nothing -> DisplayOnly
-        Just (n, root) ->
+        Just sel ->
             let
-                matches = List.filterMap (\m -> Matcher.matchSubtree n.nodes m.from.root root
+                matches = List.filterMap (\m -> Matcher.matchSubtree sel.ids m.from.root sel.subtree
                     |> Maybe.map (\result -> {from = result, replacements = m.to, fromLatex = m.from.latex})
                     ) rule.matches
             in
@@ -224,7 +242,9 @@ displayAction_ converter previewOnHover unsuspendOnEnter unsuspendHover cls labe
 
     in case event of
         NumericalSubstitution _ _ -> unhoverable
-        Substitute -> unhoverable
+        Substitute eqs -> case eqs of
+            [_] -> hoverable
+            _ -> unhoverable
         Apply matchedRule ->
             if Dict.isEmpty matchedRule.parameters |> not
             then unhoverable

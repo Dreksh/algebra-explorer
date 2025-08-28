@@ -310,20 +310,16 @@ transform tracker replacement result model = selectedEquation_ model
             )
         )
 
-substitute: Animation.Tracker -> Int -> Model -> Result String (Model, Animation.Tracker)
-substitute tracker eqSub model = case Dict.get eqSub model.equations of
-    Nothing -> Err "Substitution equation not found"
-    Just subEntry -> selectedEquation_ model
-        |> Result.andThen (\(eqOrig, ids, origEntry) ->
-            let origEq = History.current origEntry.history |> Tuple.first
-            in if eqOrig == eqSub
-                then Err "Cannot substitute equation with itself"
-                else Matcher.replaceAllOccurrences ids (History.current subEntry.history |> Tuple.first) origEq
-                    |> Result.map (\(newSelected, newEq) ->
-                        let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) origEntry.history
-                        in stageChange tracker eqOrig ids newHis origEntry model
-                        )
-            )
+substitute: Animation.Tracker -> FullEquation -> Model -> Result String (Model, Animation.Tracker)
+substitute tracker otherEq model = selectedEquation_ model
+    |> Result.andThen (\(eqNum, ids, entry) ->
+        let origEq = History.current entry.history |> Tuple.first
+        in Matcher.replaceAllOccurrences ids otherEq origEq
+            |> Result.map (\(newSelect, newEq) ->
+                let newHis = History.update (History.Stage (History.Change (newEq, Rules.toLatex newEq))) entry.history
+                in stageChangeNewIds tracker eqNum ids newSelect newHis entry model
+                )
+        )
 
 commit: Animation.Tracker -> Rules.Model -> Model -> Result String (Model, Animation.Tracker)
 commit tracker rules model = selectedEquation_ model
@@ -376,15 +372,16 @@ updateSelected_ eq node combine rules model =
         { model | selected = newSelected, actions = actions }
 
 updateActions_: Int -> Set.Set Int -> Rules.Model -> Dict.Dict Int Entry -> List (String, (List Actions.Action))
-updateActions_ eq ids rules equations =
+updateActions_ eq ids rules entries =
     let
-        selection = Dict.get eq equations
-            |> Maybe.map (.history >> History.current >> Tuple.first)
-            |> Maybe.andThen (\fullEq -> Matcher.selectedSubtree ids fullEq |> Result.toMaybe
-                |> Maybe.map (\(root, nodes) -> {tree = fullEq, root = root, nodes = nodes})
-            )
+        (selected, others) = entries |> Dict.foldr (\eqNum entry (foldSelect, foldList) ->
+            let root = entry.history |> History.current |> Tuple.first
+            in if eq == eqNum
+                then (Just root, foldList)
+                else (foldSelect, root::foldList)
+            ) (Nothing, [])
     in
-        Actions.matchRules rules (Dict.size equations) selection
+        Actions.matchRules rules ids selected others
 
 updateSubactions: Animation.Tracker -> List Actions.MatchedRule -> Model -> Result String (Model, Animation.Tracker)
 updateSubactions tracker matchedRules model = selectedEquation_ model
@@ -416,7 +413,7 @@ refresh: Rules.Model -> Animation.Tracker -> Model -> (Model, Animation.Tracker)
 refresh rules tracker model =
     let
         dict = Rules.functionProperties rules
-        actions = Actions.matchRules rules (Dict.size model.equations) Nothing
+        actions = Actions.matchRules rules Set.empty Nothing []
     in
         Dict.foldl (\key entry (nextDict, t) ->
             let eq = History.current entry.history |> Tuple.first in
@@ -447,7 +444,8 @@ easeSubtoolbar_ tracker num height model = Dict.get num model.equations
     |> Maybe.withDefault (model, tracker)
 
 updateEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
-updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if selEq == Just num
+updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in
+    if selEq == Just num
     then (model, tracker)
     else { model
         |   recencyList = num :: (List.filter (\n -> n /= num) model.recencyList)
@@ -463,34 +461,33 @@ updateEqOrder_ tracker num model = let selEq = List.head model.recencyList in if
                 |> (\(m2, t2) -> easeSubtoolbar_ t2 prevFocus 0 m2)
             )
 
-deleteEqOrder_: Int -> Model -> Model
-deleteEqOrder_ num model = let filtered = List.filter (\n -> n /= num) model.recencyList in
+deleteEqOrder_: Animation.Tracker -> Int -> Model -> (Model, Animation.Tracker)
+deleteEqOrder_ tracker num model =
+    let filtered = {model | recencyList = List.filter (\n -> n /= num) model.recencyList} in
     if List.head model.recencyList /= Just num
-    then { model | recencyList = filtered }
-    else { model
-        |   recencyList = filtered
-        ,   selected = Set.empty
-        ,   staged = Set.empty
-        ,   actions = []
-        }
-
+    then (filtered, tracker)
+    else {filtered | selected = Set.empty, staged = Set.empty, actions = []}
+        |> (\m -> case List.head filtered.recencyList of
+            Nothing -> (m, tracker)
+            Just newSelect -> easeToolbar_ tracker newSelect 1 m
+            )
 
 update: Draggable.Size -> Animation.Tracker -> Rules.Model -> Event -> Model -> (Model, Animation.Tracker, Cmd Event)
 update size tracker rules event model = let default = (model, tracker, Cmd.none) in case event of
     Select eq node -> updateSelected_ eq node False rules model
         |> updateEqOrder_ tracker eq
         |> (\(m, t) -> (m, t, Cmd.none))
-    Delete eq -> updatePositions_
-        ({model | equations = Dict.remove eq model.equations} |> deleteEqOrder_ eq)
-        |> (\m -> (m, tracker, updateQueryCmd m))
+    Delete eq -> {model | equations = Dict.remove eq model.equations}
+        |> deleteEqOrder_ tracker eq
+        |> (\(m, t) -> (updatePositions_ m, t, updateQueryCmd m))
     ToggleHide eq -> case Dict.get eq model.equations of
         Nothing -> default
-        Just entry -> updatePositions_
+        Just entry ->
             {   model
             |   equations = Dict.insert eq {entry | show = not entry.show, grabbing = Nothing} model.equations
             }
-            |> deleteEqOrder_ eq
-            |> (\m -> (m, tracker, updateQueryCmd m))
+            |> deleteEqOrder_ tracker eq
+            |> (\(m, t) -> (updatePositions_ m, t, updateQueryCmd m))
     ToggleHistory eq -> case Dict.get eq model.equations of
         Nothing -> default
         Just entry ->
@@ -706,6 +703,7 @@ views converter actionConvert model =
                 ,   Html.div [class "actionSubtoolbar"]
                     [   Html.div
                         [   class "actions"
+                        ,   class "hideScrollbar"
                         ,   style "height" ((String.fromFloat ((Animation.current entry.subtoolbarHeight) * 2)) ++ "rem")
                         ,   HtmlEvent.onPointerEnter (Actions.ShowSubactions model.subactions |> actionConvert)
                         ,   HtmlEvent.onPointerLeave (Actions.HideSubactions |> actionConvert)

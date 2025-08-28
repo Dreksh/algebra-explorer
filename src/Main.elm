@@ -123,7 +123,7 @@ type Event =
     | AnimationDelta Float
     -- Rules
     | ApplyParameters (Dict.Dict String Dialog.Extracted)
-    | ApplySubstitution Int -- otherEqNum
+    | ApplySubstitution Bool Display.FullEquation
     | ConvertSubString Int Float String -- root target subExpr
     | EvalComplete {id: Int, value: Float}
 
@@ -358,9 +358,10 @@ update event core = let model = core.swappable in
                     Nothing -> submitNotification_ core "Unable to extract the match"
                     Just m -> applyChange_ m (Display.previewOnHover model.display |> not) core
                 else ({ core | dialog = Just (parameterDialog_ model.rules p, Just p)}, Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
-            Actions.Substitute -> case model.display.recencyList of
+            Actions.Substitute eqs -> case eqs of
                 [] -> submitNotification_ core "no equations to substitute"
-                (eq::_) -> ({core | dialog = Just (substitutionDialog_ model.display eq, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
+                [eq] -> update (ApplySubstitution False eq) core
+                _ -> ({core | dialog = Just (substitutionDialog_ eqs, Nothing)} , Cmd.batch [focusTextBar_ "dialog", focusOutCmd {id = "dialog"}])
             Actions.NumericalSubstitution root target ->
                 (   { core | dialog = Just (numSubDialog_ model.rules root target, Nothing)}
                 ,   Cmd.batch [focusTextBar_ (Dialog.fieldID "expr-input"), focusOutCmd {id = "dialog"}]
@@ -393,9 +394,10 @@ update event core = let model = core.swappable in
                     Ok newParams -> applyChange_ newParams True core
                 )
             _ -> ({ core | dialog = Nothing}, Cmd.none)
-        ApplySubstitution eqNum -> case Display.substitute core.animation eqNum model.display of
+        ApplySubstitution fromDialog eq -> case Display.substitute core.animation eq model.display of
             Err errStr -> submitNotification_ core errStr
-            Ok (dModel, animation) -> commitChange_ {core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}
+            Ok (dModel, animation) -> {core | swappable = {model | display = dModel}, dialog = Nothing, animation = animation}
+                |> if Display.previewOnHover dModel && not fromDialog then \m -> (m, Cmd.none) else commitChange_
         ConvertSubString root target str -> case Math.parse (Rules.functionProperties model.rules) str of
             Err errStr -> submitNotification_ core errStr
             Ok replacement -> case Rules.evaluateStr model.rules replacement of
@@ -565,21 +567,30 @@ parameterDialog_ rules params = Dialog.processMathInput inputMouseCmd focusTextB
     ,   inputFields = Dict.empty
     }
 
-substitutionDialog_: Display.Model -> Int -> Dialog.Model Event
-substitutionDialog_ dModel eqNum =
+substitutionDialog_: List Display.FullEquation -> Dialog.Model Event
+substitutionDialog_ eqs =
+    let
+        eqDict = eqs
+            |> List.indexedMap Tuple.pair
+            |> Dict.fromList
+    in
     {   title = "Substitute a variable for a formula"
     ,   sections =
         [{  subtitle = "Select the equation to use for substitution"
         ,   lines = [[
                 Dialog.Radio
                 {   name = "eqNum"
-                ,   options = Dict.filter (\k _ -> k /= eqNum) dModel.equations
-                        |> Dict.map (\_ -> .history >> History.current >> Tuple.second >> MathIcon.static [])
+                ,   options = eqDict |> Dict.map (\_ eq -> eq
+                        |> Rules.toLatex
+                        |> MathIcon.static []
+                        |> List.singleton
+                        |> Html.div [class "dialogLatex"]
+                        )
                 }
             ]]
         }]
     ,   success = (\dict -> case Dict.get "eqNum" dict of
-            Just (Dialog.IntValue a) -> ApplySubstitution a
+            Just (Dialog.IntValue a) -> eqDict |> Dict.get a |> Maybe.map (ApplySubstitution True) |> Maybe.withDefault NoOp
             _ -> NoOp
         )
     ,   cancel = CloseDialog
