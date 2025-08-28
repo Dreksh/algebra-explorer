@@ -702,7 +702,7 @@ views converter actionConvert model =
                     [   Html.div
                         [   class "actions"
                         ,   class "hideScrollbar"
-                        ,   style "height" ((String.fromFloat ((Animation.current entry.subtoolbarHeight) * 2)) ++ "rem")
+                        ,   style "height" ((String.fromFloat ((Animation.current entry.subtoolbarHeight) * 3)) ++ "rem")
                         ,   HtmlEvent.onPointerEnter (Actions.ShowSubactions model.subactions |> actionConvert)
                         ,   HtmlEvent.onPointerLeave (Actions.HideSubactions |> actionConvert)
                         ]
@@ -715,7 +715,7 @@ views converter actionConvert model =
                     [   Html.Keyed.node "div"
                         [   class "actions"
                         ,   class "hideScrollbar"
-                        ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 2)) ++ "rem")
+                        ,   style "height" ((String.fromFloat ((Animation.current entry.toolbarHeight) * 3)) ++ "rem")
                         ]
                         (if not eqSelected then [] else
                         [   undoOrRedoAction converter eqNum (History.canUndo entry.history) (previewOnHover model) (not model.enterSuspended) True
