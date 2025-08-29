@@ -181,6 +181,7 @@ calculateTree_ animation root rects =
                     ,   commutable = commutable
                     ,   groupable = groupable
                     ,   ungroupable = ungroupable
+                    ,   colour = item.colour
                     })
             in
                 (Dict.insert (id, id2) new foldRects, a4, Set.insert easedId foldEased)

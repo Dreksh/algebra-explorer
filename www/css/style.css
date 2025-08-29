@@ -596,12 +596,11 @@ span.centered {
 }
 
 .actionLatex > div > span {
-    height: 2.2rem;
+    height: 2.3rem;
 }
 .actionLatex > div > span > svg {
     height: 1.6rem;
     margin-top: 0.3rem;
-    margin-bottom: 0.3rem;
 }
 .actionLatex > div > span > svg > path {
     stroke-width: 0.15rem;
@@ -639,6 +638,15 @@ span.centered {
 }
 .brick.root.selected > .brickRect {
     fill: var(--color-root-saturated);
+}
+.brick.leaf.selected > .brickText {
+    stroke: white;
+}
+.brick.branch.selected > .brickText {
+    stroke: white;
+}
+.brick.root.selected > .brickText {
+    stroke: white;
 }
 .brick.leaf:hover > .brickText {
     stroke: var(--color-leaf-saturated);
@@ -753,7 +761,7 @@ div.history a:first-child:last-child:before, div.history div:first-child:last-ch
     content: url("../img/history.svg") / "─";
 }
 .history .selected, .history .selected::before {
-    color: var(--color-highlight);
+    color: var(--color-selected-text);
 }
 /* Actions */
 .topics {
