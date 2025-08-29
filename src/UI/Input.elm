@@ -492,7 +492,8 @@ traverse process (Scope detail children) caret = case caret of
                 Nothing -> Err BrokenCaret
                 Just (Scope inDetail inChildren, override) -> traverse process (Scope inDetail inChildren) others
                     |> Result.andThen (\res -> case res of
-                        (r, Nothing) -> Ok (r, Just (prev ++ after, [x]))
+                        (r, Nothing) -> if detail.immutable then Ok (r, Just (children, caret))
+                            else Ok (r, Just (prev ++ after, [x]))
                         (r, Just (newChildren, pos)) -> let newParams = Array.set y (Scope inDetail newChildren, override) f.params in
                             Ok (r, Just (prev ++ (Fixed {f | params = newParams} :: after), x::y::pos))
                     )
