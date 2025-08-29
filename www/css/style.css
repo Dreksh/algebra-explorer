@@ -658,71 +658,40 @@ span.centered {
     stroke-linejoin: round;
     pointer-events: none;
 }
+.brick.leaf   > .brickRect { fill: var(--color-leaf) }
+.brick.branch > .brickRect { fill: var(--color-branch) }
+.brick.root   > .brickRect { fill: var(--color-root) }
+
+.brick.leaf:hover   > .brickText { stroke: var(--color-leaf-saturated); }
+.brick.branch:hover > .brickText { stroke: var(--color-branch-saturated); }
+.brick.root:hover   > .brickText { stroke: var(--color-root-saturated); }
+.brick.leaf:hover   > .brickRect { fill: white; }
+.brick.branch:hover > .brickRect { fill: white; }
+.brick.root:hover   > .brickRect { fill: white; }
+
+.brick.leaf.selected   > .brickRect { fill: var(--color-leaf-saturated); }
+.brick.branch.selected > .brickRect { fill: var(--color-branch-saturated); }
+.brick.root.selected   > .brickRect { fill: var(--color-root-saturated); }
+.brick.leaf.selected   > .brickText { stroke: var(--color-black); }
+.brick.branch.selected > .brickText { stroke: var(--color-black); }
+.brick.root.selected   > .brickText { stroke: var(--color-black); }
+
+.brick.leaf.selected:hover   > .brickRect { fill: var(--color-leaf-saturated); }
+.brick.branch.selected:hover > .brickRect { fill: var(--color-branch-saturated); }
+.brick.root.selected:hover   > .brickRect { fill: var(--color-root-saturated); }
+.brick.leaf.selected:hover   > .brickText { stroke: white; }
+.brick.branch.selected:hover > .brickText { stroke: white; }
+.brick.root.selected:hover   > .brickText { stroke: white; }
+
+.brick.leaf.grabbed   > .brickRect { fill: var(--color-leaf-saturated); }
+.brick.branch.grabbed > .brickRect { fill: var(--color-branch-saturated); }
+.brick.root.grabbed   > .brickRect { fill: var(--color-root-saturated); }
+.brick.leaf.grabbed   > .brickText { stroke: var(--color-leaf); }
+.brick.branch.grabbed > .brickText { stroke: var(--color-branch); }
+.brick.root.grabbed   > .brickText { stroke: var(--color-root); }
+
 .brick.staged > .brickRect {
     fill-opacity: 0.75;
-}
-.brick.leaf > .brickRect {
-    fill: var(--color-leaf)
-}
-.brick.branch > .brickRect{
-    fill: var(--color-branch)
-}
-.brick.root > .brickRect {
-    fill: var(--color-root)
-}
-.brick.leaf.selected > .brickRect {
-    fill: var(--color-leaf-saturated);
-}
-.brick.branch.selected > .brickRect {
-    fill: var(--color-branch-saturated);
-}
-.brick.root.selected > .brickRect {
-    fill: var(--color-root-saturated);
-}
-.brick.leaf.selected > .brickText {
-    stroke: white;
-}
-.brick.branch.selected > .brickText {
-    stroke: white;
-}
-.brick.root.selected > .brickText {
-    stroke: white;
-}
-.brick.leaf:hover > .brickText {
-    stroke: var(--color-leaf-saturated);
-}
-.brick.branch:hover > .brickText {
-    stroke: var(--color-branch-saturated);
-}
-.brick.root:hover > .brickText {
-    stroke: var(--color-root-saturated);
-}
-.brick.leaf:hover > .brickRect {
-    fill: white;
-}
-.brick.branch:hover > .brickRect {
-    fill: white;
-}
-.brick.root:hover > .brickRect {
-    fill: white;
-}
-.brick.leaf.grabbed > .brickRect {
-    fill: var(--color-leaf-saturated);
-}
-.brick.branch.grabbed > .brickRect {
-    fill: var(--color-branch-saturated);
-}
-.brick.root.grabbed > .brickRect {
-    fill: var(--color-root-saturated);
-}
-.brick.leaf.grabbed > .brickText {
-    stroke: white;
-}
-.brick.branch.grabbed > .brickText {
-    stroke: white;
-}
-.brick.root.grabbed > .brickText {
-    stroke: white;
 }
 .brick.commutable > .brickRect {
     cursor: move;
