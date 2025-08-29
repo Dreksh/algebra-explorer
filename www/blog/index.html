@@ -15,7 +15,7 @@
       <section id="top">
       <h1><a href="../index.html">Algebra Explorer</a></h1>
       <p>
-      Algebra Explorer is a tool that allows students to freely explore algebra without worrying about making mistakes.
+      Algebra Explorer is a tool that lets you freely explore algebra without worrying about making mistakes.
       Our aim is to give students an intuition for:
       </p>
       <ul>
@@ -173,28 +173,28 @@
       This can be confusing because standard notation removes any
       <math><mn>+</mn></math>
       preceding a negation. This is similar to how “do not” is abbreviated into “don’t” in English.
-      Explicitly keeping the
-      <math><mn>&minus;</mn></math>
-      separate also reveals why we cannot add brackets anywhere when there is a minus involved, taking
+      Explicitly keeping the minus separate also reveals why we cannot add brackets anywhere when there is a minus involved, taking
       <math><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>+</mo><mn>3</mn></math>
       as an example:
       </p>
       <img class="row3" src="img/1m2p3.svg" title="Block representation of 1-2+3"/>
       <p>
+      There are two ways of grouping the blocks:
+      <div class="minus">
+        <img class="row4" src="img/_1m2_p3.svg" title="Block representation of (1-2)+3"/>
+        <img class="row4" src="img/1p_m2p3_.svg" title="Block representation of 1+(-2+3)"/>
+      </div>
+      <p>
       Grouping the left-hand numbers results in
       <math><mo>(</mo><mn>1</mn><mo>&minus;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mn>3</mn></math>:
       </p>
-      <img class="row4" src="img/_1m2_p3.svg" title="Block representation of (1-2)+3"/>
       <p>
       However, grouping the right-hand numbers results in
-      </p>
-      <img class="row4" src="img/1p_m2p3_.svg" title="Block representation of 1+(-2+3)"/>
-      <p>
       which is
       <math><mn>1</mn><mo>+</mo><mn>(&minus;2</mn><mo>+</mo><mn>3)</mn></math>,
       <b>not</b>
       <math><mn>1</mn><mo>&minus;</mo><mo>(</mo><mn>2</mn><mo>+</mo><mn>3</mn><mo>)</mo></math>.
-      Explicitly showing the minus is useful for explaining the basic rules of algebra, even if the shorthand version is usually more useful for manipulation!
+      Explicitly showing the minus is useful for explaining the basic rules of algebra, even if the shorthand version is usually more useful for manipulation.
       </p>
       <h3>Division</h3>
       <p>
@@ -213,18 +213,20 @@
       How would we write this in standard notation? The answer is
       <math><mn>1</mn><mo>&divide;</mo><mn>3</mn><mo>&times;</mo><mn>2</mn></math>,
       but you may notice that somehow <b>an extra 1 has appeared that is not shown in the blocks!</b>
-      Standard notation also usually uses fractions to represent the reciprocal function, resulting in <math><mn>⅓</mn><mo>&times;</mo><mn>2</mn></math>, but this also still has a <math><mn>1</mn></math>.
       </p>
       <p>
+      Standard notation also usually uses fractions to represent the reciprocal function, resulting in <math><mn>⅓</mn><mo>&times;</mo><mn>2</mn></math>, but this also still has a <math><mn>1</mn></math>.
       In fact, we could even argue that the ‘complete’ representation of
       <math><mn>&minus;2</mn><mo>+</mo><mn>1</mn></math>
       from earlier should be
       <math><mn>0</mn><mo>&minus;</mo><mn>2</mn><mo>+</mo><mn>1</mn></math>
       if we wanted to be completely explicit about what is being subtracted from what.
-      These are all examples of pitfalls in our notation that can be confusing, but hopefully seeing and playing with the blocks can help students learn to avoid them.
+      </p>
+      <p>
+      These are all examples of pitfalls in standard notation that can be confusing, but hopefully seeing and playing with the blocks can help students learn to avoid them.
       </p>
       </p>
-      <div class="try-it-out" data-target='["2+3-(4+5)","2*3/(4*5)"]'>
+      <div class="try-it-out" data-target='["4*3/(2*1)","4+3-(2+1)"]'>
         <p>
         Play around with this example to see the inverses working with the original operation.
         Can you see the similarities between <math><mo>+-</mo></math> and <math><mo>*/</mo></math>?
@@ -235,17 +237,10 @@
       <section id="notation">
       <h2>Notation</h2>
       <p class="mainQuestion">Why do we need brackets?</p>
-      <h3>Language</h3>
-      <p>
-      On the surface, languages are simply letters on a page or sounds you make to pass information from one to another.
-      Maths notation (written maths) is exactly the same. They may contain concepts, but you mostly see
-      numbers and other symbols. One of these symbols is the bracket. To understand the bracket, we need to understand
-      what concept it conveys.
-      </p>
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
       <p>
-      As we have seen from the examples in the other sections, brackets help us to understand the order of operation.
-      The ones within the brackets are always handled first. If we kept all the brackets, it would look like
+      As we have seen from the examples in the other sections, brackets help us to understand the order of operations.
+      Anything inside brackets is always handled first. If we kept all the brackets, it would look like
       this:
       </p>
       <p class="indented">
@@ -253,13 +248,16 @@
         <mo>-</mo><mo>(</mo><mn>5</mn><mo>&divide;</mo><mn>6</mn><mo>)</mo><mo>)</mo>
       </math>
       </p>
-      <p>Almost half of that is written with brackets! Let's also look at using a lot of brackets in English:</p>
+      <p>
+      Almost half of that is now written with brackets! And why can we remove the brackets without changing the meaning?
+      Let’s also look at using a lot of brackets in English:
+      </p>
       <blockquote>
       The (grumpy) cat eats dinner (with a grin (on their (fluffy) face)).
       </blockquote>
       <p>
-      They are now too hard to read. We need to remove some of them; and that is where BODMAS/BIDMAS/PEMDAS comes in.
-      It is an agreed convention for understanding the order of operations, so that we can cut down on the number of brackets.
+      The sentence is now too hard to read. We need to remove some of them, and that is where BODMAS/BIDMAS/PEMDAS comes in.
+      It is an agreed convention for the order of operations, so that we can cut down on the number of brackets:
       </p>
       <table>
       <thead>
@@ -273,9 +271,27 @@
       </tbody>
       </table>
       <p>
-      Our example above can be fully written without any brackets, because all of the inner brackets have operations that
-      would be done earlier before the outer ones. So those brackets are redundant. The only times we need to use the bracket
-      is if we want to do something earlier that has a later order.
+      The example above works without any brackets because all the inner brackets contain operations with
+      <i>higher priority</i> than outer ones. The brackets are redundant.
+      </p>
+      <p>
+      The only time we need to use brackets is if we want to do perform a lower priority operation before a higher one, for example in
+      <math><mn>(1</mn><mo>+</mo><mn>2)</mn><mo>&times;</mo><mn>(3</mn><mo>+</mo><mn>4)</mn></math>.
+      In the blocks format it looks like:
+      </p>
+      <img src="img/_1p2_t_3p4_.svg" class="row3" title="Block representation of (1+2)*(3+4)"/>
+      <p>
+      You may have noticed that there are never any brackets in the blocks! This is because the blocks are a completely explicit representation of the meaning of the maths. It is also unambiguous, for example the notation
+      <math><mi>f</mi><mn>(</mn><mi>x</mi><mn>)</mn></math>
+      usually means a function <math><mi>f</mi></math> applied to a variable <math><mi>x</mi></math>,
+      but it <i>could</i> mean a variable <math><mi>f</mi></math> multiplied by <math><mi>x</mi></math>!
+      </p>
+      <div class="fx">
+        <img src="img/f_x_.svg" class="row2" title="Block representation of f(x)"/>
+        <img src="img/ftx.svg" class="row2" title="Block representation of f*x"/>
+      </div>
+      <p>
+
       </p>
       <h3>Factorisation</h3>
       <p>

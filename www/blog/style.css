@@ -18,8 +18,21 @@ img {
     margin-top: 1.3rem;
     margin-bottom: 1.3rem;
 }
+div.minus {
+    display: flex;
+    flex-direction: row;
+    width: 37rem;
+    margin: 0 auto;
+}
+div.fx {
+    display: flex;
+    flex-direction: row;
+    width: 24rem;
+    margin: 0 auto;
+}
 math {
     font-size: 1.3rem;
+    /* color: #FF62CD; */
 }
 p.indented > math {
     font-size: 1.8rem;
@@ -175,7 +188,7 @@ div.try-it-out {
     vertical-align: middle;
 }
 .try-it-out.expand {
-    max-height: 100dvh;
+    max-height: 120dvh;
     transition: max-height 1s;
 }
 iframe {
@@ -188,7 +201,7 @@ iframe.eq1 {
     height: 50dvh;
 }
 iframe.eq2 {
-    height: 80dvh;
+    height: 90dvh;
 }
 #groupPicture {
     height: 20rem;
