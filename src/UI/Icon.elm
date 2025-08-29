@@ -1,5 +1,5 @@
 module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, default, bin, undo, redo, popup)
+    verticalLine, history, default, bin, undo, redo, popup, close)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg)
@@ -108,4 +108,9 @@ redo attr = svg (viewBox "0 0 24 24" :: attr)
 popup: List (Html.Attribute msg) -> Html.Html msg
 popup attr = svg (viewBox "-2 0 24 24" :: attr)
     [ path [d "M10 16L18 8 12 8M18 8L18 14M6 8L4 8 4 22 18 22 18 20", stroke "grey", strokeWidth "2.5", fill "none", strokeLinecap "round", strokeLinejoin "round"] []
+    ]
+
+close: List (Html.Attribute msg) -> Html.Html msg
+close attr = svg (viewBox "0 0 24 24" :: attr)
+    [ path [d "M4 4L20 20M20 4L4 20", stroke "currentColor", strokeWidth "4", fill "none", strokeLinecap "round"] []
     ]

@@ -475,15 +475,23 @@ view core = let model = core.swappable in
     { title = "Algebra Explorer"
     , body =
         Html.Keyed.node "div" [id "body"]
-        (   ("draggableListener", div [id "draggableListener"] [])
-        ::  Display.views DisplayEvent ActionEvent model.display
+        (   [   ("draggableListener", div [id "draggableListener"] [])
+            ,   ("menuIcon", Icon.menu
+                    [ id "menuToggle"
+                    , HtmlEvent.onClick ToggleMenu
+                    , Icon.class "clickable"
+                    ]
+                )
+            ]
+        ++  Display.views DisplayEvent ActionEvent model.display
         ++  List.filterMap identity
             [   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
                     (InputWithHistory.view InputEvent (Rules.functionProperties model.rules) core.input)
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
-                    [   Menu.view MenuEvent model.menu
+                    [   Icon.close [id "closeMenu", HtmlEvent.onClick ToggleMenu, Icon.class "clickable"]
+                    ,   Menu.view MenuEvent model.menu
                         [   Menu.Section {name = "Settings", icon = Nothing}
                             [   Menu.Content [] [a [HtmlEvent.onClick (FileSelect SaveFile), class "clickable"] [text "Open"]]
                             ,   Menu.Content [] [a [HtmlEvent.onClick Save, class "clickable"] [text "Save"]]
@@ -494,13 +502,6 @@ view core = let model = core.swappable in
                         ,   Menu.Section {name = "Topics", icon = Just (\c -> a [HtmlEvent.onClick (OpenDialog addTopicDialog_), class "clickable", class c] [text "+"])}
                             (Menu.rules RuleEvent model.rules)
                         ]
-                    ,   Icon.menu (List.filterMap identity
-                            [ id "menuToggle" |> Just
-                            , HtmlEvent.onClick ToggleMenu |> Just
-                            , Icon.class "clickable" |> Just
-                            , Icon.class "closed" |> Helper.maybeGuard (not model.showMenu)
-                            ]
-                        )
                     ]
                 ]) |> Just
             ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view DialogEvent (Rules.functionProperties model.rules) d))

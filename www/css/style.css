@@ -10,8 +10,8 @@
     --color-background: lightgray;
     --color-cancel: red;
     --color-highlight: yellow;
-    --color-hovered: lightblue;
-    --color-menu: grey;
+    --color-hovered: #C9DCFF;
+    --color-menu: #F1FCFF;
     --color-error: pink;
     --color-info: lightblue;
     --color-submit: green;
@@ -59,7 +59,7 @@ button.noDefault {
 }
 #inputPane {
     display: flex;
-    flex-direction: row-reverse;
+    flex-direction: row;
     padding: 0;
     box-sizing: border-box;
     pointer-events: none;
@@ -267,17 +267,16 @@ span.space {
 #menuToggle {
     position: absolute;
     height: 1.5rem;
-    top: 0.5rem;
-    right: 0.5rem;
-    transition: right 0.5s ease-out;
-}
-#menuToggle.closed {
-    right: -2rem;
-    transition: right 0.5s ease-out;
+    top: 1rem;
+    right: 1rem;
 }
 #rightPane.closed {
     max-width: 0;
     transition: max-width 0.5s ease-out;
+}
+#closeMenu {
+    height: 1.5rem;
+    margin: 1rem;
 }
 #menu {
     position: relative;
@@ -762,31 +761,4 @@ div.history a:first-child:last-child:before, div.history div:first-child:last-ch
 }
 .history .selected, .history .selected::before {
     color: var(--color-selected-text);
-}
-/* Actions */
-.topics {
-    float: right;
-    position: relative;
-    margin-block: 0;
-    padding-inline: 1rem;
-    list-style-type: none;
-    height: 100%;
-    overflow-y: scroll;
-    background-color: var(--color-menu);
-    z-index: 1;  /* this is needed because the draggables have position:absolute */
-}
-.topic {
-    padding-top: 0.5rem;
-}
-.topic > h2 {
-    font-size: 1.5rem;
-    margin-block: 0.2rem;
-}
-.match > span > svg {
-    height: 1.5rem;
-}
-.disallowed {
-    text-decoration: line-through;
-    pointer-events: none;
-    color: var(--color-background);
 }
