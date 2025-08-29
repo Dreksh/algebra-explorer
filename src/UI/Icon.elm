@@ -1,5 +1,5 @@
 module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, default, bin, undo, redo, popup, close)
+    verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg)
@@ -78,8 +78,8 @@ history attr = svg (viewBox "0 0 24 24" :: attr)
     ,   path [d "M6 8.5L12 12L21.4 6", stroke "currentColor", strokeWidth "1", fill "none"] []
     ]
 
-default: List (Html.Attribute msg) -> Html.Html msg
-default attr = svg (viewBox "0 0 24 24" :: attr)
+idea: List (Html.Attribute msg) -> Html.Html msg
+idea attr = svg (viewBox "0 0 24 24" :: attr)
     [   path [d "M2 22L5 17V5A3 3 0 0 1 8 2H20A3 3 0 0 1 23 5V17A3 3 0 0 1 20 20H8Z", stroke "currentColor", strokeWidth "1", fill "none"] []
     ,   circle [cx "14", cy "9", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
     ,   path [d "M11 13V17A5 5 0 0 0 17 17V13", stroke "currentColor", strokeWidth "1", fill "none"] []
@@ -113,4 +113,15 @@ popup attr = svg (viewBox "-2 0 24 24" :: attr)
 close: List (Html.Attribute msg) -> Html.Html msg
 close attr = svg (viewBox "0 0 24 24" :: attr)
     [ path [d "M4 4L20 20M20 4L4 20", stroke "currentColor", strokeWidth "4", fill "none", strokeLinecap "round"] []
+    ]
+
+logoBorderless: List (Html.Attribute msg) -> Html.Html msg
+logoBorderless attr = svg (viewBox "2 3 20.3 17" :: attr)
+    [ path [d "M12 10L21 12C23 4 13 4 12 12C11 19 17 19 19 18", fill "none", stroke "#FF8888", strokeWidth "2", strokeLinecap "round"] []
+    , path [d "M6 5C8 4 13 4 12 9C12 15 11 18 6 17C1 16 2 7 12 10", fill "none", stroke "#6EA8FF", strokeWidth "2", strokeLinecap "round"] []
+    ]
+
+fullLogo: List (Html.Attribute msg) -> Html.Html msg
+fullLogo attr = svg (viewBox "0 0 120 24" :: attr)
+    [
     ]

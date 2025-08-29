@@ -148,11 +148,7 @@ view convert functions attr model =
             (toLatex False [] (if model.showCursor then model.cursor else []) (current model))
         ]
     |>  Helper.maybeAppend (Maybe.map (\children -> Html.div [class "popup"]
-            [   if model.matchFound
-                then Html.p [class "reminder"] [Html.text "Press [space] to insert"]
-                else Html.p [class "helpable"] [Html.text "Click an icon to insert"]
-            ,   Html.p [] [Html.text ":"]
-            ,   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
+            [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
             ,   Html.div [class "scrollMask"] []
             ]
             |> Html.map convert

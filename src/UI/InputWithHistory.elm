@@ -177,20 +177,20 @@ createView_ converter funcDict model inputNum width height =
             [   class "textbar"
             ,   HtmlEvent.onSubmit (converter Submit)
             ]
-            [   Html.img [Html.Attributes.src "img/favicon.svg"] []
+            [   Icon.logoBorderless []
             ,   Input.view (InputEvent >> converter) funcDict [] model.input
             ]
         ,   Html.ul
             [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
             (   List.map
                 (\entry -> case entry of
-                    Default val -> Html.li [HtmlEvent.onClick (Click val)]
-                        [   Icon.default []
-                        , Html.a [class "clickable"] [Input.toLatex False [] [] val |> MathIcon.static []]
+                    Default val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
+                        [   Icon.idea []
+                        , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
                         ]
-                    Previous val -> Html.li [HtmlEvent.onClick (Click val)]
+                    Previous val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
                         [   Icon.history []
-                        , Html.a [class "clickable"] [Input.toLatex False [] [] val |> MathIcon.static []]
+                        , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
                         ]
                 )
                 model.options
