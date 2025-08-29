@@ -25,9 +25,6 @@ math {
 p.indented > math {
     font-size: 1.8rem;
 }
-video {
-    width: 22rem;
-}
 div.blocks-video {
     margin: 0 auto;
     text-align: center;

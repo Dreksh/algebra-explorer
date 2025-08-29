@@ -1,5 +1,6 @@
 :root {
-    --color-window: #FFFAD9;
+    /* --color-window: #FFFAD9; */
+    --color-window: white;
     --color-leaf: #BAFCDE;
     --color-branch: #C9DCFF;
     --color-root: #FFD1D1;
@@ -562,6 +563,8 @@ span.centered {
     overflow: scroll;
     justify-content: space-evenly;
     gap: 1rem;
+    /* padding-top: 1rem; */
+    padding-bottom: 1rem;
 }
 .actionToolbar {
     position: relative;
@@ -696,7 +699,7 @@ span.centered {
     fill-opacity: 0.75;
 }
 .brick.commutable > .brickRect {
-    cursor: move;
+    /* cursor: move; */
 }
 .mathStroke {
     stroke: currentColor;
