@@ -158,16 +158,16 @@ update convert tracker funcDict event model = case event of
                 (({model | current = Just (id, width, newH), input = inModel}, newT), Ok Nothing, inCmd)
             _ -> (({model | input = inModel}, tracker), Ok Nothing, inCmd)
 
-view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> List (String, Html.Html msg)
-view converter funcDict model =
+view: (Event -> msg) -> Model msg -> List (String, Html.Html msg)
+view converter model =
     Dict.toList model.closing
-    |> List.map (\(id, (width, height)) -> createView_ converter funcDict model id width height)
+    |> List.map (\(id, (width, height)) -> createView_ converter model id width height)
     |> \list -> case model.current of
         Nothing -> list
-        Just (id, width, height) -> list ++ [createView_ converter funcDict model id width height]
+        Just (id, width, height) -> list ++ [createView_ converter model id width height]
 
-createView_: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
-createView_ converter funcDict model inputNum width height =
+createView_: (Event -> msg) -> Model msg -> Int -> Animation.EaseState Float -> Animation.EaseState Float -> (String, Html.Html msg)
+createView_ converter model inputNum width height =
     (   "textbar"++String.fromInt inputNum
     ,    Html.div
         [   class "input"
@@ -178,7 +178,7 @@ createView_ converter funcDict model inputNum width height =
             ,   HtmlEvent.onSubmit (converter Submit)
             ]
             [   Icon.logoBorderless []
-            ,   Input.view (InputEvent >> converter) funcDict [] model.input
+            ,   Input.view (InputEvent >> converter) [] model.input
             ,   Html.input [type_ "submit", value "enter", class "submit"] []
             ]
         ,   Html.div

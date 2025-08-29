@@ -55,7 +55,7 @@ type alias Model =
 longClickThreshold: Float
 longClickThreshold = 300 -- in ms
 
-type alias UIModel = (Bricks.Model, MathIcon.Model)
+type alias UIModel = (Bricks.Model, MathIcon.Model State)
 
 type alias Entry =
     {   history: History.Model (FullEquation, Latex.Model State) -- latex model a cache for displaying history

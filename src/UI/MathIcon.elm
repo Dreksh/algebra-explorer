@@ -1,4 +1,4 @@
-module UI.MathIcon exposing (Model, Frame, latexToFrames, init, set, advanceTime,
+module UI.MathIcon exposing (Model, Frame, latexToFrames, init, initStatic, set, advanceTime,
     closestFrame, closestChar, view, static, staticWithCursor, toSvgGroup
     )
 
@@ -28,10 +28,10 @@ type alias AnimationFrame =
     ,   scale: Animation.EaseState Float
     ,   opacity: Animation.EaseState Float
     }
-type alias Model =
+type alias Model state =
     {   frames: Dict.Dict (Int, Int) AnimationFrame -- keyed by NodeID + occurrence (i.e. commas in functions)
     ,   deleting: List AnimationFrame
-    ,   current: Latex.Model State
+    ,   current: Latex.Model state
     ,   topLeft: Animation.EaseState Vector2
     ,   botRight: Animation.EaseState Vector2
     }
@@ -41,7 +41,7 @@ animationTime_ = 750
 actualScale_: Maybe Float -> Float
 actualScale_ = Maybe.withDefault 20
 
-init: Animation.Tracker -> Maybe Float -> Latex.Model State -> (Model, Animation.Tracker)
+init: Animation.Tracker -> Maybe Float -> Latex.Model State -> (Model State, Animation.Tracker)
 init tracker scale current =
     let
         frames = latexToFrames current
@@ -59,7 +59,38 @@ init tracker scale current =
             ,   t
             )
 
-advanceTime: Float -> Model -> Model
+initStatic: Maybe Float -> Frame state -> Model state
+initStatic scale frames = let aScale = actualScale_ scale in
+    processFrame_ (\frame origin inScale list -> case frame.data of
+        BaseFrame detail -> shiftAndScale_ origin inScale detail.strokes
+            |> (++) list
+        _ -> list
+    ) (0,0) aScale [] frames
+    |> \strokes ->
+        {   strokes = strokes
+        ,   origin = Animation.newEaseVector2 animationTime_ (0,0)
+        ,   scale = Animation.newEaseFloat animationTime_ 1
+        ,   style = Nothing
+        ,   width = fontStrokeWidth Nothing
+        ,   opacity = Animation.newEaseFloat animationTime_ 1
+        }
+    |> \newFrame ->
+        {   frames = Dict.singleton (0,0) newFrame
+        ,   current = []
+        ,   deleting = []
+        ,   topLeft = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 aScale frames.topLeft)
+        ,   botRight = Animation.newEaseVector2 animationTime_ (Animation.scaleVector2 aScale frames.botRight)
+        }
+
+shiftAndScale_: Vector2 -> Float -> List Stroke -> List Stroke
+shiftAndScale_ origin scale = let shift = Animation.scaleVector2 scale >> Animation.addVector2 origin in
+    List.map (\stroke -> case stroke of
+        Move p1 -> Move (shift p1)
+        Line p1 -> Line (shift p1)
+        Curve p1 p2 p3 -> Curve (shift p1) (shift p2) (shift p3)
+    )
+
+advanceTime: Float -> Model state -> Model state
 advanceTime time model =
     let
         incrementFrame f =
@@ -76,7 +107,7 @@ advanceTime time model =
     ,   botRight = Animation.advance time model.botRight
     }
 
-set: Animation.Tracker -> Maybe Float -> Latex.Model State -> Model -> (Model, Animation.Tracker)
+set: Animation.Tracker -> Maybe Float -> Latex.Model State -> Model State -> (Model State, Animation.Tracker)
 set tracker scale new model =
     let
         frames = latexToFrames new
@@ -759,7 +790,7 @@ cursorStyle = """
 """
 
 
-view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model -> Html.Html msg
+view: (Int -> List (Svg.Attribute msg)) -> List (Html.Attribute msg) -> Model state -> Html.Html msg
 view convert attrs model = Dict.toList model.frames
     |> List.map (\((id, _), frame) -> Svg.path ([Icon.class "stroke", class "mathStroke"] ++ frameToAttr_ True frame ++ convert id) [])
     |> (++) (List.map (frameToAttr_ True >> \a -> Svg.path ([Icon.class "stroke", class "mathStroke"] ++ a) []) model.deleting)
@@ -774,7 +805,7 @@ toViewBox_ (left, top) (right, bot) =
     )
     |> viewBox
 
-toSvgGroup: List (Svg.Attribute msg) -> Model -> Svg.Svg msg
+toSvgGroup: List (Svg.Attribute msg) -> Model state -> Svg.Svg msg
 toSvgGroup attr model = Dict.toList model.frames
     |> List.map (\(_, frame) -> Svg.path (frameToAttr_ False frame) [])
     |> (++) (List.map (frameToAttr_ False >> \a -> Svg.path a []) model.deleting)

@@ -489,7 +489,7 @@ view core = let model = core.swappable in
             [   ("inputPane", div [id "inputPane"]
                 [   Html.Keyed.node "div"
                     (id "leftPane" :: if model.showMenu then [HtmlEvent.onClick ToggleMenu] else [class "closed"])
-                    (InputWithHistory.view InputEvent (Rules.functionProperties model.rules) core.input)
+                    (InputWithHistory.view InputEvent core.input)
                 ,   div (id "rightPane" :: (if model.showMenu then [] else [class "closed"]))
                     [   Icon.close [id "closeMenu", HtmlEvent.onClick ToggleMenu, Icon.class "clickable"]
                     ,   Menu.view MenuEvent model.menu
@@ -505,7 +505,7 @@ view core = let model = core.swappable in
                         ]
                     ]
                 ]) |> Just
-            ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view DialogEvent (Rules.functionProperties model.rules) d))
+            ,   core.dialog |> Maybe.map (\(d, _) -> ("dialog", Dialog.view DialogEvent d))
             ,   ("notification", Notification.view NotificationEvent [id "notification"] model.notification) |> Just
             ]
         )

@@ -1,9 +1,10 @@
-module UI.BrickSvg exposing (bricks, brick, Colour(..))
+module UI.BrickSvg exposing (bricks, brick, Colour(..), getScaleAndWidth)
 
 import Html exposing (Html)
 import Svg exposing (svg, g, rect, Attribute)
 import Svg.Attributes exposing (viewBox, width, height, x, y, strokeWidth, opacity, class, pointerEvents, rx, transform)
 -- ours
+import Components.Latex as Latex
 import UI.Animation as Animation
 import UI.MathIcon as MathIcon
 
@@ -36,7 +37,7 @@ bricks xMax yMax children =
     ]
     children
 
-brick: Float -> Float -> Float -> Float -> Float -> Colour -> Bool -> List (Attribute event) -> MathIcon.Model -> Html event
+brick: Float -> Float -> Float -> Float -> Float -> Colour -> Bool -> List (Attribute event) -> MathIcon.Model state -> Html event
 brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
     let
         x_ = xMin + (strokeWidth_ / 2) + (horizontalPad_ / 2)
@@ -80,3 +81,17 @@ brick xMin xMax yMin yMax opacity_ colour_ canHover attrs label =
 
 transformAttr_: Float -> Float -> Svg.Attribute msg
 transformAttr_ x y = transform ("translate(" ++ String.fromFloat x ++ "," ++ String.fromFloat y ++ ")")
+
+expectedHeight_: Float
+expectedHeight_ = 0.5
+
+getScaleAndWidth: Latex.Model s -> (Float, Float)
+getScaleAndWidth latex =
+    let
+        textFrame = MathIcon.latexToFrames latex
+        textHeight = (Tuple.second textFrame.botRight) - (Tuple.second textFrame.topLeft)
+        textScale = expectedHeight_ / textHeight
+    in
+        (   textScale
+        ,   (Tuple.first textFrame.botRight)*textScale + 2*expectedHeight_ -- Add a square-char's width on either side
+        )

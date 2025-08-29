@@ -126,16 +126,15 @@ type Extracted =
     | IntValue Int
     | MathValue String
 
-view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}
-    -> Model msg -> Html.Html msg
-view convert funcProp model =
+view: (Event -> msg) -> Model msg -> Html.Html msg
+view convert model =
     node "dialog" [Attr.attribute "open" "true", Attr.id "dialog"]
     [   h1 [] [text model.title]
     ,   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
                 (   List.concat
                     [   if String.isEmpty section.subtitle then [] else [h2 [] [text section.subtitle]]
-                    ,   List.concatMap (listView_ convert funcProp model.inputFields) section.lines
+                    ,   List.concatMap (listView_ convert model.inputFields) section.lines
                     ]
                 )
             )
@@ -148,18 +147,17 @@ view convert funcProp model =
         )
     ]
 
-listView_: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}
-    -> Dict.Dict String (Input.Model msg) -> List (Input msg) -> List (Html.Html msg)
-listView_ convert funcDict inputs = List.filterMap (\input -> case input of
+listView_: (Event -> msg) -> Dict.Dict String (Input.Model msg) -> List (Input msg) -> List (Html.Html msg)
+listView_ convert inputs = List.filterMap (\input -> case input of
         Text t -> Just (label [Attr.for t.id] [Html.input [Attr.type_ "text", Attr.name t.id, Attr.id (fieldID t.id)] []])
         Button m -> Just (button [Attr.type_ "button", UI.HtmlEvent.onClick m.event, Attr.class "clickable"] [text m.text])
         Info i -> Just (text i.text)
         FormattedInfo i -> Just i
         Radio r -> lazy2 toRadioButtons_ r.name r.options |> Just -- Lazy requires the function to be named, cannot use anonymous functions
         MathInput n -> Dict.get n.id inputs
-            |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
+            |> Maybe.map (Input.view (InputEvent n.id >> convert) [])
         ParameterInput n -> Dict.get n.id inputs
-            |> Maybe.map (Input.view (InputEvent n.id >> convert) funcDict [])
+            |> Maybe.map (Input.view (InputEvent n.id >> convert) [])
         Link l -> Just (a [Attr.class "clickable", Attr.target "_blank", Attr.href l.url] [text l.url])
     )
 

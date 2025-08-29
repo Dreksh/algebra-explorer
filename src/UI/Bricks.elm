@@ -40,7 +40,7 @@ type alias Model =
     }
 
 type alias Rect =
-    {   text: MathIcon.Model
+    {   text: MathIcon.Model (Matcher.State Animation.State)
     ,   prevID: Int
     ,   visible: Bool  -- False means it existed before but needs to fade away
     ,   bottomLeft: Animation.EaseState Animation.Vector2
@@ -263,19 +263,10 @@ appendLine width array =
         prevWidth = getColX colEnd array
     in Array.push (prevWidth + width) array
 
-textWidth_: Float
-textWidth_ = 0.5
-
 extractText_: Math.Tree (Matcher.State Animation.State) -> (GridText, Float)
-extractText_ node =
-    let
-        latex = Rules.toSymbol .function node
-        textFrame = MathIcon.latexToFrames latex
-        textHeight = (Tuple.second textFrame.botRight) - (Tuple.second textFrame.topLeft)
-        textScale = textWidth_ / textHeight
-        width = (Tuple.first textFrame.botRight)*textScale + 2*textWidth_ -- Add a char's width on either side
-    in
-        ({frame = latex, scale = textScale}, width)
+extractText_ node = let latex = Rules.toSymbol .function node in
+    BrickSvg.getScaleAndWidth latex
+    |> \(textScale, width) -> ({frame = latex, scale = textScale}, width)
 
 stack: Math.Tree (Matcher.State Animation.State) -> Grid
 stack root = let initialGrid = (Grid Dict.empty Array.empty Nothing, -1) in

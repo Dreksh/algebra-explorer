@@ -44,7 +44,8 @@
             "matches": [
                 {"from": "\\fraction(a,b)*\\fraction(c,d)*e", "to": ["\\fraction(a*c,b*d)*e"]},
                 {"from": "\\fraction(b,c)/a*d", "to": ["\\fraction(b,c*a)*d"]},
-                {"from": "\\fraction(b,c)*a*d", "to": ["\\fraction(b*a,c)*d"]}
+                {"from": "\\fraction(b,c)*a*d", "to": ["\\fraction(b*a,c)*d"]},
+                {"from": "\\fraction(b,c)+a", "to": ["\\fraction(a*c+b,c)"]}
             ]
         },
         {

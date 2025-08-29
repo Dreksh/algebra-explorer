@@ -18,12 +18,12 @@ import Algo.Math as Math
 import Components.Latex as Latex
 import Components.Rules as Rules
 import UI.Animation as Animation
+import UI.BrickSvg as BrickSvg
 import UI.Display as Display
 import UI.HtmlEvent as HtmlEvent
 import UI.MathIcon as MathIcon
 import UI.SvgDrag as SvgDrag
-import Algo.History as History
-import UI.HtmlEvent as HtmlEvent
+import UI.BrickSvg as BrickSvg
 
 -- Scope is always editable and capable of inserting & deleting. But the scope itself cannot be deleted.
 type Scope = Scope ScopeDetail (List ScopeElement)
@@ -130,29 +130,28 @@ clear model =
 current: Model msg -> Scope
 current model = History.next model.history
 
-view: (Event -> msg) -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> List (Html.Attribute msg) -> Model msg -> Html.Html msg
-view convert functions attr model =
-    Html.div [id model.holderID, class "mathInput"]
+view: (Event -> msg) -> List (Html.Attribute msg) -> Model msg -> Html.Html msg
+view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ attr)
     (   [   Html.input
-            (   [   type_ "text"
-                ,   id (model.holderID ++ "-input")
-                ,   HtmlEvent.onKeyDown (Key >> convert)
-                ,   HtmlEvent.onFocus (convert ShowCursor)
-                ,   HtmlEvent.onBlur (convert HideCursor)
-                ,   HtmlEvent.onPointerCapture convert MouseDown
-                ]
-            ++ attr
-            )
+            [   type_ "text"
+            ,   id (model.holderID ++ "-input")
+            ,   HtmlEvent.onKeyDown (Key >> convert)
+            ,   HtmlEvent.onFocus (convert ShowCursor)
+            --,   HtmlEvent.onBlur (convert HideCursor)
+            ,   HtmlEvent.onPointerCapture convert MouseDown
+            ]
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
             (toLatex False [] (if model.showCursor then model.cursor else []) (current model))
         ]
-    |>  Helper.maybeAppend (Maybe.map (\children -> Html.div [class "popup"]
-            [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
-            ,   Html.div [class "scrollMask"] []
-            ]
-            |> Html.map convert
-        ) model.suggestions)
+        |> Helper.maybeAppend (
+                Maybe.map (\children -> Html.div [class "mathPopup"]
+                [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
+                    |> Html.map convert
+                ,   Html.div [class "scrollMask"] []
+                ]
+            ) model.suggestions
+        )
     )
 
 formDecoder_: (String -> ScopeElement) -> Decode.Decoder Event
@@ -771,7 +770,7 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
                 ,   HtmlEvent.onPointerCapture identity
                     (\_ _ -> InsertFixed (fixedFrom_ ("\\" ++ key) fixed Array.empty latex))
                 ]
-                [MathIcon.static [] latex]
+                [toHtmlBlock_ latex]
             )
         )
     )
@@ -780,25 +779,32 @@ displaySuggestions_ functions input = let inputOrder = letterOrder_ input in
     |> (++)
         [   (   "+"
             ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed addOp_)]
-                [[Latex.Text {state=(), style=Nothing} "+"] |> MathIcon.static []]
+                [[Latex.Text {state=(), style=Nothing} "+"] |> toHtmlBlock_]
             )
         ,   (   "-"
             ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed subOp_)]
-                [[Latex.Text {state=(), style=Nothing} "-"] |> MathIcon.static []]
+                [[Latex.Text {state=(), style=Nothing} "-"] |> toHtmlBlock_]
             )
         ,   (   "*"
             ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed timesOp_)]
-                [[Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation] |> MathIcon.static []]
+                [[Latex.SymbolPart {state=(), style=Nothing} Latex.CrossMultiplcation] |> toHtmlBlock_]
             )
         ,   (   "/"
             ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed divideOp_) ]
-                [[Latex.SymbolPart {state=(), style=Nothing} Latex.Division] |> MathIcon.static []]
+                [[Latex.SymbolPart {state=(), style=Nothing} Latex.Division] |> toHtmlBlock_]
             )
         ,   (   "="
             ,   Html.a [class "clickable", HtmlEvent.onPointerCapture identity (\_ _ -> InsertFixed equalOp_)]
-                [[Latex.Text {state=(), style=Nothing} "="] |> MathIcon.static []]
+                [[Latex.Text {state=(), style=Nothing} "="] |> toHtmlBlock_]
             )
         ]
+
+toHtmlBlock_: Latex.Model s -> Html.Html msg
+toHtmlBlock_ latex = let frame = MathIcon.latexToFrames latex in
+    let (scale, width) = BrickSvg.getScaleAndWidth latex in
+    MathIcon.initStatic (Just scale) frame
+    |> BrickSvg.brick 0 width 0 1 1 BrickSvg.Leaf True []
+    |> \brick -> BrickSvg.bricks width 1 [brick]
 
 funcPropToLatex_: String -> Maybe {a | property: Math.FunctionProperty Rules.FunctionProp} -> (Bool, Latex.Model (), Int)
 funcPropToLatex_ key funcProp =

@@ -84,7 +84,7 @@ button.noDefault {
     position: relative;
     background-color: var(--color-menu);
     pointer-events: auto;
-    overflow: visible;
+    overflow: hidden;
     max-width: min(100%, 25rem);
     transition: max-width 0.5s ease-out;
 }
@@ -134,11 +134,11 @@ span.space {
     border-radius: 2rem;
 }
 .textbar {
-    height: 1em;
     min-width: 0;
     flex-shrink: 0;
     flex-grow: 0;
-    padding: 1rem;
+    padding: 0 1rem;
+    min-height: 1em;
     gap: 0.2em;
     display: flex;
     width: 100%;
@@ -220,23 +220,19 @@ span.space {
     border: none;
 }
 .mathInput {
-    height: 1em;
     width: 100%;
+    font-size: 3em;
     position: relative;
     box-sizing: border-box;
-    padding: 0.5em;
     display: block;
     border: var(--thickness) var(--color-text) solid;
     border-radius: 0.3em;
 }
 .mathInput > input {
     display: block;
-    position: absolute;
     box-sizing: border-box;
     background-color: transparent;
-    top: 0;
-    left: 0;
-    height: 100%;
+    height: 1em;
     width: 100%;
     caret-color: transparent;
 }
@@ -251,28 +247,20 @@ span.space {
     height: 1em;
     max-width: 100%;
 }
-.mathInput > .popup {
-    z-index: 1;
-    position: absolute;
-    top: 0;
-    left: 0;
+.mathPopup {
     width: 100%;
     box-sizing: border-box;
-    padding: 1em 0.2em;
-    transform: translateY(-110%);
     height: 1em;
-    display: flex;
-    flex-direction: row;
-    justify-content: end;
-    align-items: center;
+    font-size: 0.8em;
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+    max-height: 1em;
 }
-.popup > .holder {
+.mathPopup > .holder {
     display: flex;
-    position: relative;
-    flex-grow: 1;
-    flex-shrink: 1;
     flex-direction: row;
-    max-width: 8em;
+    width: 100%;
     gap: 0.5rem;
     align-items: center;
     justify-items: center;
@@ -285,16 +273,11 @@ span.space {
     flex-grow: 0;
     width: 10%;
 }
-.popup .scrollMask {
+.mathPopup .scrollMask {
     background-image: linear-gradient(to right, var(--color-textbox-faded), var(--color-textbox) 80%);
+    height: 1em;
 }
-.mathInput > .popup a {
-    display: block;
-    flex-shrink: 0;
-    flex-grow: 0;
-    height: fit-content;
-}
-.mathInput > .popup svg {
+.mathPopup svg {
     display: block;
     margin: 0;
     padding: 0;
@@ -470,14 +453,11 @@ dialog {
     transform: translateY(-50%) translateX(-50%);
     overflow-y: scroll;
     max-height: 90vh;
+    max-width: 80vw;
 }
 dialog > form {
     display: flex;
     flex-direction: column;
-}
-dialog .mathInput {
-    font-size: 2.5rem;
-    display: flex;
 }
 dialog span > svg {
     height: 2rem;
