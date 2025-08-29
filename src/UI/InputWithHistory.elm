@@ -179,22 +179,28 @@ createView_ converter funcDict model inputNum width height =
             ]
             [   Icon.logoBorderless []
             ,   Input.view (InputEvent >> converter) funcDict [] model.input
+            ,   Html.input [type_ "submit", value "enter", class "submit"] []
             ]
-        ,   Html.ul
-            [Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")]
-            (   List.map
-                (\entry -> case entry of
-                    Default val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
-                        [   Icon.idea []
-                        , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
-                        ]
-                    Previous val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
-                        [   Icon.history []
-                        , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
-                        ]
+        ,   Html.div
+            [   Html.Attributes.style "max-height" ((Animation.current height |> String.fromFloat) ++"dvh")
+            ,   class "suggestions"
+            ]
+            [   Html.div [class "inputSeparator"] []
+            ,   Html.ul []
+                (   List.map
+                    (\entry -> case entry of
+                        Default val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
+                            [   Icon.idea []
+                            , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
+                            ]
+                        Previous val -> Html.li [HtmlEvent.onClick (Click val), Icon.class "clickable"]
+                            [   Icon.history []
+                            , Html.a [] [Input.toLatex False [] [] val |> MathIcon.static []]
+                            ]
+                    )
+                    model.options
                 )
-                model.options
-            )
+            ]
             |> Html.map converter
         ]
     )
