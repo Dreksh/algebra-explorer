@@ -364,11 +364,13 @@ span.space {
     text-wrap: nowrap;
 }
 .menuTitle > h1::before {
-    content: url(../img/arrow.svg);
+    content: "";
+    background-image: url(../img/arrow.svg);
     display: inline-block;
-    height: 1.5rem;
-    width: 1.5rem;
-    vertical-align: -10%;
+    vertical-align: middle;
+    height: 1rem;
+    width: 1rem;
+    margin: 0.5rem;
     rotate: 0;
     transition: rotate 0.5s linear;
 }
