@@ -149,7 +149,7 @@ init setCapture updateQuery svgMouseCmd tracker l =
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
-    Draggable.init ("Equation-" ++ String.fromInt eqNum) (25,indHeight * (toFloat index) + 1.0) (50,indHeight - 2.0)
+    Draggable.init ("Equation-" ++ String.fromInt eqNum) (10,indHeight * (toFloat index) + 1.0) (80,indHeight - 2.0)
 
 add: Animation.Tracker -> FullEquation -> Model -> (Model, Animation.Tracker)
 add tracker eq model = let (newEntry, newTracker) = newEntry_ tracker (model.nextEquationNum + 1) model.nextEquationNum eq in
@@ -327,7 +327,7 @@ commit tracker rules model = selectedEquation_ model
             newEquations = Dict.insert eq {entry | history = newHis} model.equations
             newActions = updateActions_ eq model.staged rules newEquations
         in
-            ({model | equations = newEquations, selected = model.staged, staged = Set.empty, actions = newActions}, tracker)
+            ({model | equations = newEquations, selected = model.staged, staged = Set.empty, actions = newActions, subactions = []}, tracker)
         )
 
 reset: Animation.Tracker -> Model -> Result String (Model, Animation.Tracker)
@@ -367,7 +367,7 @@ updateSelected_ eq node combine rules model =
 
         actions = updateActions_ eq newSelected rules model.equations
     in
-        { model | selected = newSelected, actions = actions }
+        { model | selected = newSelected, actions = actions, subactions = [] }
 
 updateActions_: Int -> Set.Set Int -> Rules.Model -> Dict.Dict Int Entry -> List (String, (List Actions.Action))
 updateActions_ eq ids rules entries =
