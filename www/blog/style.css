@@ -186,6 +186,7 @@ iframe {
     width: 100%;
     margin: 0 auto;
     min-height: 20rem;
+    border-width: 0;
 }
 iframe.eq1 {
     height: 50dvh;

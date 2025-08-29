@@ -33,8 +33,6 @@ bricks xMax yMax children =
         ++  String.fromFloat (yMax + strokeWidth_)
         )
     ,   class "bricks"
-    ,   width "100%"
-    ,   height "100%"
     ]
     children
 
