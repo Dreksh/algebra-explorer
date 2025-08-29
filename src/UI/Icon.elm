@@ -1,9 +1,9 @@
 module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless)
+    verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless, fullLogo)
 
 import Html
 import Svg exposing (circle, defs, line, path, rect, svg)
-import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeLinecap, strokeLinejoin, strokeWidth, viewBox, width, x, y, x1, x2, y1, y2)
+import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeLinecap, strokeLinejoin, strokeWidth, transform, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
 class: String -> Html.Attribute msg
@@ -122,6 +122,19 @@ logoBorderless attr = svg (viewBox "2 3 20.3 17" :: attr)
     ]
 
 fullLogo: List (Html.Attribute msg) -> Html.Html msg
-fullLogo attr = svg (viewBox "0 0 120 24" :: attr)
-    [
+fullLogo attr = svg (viewBox "0 -3 198 27" :: attr)
+    [   Svg.style []
+        [   Svg.text """
+            @import "https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap";
+            text {font-family: "Instrument Sans", sans-serif; stroke: none; fill: currentColor; font-size: 20pt; }
+            """
+        ]
+    ,   Svg.g [transform "translate(0, -1)"]
+        [   path [d "M6 5C8 4 13 4 12 9C12 15 11 18 6 17C1 16 2 7 12 10", fill "none", stroke "#6EA8FF", strokeWidth "2", strokeLinecap "round"] []
+        ]
+    ,   Svg.text_ [y "17", x "14"] [Svg.text "lgebra"]
+    ,   Svg.g [transform "translate(88, -2)"]
+        [   path [d "M13 10L21 12C23 4 13 4 12 12C11 19 17 19 19 18", fill "none", stroke "#FF8888", strokeWidth "2", strokeLinecap "round"] []
+        ]
+    ,   Svg.text_ [y "17", x "109"] [Svg.text "xplorer"]
     ]

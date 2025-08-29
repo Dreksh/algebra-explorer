@@ -482,6 +482,7 @@ view core = let model = core.swappable in
                     , Icon.class "clickable"
                     ]
                 )
+            ,   ("logo", Icon.fullLogo [id "logo", HtmlEvent.onClick EnterCreateMode, Icon.class "clickable"])
             ]
         ++  Display.views DisplayEvent ActionEvent model.display
         ++  List.filterMap identity

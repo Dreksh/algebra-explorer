@@ -297,18 +297,24 @@ span.space {
     height: 1em;
 }
 /* Menu */
+#logo {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    height: 2.5rem;
+}
 #menuToggle {
     position: absolute;
-    height: 1.5rem;
-    top: 1rem;
-    right: 1rem;
+    height: 2rem;
+    top: 0.9rem;
+    right: 0.9rem;
 }
 #rightPane.closed {
     max-width: 0;
     transition: max-width 0.5s ease-out;
 }
 #closeMenu {
-    height: 1.5rem;
+    height: 2rem;
     margin: 1rem;
 }
 #menu {
