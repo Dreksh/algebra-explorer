@@ -263,8 +263,7 @@
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
       <p>
       As we have seen from the examples in the other sections, brackets help us to understand the order of operations.
-      Anything inside brackets is always handled first. If we kept all the brackets, it would look like
-      this:
+      Anything inside brackets is always handled first. Keeping all the brackets looks like this:
       </p>
       <p class="indented">
       <math><mo>(</mo><mo>(</mo><mo>(</mo><mn>1</mn><mo>&times;</mo><mn>2</mn><mo>)</mo><mo>+</mo><mo>(</mo><mn>3</mn><mo>&times;</mo><mn>4</mn><mo>)</mo><mo>)</mo>
@@ -288,7 +287,7 @@
       </thead>
       <tbody>
         <tr><td>1st</td><td><b>B</b>rackets / <b>P</b>arenthesis </td><td>Anything inside goes first</td></tr>
-        <tr><td>2nd</td><td><b>O</b>rder / <b>I</b>ndices / <b>E</b>xponent </td><td>Repeated multiplcation</td></tr>
+        <tr><td>2nd</td><td><b>O</b>rder / <b>I</b>ndices / <b>E</b>xponent </td><td>Repeated multiplication</td></tr>
         <tr><td>3rd</td><td><b>M</b>ultiplication / <b>D</b>ivision </td><td>Repeated addition (and its inverse)</td></tr>
         <tr><td>4th</td><td><b>A</b>ddition / <b>S</b>ubtraction </td><td>Repeated counting (and its inverse)</td></tr>
       </tbody>
@@ -307,7 +306,7 @@
       </div>
       <p>
       There are never any brackets in the blocks!
-      This is because the blocks are a fully explicit representation the underlying structure.
+      This is because the blocks are a fully explicit representation of the underlying structure.
       </p>
       <p>
       Standard notation can also be ambiguous, for example
@@ -329,9 +328,9 @@
       </p>
       <div class="try-it-out" data-target='["2*3+3*4"]'>
       <p>
-      Click on the <math><mo>+</mo></math> sign, and find the 'Factorise' action.
+      Click on the <math><mo>+</mo></math> block, and find the ‘Factorise’ action.
       When you factorise, you change the order of the operations, and brackets will appear.
-      To revert your change, either do an undo, or click on the <math><mo>&times;</mo></math> and find the 'Expand' action.
+      To revert your change, either do an undo, or click on the <math><mo>&times;</mo></math> and find the ‘Expand’ action.
       </p>
       </div>
       </section>
@@ -373,6 +372,7 @@
       </p>
       <p>
       where it is harder to see because the <math><mo>+</mo></math> is all the way to the left.
+      <!-- It is worth noting that symbols in standard notation more closely match their positions in the block -->
       </p>
       <h3>Matching patterns</h3>
       <p>
@@ -441,7 +441,7 @@
       </p>
       <p>
       In the blocks an abstraction is represented by anything stacked on top of a lower block.
-      As long as an entire stack matches, then the pattern will match.
+      As long as an entire stack is the same, then the pattern will match.
       Here are the same examples in block format:
       </p>
       <div class="blocks-video gallery">
@@ -449,6 +449,61 @@
         <video style="height: 9.5rem" playsinline loop autoplay muted><source src="img/5t_3p6_p2t5.webm" type="video/webm"/></video>
         <video style="height: 9.5rem" playsinline loop autoplay muted><source src="img/3t_5p7_p7t_5p7_.webm" type="video/webm"/></video>
       </div>
+      <h3>Equations</h3>
+      <p>
+      So far we have only seen operators and their inputs, but the goal we have been working towards is solving an actual <i>equation</i>.
+      </p>
+      <p>
+      You probably won’t be surprised to find out that the <math><mo>=</mo></math> sign is also represented by a block.
+      However it is special in that it can never stacked on top of any other block, so we placed it in between stacks to match standard notation:
+      </p>
+      <div class="blocks-img">
+        <img src="img/xp4e5.svg" class="row2" title="Block representation of x+4=5"/>
+      </div>
+      <p>
+      But it behaves like a normal block that can be selected to apply actions to.
+      This includes ‘Operate on both sides’ which looks like this:
+      </p>
+      <div class="blocks-video">
+        <video style="height: 20rem" playsinline loop autoplay muted><source src="img/xp4e5.webm" type="video/webm"/></video>
+      </div>
+      <p>
+      You now have everything you need to know to solve an equation!
+      It will feel strange solving equations like this, specifically you may feel like it takes many more steps than expected to achieve ‘simple’ transformations.
+      </p>
+      <p>
+      We hope that this illustrates just how many steps we usually skip when solving equations,
+      but also that freely experimenting with these steps will lead to deeper understanding.
+      Enjoy solving the problems below!
+      </p>
+      <div class="try-it-out" data-target='["x*2-3=5"]'>
+        <p>
+          Try solving this equation!
+        </p>
+      </div>
+      <div class="try-it-out" data-target='["4x+3=2x+8"]'>
+        <p>
+          Try solving this more difficult equation!
+        </p>
+        <p>
+          Note that you will need to reorder and group/ungroup blocks to get rules to match correctly.
+        </p>
+      </div>
+      <div class="try-it-out" data-target='["x*x-3*x+2=0"]'>
+        <p>
+          Try solving this even more difficult equation!
+        </p>
+        <p>
+          Note that once the equation is factorised correctly,
+          there is a final rule ‘Find Zeros’ on the <math><mo>=</mo></math> block which forks history into the two solutions.
+          The full history can be viewed by clicking the clock icon.
+        </p>
+      </div>
+      </section>
+
+      <section id="extensions">
+      <h2>Extensions</h2>
+      <p class="mainQuestion">What else can I do?</p>
       <h3>Topics</h3>
       <p>
       This project is designed to be as flexible as possible, and apart from the main operations in
@@ -480,11 +535,6 @@
         Check out the rules that are used <a href="../topics/rps.json">here</a>.
         </p>
       </div>
-      </section>
-
-      <section id="extensions">
-      <h2>Extensions</h2>
-      <p class="mainQuestion">What else can I do?</p>
       <p>
       We’ve covered the basics of this tool, but we’ve also added a bit more topics for you to play around with.
       You can try:

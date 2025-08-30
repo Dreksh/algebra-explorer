@@ -606,7 +606,7 @@ numSubDialog_: Rules.Model -> Int -> Float -> Dialog.Model Event
 numSubDialog_ rules root target = Dialog.processMathInput inputMouseCmd focusTextBar_ (Rules.functionProperties rules)
     {   title = "Expand a number into an expression"
     ,   sections =
-        [{  subtitle = "The expression to replace " ++ String.fromFloat target
+        [{  subtitle = "Choose the expression to replace " ++ String.fromFloat target
         ,   lines = [[Dialog.MathInput {id="expr"}]]
         }]
     ,   success = (\dict -> case Dict.get "expr" dict of

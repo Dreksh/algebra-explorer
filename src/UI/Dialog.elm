@@ -136,8 +136,7 @@ type Extracted =
 view: (Event -> msg) -> Model msg -> Html.Html msg
 view convert model =
     node "dialog" [Attr.attribute "open" "true", Attr.id "dialog"]
-    [   h1 [] [text model.title]
-    ,   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
+    [   form [UI.HtmlEvent.onSubmitForm (decoder_ model), Attr.attribute "method" "dialog"]
         (   List.map (\section -> Html.section []
                 (   List.concat
                     [   if String.isEmpty section.subtitle then [] else [h2 [] [text section.subtitle]]
