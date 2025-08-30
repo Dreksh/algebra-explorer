@@ -241,9 +241,9 @@ update event core = let model = core.swappable in
             Just newE -> update newE core
         DialogEvent e -> case core.dialog of
             Nothing -> (core, Cmd.none)
-            Just (dialog, matched) -> Dialog.update (Rules.functionProperties model.rules) e dialog
-                |> \(newDialog, errStr, cmd) -> if errStr /= "" then submitNotification_ core errStr
-                    else ({core  | dialog = Just (newDialog, matched)}, cmd)
+            Just (dialog, matched) -> Dialog.update (Rules.functionProperties model.rules) core.animation e dialog
+                |> \((newDialog, newA), errStr, cmd) -> if errStr /= "" then submitNotification_ core errStr
+                    else ({core  | dialog = Just (newDialog, matched), animation = newA}, cmd)
         NoOp -> (core, Cmd.none)
         RedirectTo url -> (core, Nav.load url)
         PressedKey input -> case (input.ctrl, input.shift, input.key) of

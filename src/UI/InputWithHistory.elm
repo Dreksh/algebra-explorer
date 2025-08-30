@@ -102,6 +102,7 @@ advance time model =
     ,   closing = model.closing
         |> Dict.map (\_ (w,h) -> (Animation.advance time w, Animation.advance time h))
         |> Dict.filter (\_ (w,h) -> Animation.current h /= 0 || Animation.current w /= 0)
+    ,   input = Input.advanceTime time model.input
     }
 
 open: Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
@@ -121,19 +122,21 @@ close tracker model = case model.current of
     Just (id, width, height) ->
         let
             (newW, newT) = Animation.setEase tracker 0 width
-            (newH, finalT) = Animation.setEase newT 0 height
+            (newI, nextT) = Input.clear newT model.input
+            (newH, finalT) = Animation.setEase nextT 0 height
         in
             (   {   model
                 |   current = Nothing
                 ,   closing = Dict.insert id (newW, newH) model.closing
-                ,   input = Input.clear model.input
+                ,   input = newI
                 }
             , finalT
             )
 
 update: (Event -> msg) -> Animation.Tracker -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp}-> Event -> Model msg -> ((Model msg, Animation.Tracker), Result String (Maybe Display.FullEquation), Cmd msg)
 update convert tracker funcDict event model = case event of
-    Click input -> (({model | input = Input.set input model.input}, tracker), Ok Nothing, model.focusCmd "mainInput-input")
+    Click input -> let (newInput, newT) = Input.set tracker input model.input in
+        (({model | input = newInput}, newT), Ok Nothing, model.focusCmd "mainInput-input")
     Submit -> let (Input.Scope detail children) = Input.current model.input in
         if List.isEmpty children then (close tracker model, Ok Nothing, Cmd.none)
         else case Input.toTree funcDict model.input of
@@ -149,14 +152,14 @@ update convert tracker funcDict event model = case event of
                 ,   Ok (Just tree)
                 ,   Cmd.none
                 )
-    InputEvent e -> let (inModel, errStr, inCmd) = Input.update funcDict e model.input in
+    InputEvent e -> let ((inModel, newT), errStr, inCmd) = Input.update funcDict tracker e model.input in
         if String.isEmpty errStr |> not
-        then ((model, tracker), Err errStr, Cmd.none)
+        then ((model, newT), Err errStr, Cmd.none)
         else case (e, model.current) of
             (Input.ShowCursor, Just (id, width, height)) ->
-                let (newH, newT) = Animation.setEase tracker maxHeight_ height in
-                (({model | current = Just (id, width, newH), input = inModel}, newT), Ok Nothing, inCmd)
-            _ -> (({model | input = inModel}, tracker), Ok Nothing, inCmd)
+                let (newH, finalT) = Animation.setEase newT maxHeight_ height in
+                (({model | current = Just (id, width, newH), input = inModel}, finalT), Ok Nothing, inCmd)
+            _ -> (({model | input = inModel}, newT), Ok Nothing, inCmd)
 
 view: (Event -> msg) -> Model msg -> List (String, Html.Html msg)
 view converter model =

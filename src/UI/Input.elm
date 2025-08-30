@@ -1,5 +1,5 @@
 module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), defaultScopeDetail,
-    init, initWithFixed, update, clear, set, current, view, toLatex, toTree, toString, fromString)
+    init, initWithFixed, advanceTime, update, clear, set, current, view, toLatex, toTree, toString, fromString)
 
 import Array
 import Dict
@@ -61,10 +61,10 @@ type alias PreviousInput =
 type alias Model msg =
     {   history: History.Model Scope
     ,   previousInput: Maybe PreviousInput -- For checking when to commit / flush
-    ,   suggestions: Maybe (List (String, Html.Html Event)) -- Cached suggestions list
+    ,   suggestions: List (String, Html.Html Event) -- Cached suggestions list
     ,   matchFound: Bool
     ,   cursor: CaretPosition
-    ,   showCursor: Bool
+    ,   popupHeight: Animation.EaseState Float
     ,   holderID: String
     ,   mouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
     ,   focusCmd: String -> Cmd msg
@@ -80,15 +80,21 @@ type Event =
 defaultScopeDetail: ScopeDetail
 defaultScopeDetail = {inseparable = True, immutable = False}
 
+animationDuration_: Float
+animationDuration_ = 350
+
+delayDuration_: Float
+delayDuration_ = 150
+
 init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
     {   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
-    ,   suggestions = Nothing
+    ,   suggestions = []
     ,   matchFound = False
     ,   cursor = [0]
     ,   holderID = holderID
-    ,   showCursor = False
+    ,   popupHeight = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
     ,   mouseCmd = mouseCmd
     ,   focusCmd = focusCmd
     }
@@ -97,38 +103,45 @@ initWithFixed: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg
 initWithFixed mouseCmd focusCmd holderID elements pos =
     {   history = History.init (Scope {inseparable = True, immutable = True} elements)
     ,   previousInput = Nothing
-    ,   suggestions = Nothing
+    ,   suggestions = []
     ,   matchFound = False
     ,   cursor = pos
     ,   holderID = holderID
-    ,   showCursor = False
+    ,   popupHeight = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
     ,   mouseCmd = mouseCmd
     ,   focusCmd = focusCmd
     }
 
-set: Scope -> Model msg -> Model msg
-set (Scope detail children) model =
-    {   model
-    |   history = History.flushAndCommit (Scope detail children) model.history
-    ,   previousInput = Nothing
-    ,   suggestions = Nothing
-    ,   matchFound = False
-    ,   cursor = [List.length children]
-    ,   showCursor = False
-    }
-clear: Model msg -> Model msg
-clear model =
-    {   model
-    |   history = History.init (Scope defaultScopeDetail [])
-    ,   previousInput = Nothing
-    ,   suggestions = Nothing
-    ,   matchFound = False
-    ,   cursor = [0]
-    ,   showCursor = False
-    }
+set: Animation.Tracker -> Scope -> Model msg -> (Model msg, Animation.Tracker)
+set t (Scope detail children) model = let (newHeight, newT) = Animation.setEase t 0 model.popupHeight in
+    (   {   model
+        |   history = History.flushAndCommit (Scope detail children) model.history
+        ,   previousInput = Nothing
+        ,   suggestions = []
+        ,   matchFound = False
+        ,   cursor = [List.length children]
+        ,   popupHeight = newHeight
+        }
+    ,   newT
+    )
+clear: Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
+clear t model = let (newHeight, newT) = Animation.setEase t 0 model.popupHeight in
+    (   {   model
+        |   history = History.init (Scope defaultScopeDetail [])
+        ,   previousInput = Nothing
+        ,   suggestions = []
+        ,   matchFound = False
+        ,   cursor = [0]
+        ,   popupHeight = newHeight
+        }
+    ,   newT
+    )
 
 current: Model msg -> Scope
 current model = History.next model.history
+
+advanceTime: Float -> Model msg -> Model msg
+advanceTime time model = {model | popupHeight = Animation.advance time model.popupHeight }
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model msg -> Html.Html msg
 view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ attr)
@@ -137,21 +150,18 @@ view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ at
             ,   id (model.holderID ++ "-input")
             ,   HtmlEvent.onKeyDown (Key >> convert)
             ,   HtmlEvent.onFocus (convert ShowCursor)
-            --,   HtmlEvent.onBlur (convert HideCursor)
+            ,   HtmlEvent.onBlur (convert HideCursor)
             ,   HtmlEvent.onPointerCapture convert MouseDown
             ]
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
-            (toLatex False [] (if model.showCursor then model.cursor else []) (current model))
+            (toLatex False [] (if Animation.target model.popupHeight == 1 then model.cursor else []) (current model))
+        ,   Html.div [class "mathPopup", style "max-height" ( (Animation.current model.popupHeight |> String.fromFloat) ++ "em") ]
+            [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (model.suggestions ++ [("space_", Html.span [class "space"] [])])
+                |> Html.map convert
+            ,   Html.div [class "scrollMask"] []
+            ]
         ]
-        |> Helper.maybeAppend (
-                Maybe.map (\children -> Html.div [class "mathPopup"]
-                [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (children ++ [("space_", Html.span [class "space"] [])])
-                    |> Html.map convert
-                ,   Html.div [class "scrollMask"] []
-                ]
-            ) model.suggestions
-        )
     )
 
 formDecoder_: (String -> ScopeElement) -> Decode.Decoder Event
@@ -243,77 +253,82 @@ divideOp_ = Fixed {text = "/", latex = [Latex.SymbolPart {state=(), style=Nothin
             , params = Array.empty, firstNode = Nothing, lastNode = Nothing }
 
 
-update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Event -> Model msg -> (Model msg, String, Cmd msg)
-update funcProp event model = case event of
+update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Animation.Tracker
+    -> Event -> Model msg -> ((Model msg, Animation.Tracker), String, Cmd msg)
+update funcProp t event model = case event of
     Key e -> let entry = current model in
         case (e.key, e.meta) of
         ("z", True) ->
-            (   {model | history = History.commit model.history |> History.undo }
+            (({model | history = History.commit model.history |> History.undo }, t)
             , "", Cmd.none)
         ("Z", True) ->
-            (   {model | history = History.commit model.history |> History.redo }
+            (({model | history = History.commit model.history |> History.redo }, t)
             , "", Cmd.none)
-        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False |> checkMatches_ funcProp, "", Cmd.none)
-        ("Delete", _) -> (batchFlushStage_ e.time False model |> delete_ True |> checkMatches_ funcProp, "", Cmd.none)
-        ("ArrowUp", _) -> (flushStage_ model |> cursorMove_ funcProp Up_ |> checkMatches_ funcProp, "", Cmd.none)
-        ("ArrowDown", _) -> (flushStage_ model |> cursorMove_ funcProp Down_ |> checkMatches_ funcProp, "", Cmd.none)
-        ("ArrowLeft", _) -> (flushStage_ model |> cursorMove_ funcProp Left_ |> checkMatches_ funcProp, "", Cmd.none)
-        ("ArrowRight", _) -> (flushStage_ model |> cursorMove_ funcProp Right_ |> checkMatches_ funcProp, "", Cmd.none)
+        ("Backspace", _) -> (batchFlushStage_ e.time False model |> delete_ False |> checkMatches_ funcProp t, "", Cmd.none)
+        ("Delete", _) -> (batchFlushStage_ e.time False model |> delete_ True |> checkMatches_ funcProp t, "", Cmd.none)
+        ("ArrowUp", _) -> (flushStage_ model |> cursorMove_ funcProp Up_ |> checkMatches_ funcProp t, "", Cmd.none)
+        ("ArrowDown", _) -> (flushStage_ model |> cursorMove_ funcProp Down_ |> checkMatches_ funcProp t, "", Cmd.none)
+        ("ArrowLeft", _) -> (flushStage_ model |> cursorMove_ funcProp Left_ |> checkMatches_ funcProp t, "", Cmd.none)
+        ("ArrowRight", _) -> (flushStage_ model |> cursorMove_ funcProp Right_ |> checkMatches_ funcProp t, "", Cmd.none)
         (c, False) -> let updatedModel = batchFlushStage_ e.time True model in
             if String.length c == 1
             then case String.uncons c of
-                Nothing -> (updatedModel, "", Cmd.none)
+                Nothing -> ((updatedModel, t), "", Cmd.none)
                 Just (char, _) -> if Set.member char allowedChars_
                     then case insertChar_ char updatedModel of
-                        Err str -> (updatedModel, str, Cmd.none)
+                        Err str -> ((updatedModel, t), str, Cmd.none)
                         Ok (newModel) ->
-                            (   {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor |> Just}
-                                |> checkMatches_ funcProp
+                            (   {newModel | suggestions = getSuggestions_ funcProp (current newModel) newModel.cursor}
+                                |> checkMatches_ funcProp t
                             , "", Cmd.none
                             )
                     else case char of
                         '(' -> case insertScopeElement_ (Just 0) (Bracket []) updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         ')' -> case exitBracket_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         '+' -> case insertScopeElement_ Nothing addOp_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         '-' -> case insertScopeElement_ Nothing subOp_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         '=' -> case insertScopeElement_ Nothing equalOp_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         '*' -> case insertScopeElement_ Nothing timesOp_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         '/' -> case insertScopeElement_ Nothing divideOp_ updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
                         ' ' -> case insertSpace_ funcProp updatedModel of
-                            Err str -> (updatedModel, str, Cmd.none)
-                            Ok newModel -> (newModel, "", Cmd.none)
-                        _ -> (updatedModel, "'" ++ c ++ "' is not an allowed input", Cmd.none)
-            else (updatedModel, "", Cmd.none)
-        _ -> (model, "", Cmd.none)
-    ShowCursor ->
-        (   {model | showCursor = True, suggestions = getSuggestions_ funcProp (current model) model.cursor |> Just}
-            |> checkMatches_ funcProp
+                            Err str -> ((updatedModel, t), str, Cmd.none)
+                            Ok newModel -> ((newModel, t), "", Cmd.none)
+                        _ -> ((updatedModel, t), "'" ++ c ++ "' is not an allowed input", Cmd.none)
+            else ((updatedModel, t), "", Cmd.none)
+        _ -> ((model, t), "", Cmd.none)
+    ShowCursor -> let (newHeight, newT) = Animation.setEase t 1 model.popupHeight in
+        (   {   model
+            |   popupHeight = newHeight
+            ,   suggestions = getSuggestions_ funcProp (current model) model.cursor
+            }
+            |> checkMatches_ funcProp newT
         , "", Cmd.none
         )
-    HideCursor -> ({model | history = History.commit model.history, showCursor = False, suggestions = Nothing}, "", Cmd.none)
-    MouseDown val point -> (flushStage_ model, "", model.mouseCmd val point)
+    HideCursor -> let (newHeight, newT) = Animation.setEase t 0 model.popupHeight in
+        (({model | history = History.commit model.history, popupHeight = newHeight}, newT), "", Cmd.none)
+    MouseDown val point -> ((flushStage_ model, t), "", model.mouseCmd val point)
     Shift e -> case e of
-        SvgDrag.End _ point -> (setCursor_ point model |> checkMatches_ funcProp, "", Cmd.none)
-        _ -> (model, "", Cmd.none) -- TODO: Start & Move for selecting text
+        SvgDrag.End _ point -> (setCursor_ point model |> checkMatches_ funcProp t, "", Cmd.none)
+        _ -> ((model, t), "", Cmd.none) -- TODO: Start & Move for selecting text
     InsertFixed elem -> case elem of
         Fixed n -> case insertScopeElement_ n.firstNode elem model of
-            Err str -> (flushStage_ model, str, Cmd.none)
-            Ok finalModel -> (finalModel |> flushStage_, "", model.focusCmd (model.holderID ++ "-input"))
-        _ -> (model, "unexpected fixed element to be inserted", Cmd.none)
+            Err str -> ((flushStage_ model, t), str, Cmd.none)
+            Ok finalModel -> ((finalModel |> flushStage_, t), "", model.focusCmd (model.holderID ++ "-input"))
+        _ -> ((model, t), "unexpected fixed element to be inserted", Cmd.none)
 
 {- ## Cursor Movement -}
 
@@ -329,7 +344,7 @@ cursorMove_ funcProp direction model = let (Scope d children) = current model in
         FoundCursor newC ->
             {   model
             |   cursor = newC
-            ,   suggestions = getSuggestions_ funcProp (Scope d children) newC |> Just
+            ,   suggestions = getSuggestions_ funcProp (Scope d children) newC
             }
         _ -> model
 
@@ -517,8 +532,8 @@ matchDict_ funcProp = Dict.toList funcProp
     )
     |> Dict.fromList
 
-checkMatches_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Model msg
-checkMatches_ funcProp model = let match word = matchDict_ funcProp |> Dict.foldl (\(_, w) _ res -> res || String.endsWith w word) False in
+checkMatches_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
+checkMatches_ funcProp t model = let match word = matchDict_ funcProp |> Dict.foldl (\(_, w) _ res -> res || String.endsWith w word) False in
     traverse (\_ c -> case c of
         TextCase prev str num next -> Ok
             (match (String.left num str), Just (prev ++ (StrElement str :: next), [List.length prev, num]))
@@ -532,8 +547,8 @@ checkMatches_ funcProp model = let match word = matchDict_ funcProp |> Dict.fold
     )
     (current model) model.cursor
     |> \res -> case res of
-        Ok (matchFound, _) -> {model | matchFound = matchFound}
-        _ -> model
+        Ok (matchFound, _) -> ({model | matchFound = matchFound}, t)
+        _ -> (model, t)
 
 {- ## Insertion -}
 

@@ -1,5 +1,5 @@
 module UI.Dialog exposing (Extracted(..), Input(..), Model, Event(..), Section,
-    fieldID, processMathInput, update, view)
+    fieldID, processMathInput, update, view, advanceTime)
 
 import Array
 import Dict
@@ -12,6 +12,7 @@ import Json.Encode as Encode
 import Algo.Math as Math
 import Components.Latex as Latex
 import Components.Rules as Rules
+import UI.Animation as Animation
 import UI.HtmlEvent
 import UI.Icon
 import UI.Input as Input
@@ -42,6 +43,12 @@ type Input msg =
     | MathInput {id: String}
     | ParameterInput {id: String, args: List String, example: String}
     | Link {url: String} -- Should open a new tab / window
+
+advanceTime: Float -> Model msg -> Model msg
+advanceTime time model =
+    {   model
+    |   inputFields = Dict.map (\_ -> Input.advanceTime time) model.inputFields
+    }
 
 processMathInput: (String -> Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg)
     -> Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Model msg
@@ -106,16 +113,16 @@ toInput_ funcProp name args example =
     ,   [2,0,1]
     )
 
-update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Event -> Model msg
-    -> (Model msg, String, Cmd msg)
-update funcProp event model = case event of
+update: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Animation.Tracker
+    -> Event -> Model msg -> ((Model msg, Animation.Tracker), String, Cmd msg)
+update funcProp t event model = case event of
     InputEvent id inE -> case Dict.get id model.inputFields of
-        Nothing -> (model, "", Cmd.none)
-        Just inModel -> Input.update funcProp inE inModel
-            |> \(newModel, errStr, cmd) ->
-                (   {   model
-                    |   inputFields = Dict.insert id newModel model.inputFields
-                    }
+        Nothing -> ((model, t), "", Cmd.none)
+        Just inModel -> Input.update funcProp t inE inModel
+            |> \((newModel, newT), errStr, cmd) ->
+                (   (   {model | inputFields = Dict.insert id newModel model.inputFields}
+                    ,   newT
+                    )
                 ,   errStr
                 ,   cmd
                 )

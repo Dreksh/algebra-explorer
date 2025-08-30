@@ -215,13 +215,13 @@ span.space {
 .textbar .mathInput {
     flex-grow: 10;
     flex-shrink: 10;
-    font-size: 1.2em;
     min-width: 0;
     border: none;
 }
 .mathInput {
     width: 100%;
-    font-size: 3em;
+    font-size: 2em;
+    padding: 0.5rem;
     position: relative;
     box-sizing: border-box;
     display: block;
@@ -242,10 +242,10 @@ span.space {
     box-sizing: border-box;
     margin: 0;
     padding: 0.1em;
-    top: 0;
-    left: 0;
+    top: 0.5rem;
+    left: 0.5rem;
     height: 1em;
-    max-width: 100%;
+    max-width: calc(100% - 1rem);
 }
 .mathPopup {
     width: 100%;
@@ -255,7 +255,6 @@ span.space {
     min-width: 0;
     display: block;
     overflow: hidden;
-    max-height: 1em;
 }
 .mathPopup > .holder {
     display: flex;
@@ -458,6 +457,9 @@ dialog {
 dialog > form {
     display: flex;
     flex-direction: column;
+}
+dialog .mathInput {
+    font-size: 4em;
 }
 dialog span > svg {
     height: 2rem;

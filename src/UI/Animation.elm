@@ -1,8 +1,8 @@
 module UI.Animation exposing (
     State, stateOps,
     Vector2, minVector2, maxVector2, addVector2, subVector2, scaleVector2, descaleVector2,
-    EaseState, newEase, newEaseFloat, newEaseVector2,
-    setEase, easeOut, current, target, advance,
+    EaseState, newEase, newEaseFloat, newEaseVector2, withDelay,
+    setEase, current, target, advance,
     Tracker, updateTracker,
     stateDecoder, encodeState
     )
@@ -35,6 +35,7 @@ type alias Vector2 = (Float, Float)
 type EaseState t = EaseState
     {   zero: t
     ,   changeDuration: Float
+    ,   delayTime: Float -- added to remainingTime
     -- For displaying
     ,   current: t
     -- For calculating
@@ -50,6 +51,7 @@ newEase: Float -> t -> (t -> t -> t) -> (Float -> t -> t) -> t -> EaseState t
 newEase duration zero addition scale initial = EaseState
     {   zero = zero
     ,   changeDuration = duration
+    ,   delayTime = 0
     ,   current = initial
     ,   target = initial
     ,   firstSpline = zero
@@ -65,45 +67,37 @@ newEaseVector2 duration initial = newEase duration (0,0) addVector2 scaleVector2
 newEaseFloat: Float -> Float -> EaseState Float
 newEaseFloat duration initial = newEase duration 0 (+) (*) initial
 
+withDelay: Float -> EaseState s -> EaseState s
+withDelay t (EaseState state) = EaseState {state | delayTime = t}
+
 setEase: Tracker -> t -> EaseState t -> (EaseState t, Tracker)
 setEase tracker value (EaseState n) = if n.target == value
     then (EaseState n, tracker)
     else let diff = n.scale -1 value |> n.addition n.current in
+        let remainingTime = n.changeDuration + n.delayTime in
         if n.remainingTime == 0
         then
             (   EaseState
                 {   n
-                |   remainingTime = n.changeDuration
+                |   remainingTime = remainingTime
                 ,   firstSpline = diff
                 ,   secondSpline = diff
                 ,   target = value
                 }
-            ,   max tracker n.changeDuration
+            ,   max tracker remainingTime
             )
-        else let time = n.remainingTime / n.changeDuration in
+        else let time = n.remainingTime / n.changeDuration |> min 1 in
             (   EaseState
                 {   n
-                |   remainingTime = n.changeDuration
+                |   remainingTime = remainingTime
                 ,   firstSpline = diff
                 ,   secondSpline = diff
                         |> n.addition (n.scale (-time*time*time*time) n.firstSpline)
                         |> n.addition (n.scale (time*time*time*(5*time-4)) n.secondSpline)
                 ,   target = value
                 }
-            , max tracker n.changeDuration
+            , max tracker remainingTime
             )
-
-easeOut: Tracker -> t -> t -> EaseState t -> (EaseState t, Tracker)
-easeOut tracker start finish (EaseState n) = let diff = n.scale -1 finish |> n.addition start in
-    (   EaseState
-        {   n
-        |   remainingTime = n.changeDuration
-        ,   firstSpline = diff
-        ,   secondSpline = diff
-        ,   target = finish
-        }
-    ,   max tracker n.changeDuration
-    )
 
 current: EaseState t -> t
 current (EaseState n) = n.current
@@ -138,15 +132,16 @@ advance: Float -> EaseState t -> EaseState t
 advance deltaTime (EaseState state) = let remainingTime = state.remainingTime - deltaTime |> max 0 in
     if remainingTime == 0
     then EaseState {state | current = state.target, firstSpline = state.zero, secondSpline = state.zero, remainingTime = 0}
-    else let time = remainingTime / state.changeDuration in
-        EaseState
-        {   state
-        |   current = state.addition
-                (state.scale (time*time*time*time*time) state.firstSpline)
-                (state.scale (5*time*time*time*time*(1-time)) state.secondSpline)
-                |> state.addition state.target
-        ,   remainingTime = remainingTime
-        }
+    else let time = remainingTime / state.changeDuration |> min 1 in
+        if time == 1 then EaseState {state | remainingTime = remainingTime}
+        else EaseState
+            {   state
+            |   current = state.addition
+                    (state.scale (time*time*time*time*time) state.firstSpline)
+                    (state.scale (5*time*time*time*time*(1-time)) state.secondSpline)
+                    |> state.addition state.target
+            ,   remainingTime = remainingTime
+            }
 
 {--
 Encoding and Decoding to catch the state of the element
