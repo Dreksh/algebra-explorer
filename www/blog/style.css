@@ -171,11 +171,6 @@ section {
 img.row2 { max-height: 8rem; width:auto; }
 img.row3 { max-height: 12rem; width:auto; }
 img.row4 { max-height: 16rem; width:auto; }
-img {
-    max-height: 10rem;
-    padding: 0 auto;
-    width: 100%;
-}
 table {
     text-align: center;
     border-collapse: collapse;
@@ -227,10 +222,18 @@ iframe.eq2 {
     height: 90dvh;
 }
 #groupPicture {
-    height: 20rem;
-    max-height:fit-content;
-    margin: 0 auto;
-    object-fit: contain;
+    width: 90%;
+    margin-left: 5%;
+    height: 27rem;
+    object-fit: cover;
+    object-position: 20% 20%;
+    transform: scaleX(-1);
+}
+.socials {
+    display: flex;
+    flex-direction: row;
+    margin-left: 12%;
+    gap: 12%;
 }
 .social {
     display: inline-flex;
@@ -248,6 +251,16 @@ iframe.eq2 {
 }
 .social a > img {
     height: 100%;
+}
+.inline-social > p {
+    display: inline;
+}
+.inline-social > h3 {
+    display: inline;
+    margin-right: 0.2rem;
+}
+.inline-social > h3 > div {
+    margin-right: 0.2rem;
 }
 #logo {
     width: 80%;

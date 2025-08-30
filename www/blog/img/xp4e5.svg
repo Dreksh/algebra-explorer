@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0.05 -2.025 5.495238095238095 2.05" class="bricks">
+   <style>
+:root {
+    --color-leaf: #BAFCDE;
+    --color-branch: #C9DCFF;
+    --color-root: #FFD1D1;
+    --color-black: #000000;
+}
+.brickRect {
+    stroke: var(--color-black);
+}
+.brickText {
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: none;
+    stroke: var(--color-black);
+    stroke-width: 0.05;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+.brick.leaf > .brickRect {
+    fill: var(--color-leaf)
+}
+.brick.branch > .brickRect{
+    fill: var(--color-branch)
+}
+.brick.root > .brickRect {
+    fill: var(--color-root)
+}
+   </style>
+    <g class="brick root" transform="translate(2.9083333333333328,-1.5)">
+        <rect width="1.2785714285714287" height="1" stroke-width="0.05" class="brickRect" opacity="1" pointer-events="auto" rx="0.2"></rect>
+        <g transform="translate(0.42500000000000004,0.5357142857142857)" class="brickText" opacity="1" pointer-events="auto">
+            <path d="M0.07142857142857144 -0.14285714285714288L0.35714285714285715 -0.14285714285714288M0.07142857142857144 0.07142857142857144L0.35714285714285715 0.07142857142857144" opacity="1"></path>
+        </g>
+    </g>
+    <g class="brick branch commutable" transform="translate(0.07500000000000001,-1)">
+        <rect width="2.683333333333333" height="1" stroke-width="0.05" class="brickRect" opacity="1" pointer-events="auto" rx="0.2"></rect>
+        <g transform="translate(1.0916666666666666,0.5)" class="brickText" opacity="1" pointer-events="auto">
+            <path d="M0.25 -0.16666666666666669L0.25 0.16666666666666669M0.08333333333333334 0L0.4166666666666667 0" opacity="1"></path>
+        </g>
+    </g>
+    <g class="brick leaf commutable" transform="translate(0.07500000000000001,-2)">
+        <rect width="1.3499999999999999" height="1" stroke-width="0.05" class="brickRect" opacity="1" pointer-events="auto" rx="0.2"></rect>
+        <g transform="translate(0.42499999999999993,0.5)" class="brickText" opacity="1" pointer-events="auto">
+            <path d="M0.05 -0.1C0.15 -0.35 0.45 -0.05 0.05 0.2M0.45 0.1C0.35 0.35 0.05 0.05 0.45 -0.2" opacity="1"></path>
+        </g>
+    </g>
+    <g class="brick leaf commutable" transform="translate(1.575,-2)">
+        <rect width="1.183333333333333" height="1" stroke-width="0.05" class="brickRect" opacity="1" pointer-events="auto" rx="0.2"></rect>
+        <g transform="translate(0.4249999999999998,0.5833333333333334)" class="brickText" opacity="1" pointer-events="auto">
+            <path d="M0.19999999999999998 -0.3C-0.03333333333333333 0.06666666666666667 -0.03333333333333333 0 0.3 -0.06666666666666667M0.2333333333333333 -0.2333333333333333L0.2333333333333333 0.13333333333333333" opacity="1"></path>
+        </g>
+    </g>
+    <g class="brick leaf commutable" transform="translate(4.336904761904762,-1)">
+        <rect width="1.183333333333333" height="1" stroke-width="0.05" class="brickRect" opacity="1" pointer-events="auto" rx="0.2"></rect>
+        <g transform="translate(0.4249999999999998,0.5833333333333334)" class="brickText" opacity="1" pointer-events="auto">
+            <path d="M0.049999999999999996 -0.26666666666666666L0.26666666666666666 -0.2833333333333333M0.049999999999999996 -0.26666666666666666L0.03333333333333333 -0.13333333333333333C0.3666666666666667 -0.03333333333333333 0.3666666666666667 0.13333333333333333 0.06666666666666667 0.13333333333333333" opacity="1"></path>
+        </g>
+    </g>
+</svg>
