@@ -27,6 +27,12 @@ div.blocks-video {
     padding-top: 1.2rem;
     padding-bottom: 1.2rem;
 }
+div.gallery {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-around;
+}
 div.blocks-img {
     justify-content: center;
     display: flex;
