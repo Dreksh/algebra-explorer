@@ -247,6 +247,14 @@ span.space {
     height: 1em;
     max-width: calc(100% - 1rem);
 }
+.mathHint {
+    font-size: 0.2em;
+    padding: 0;
+    text-align: center;
+    margin: 0;
+    height: 1.5em;
+    overflow: hidden;
+}
 .mathPopup {
     width: 100%;
     box-sizing: border-box;

@@ -62,8 +62,8 @@ type alias Model msg =
     {   history: History.Model Scope
     ,   previousInput: Maybe PreviousInput -- For checking when to commit / flush
     ,   suggestions: List (String, Html.Html Event) -- Cached suggestions list
-    ,   matchFound: Bool
     ,   cursor: CaretPosition
+    ,   matchFoundText: Animation.EaseState Float
     ,   popupHeight: Animation.EaseState Float
     ,   holderID: String
     ,   mouseCmd: Encode.Value -> (Float, Float) -> Cmd msg
@@ -81,17 +81,17 @@ defaultScopeDetail: ScopeDetail
 defaultScopeDetail = {inseparable = True, immutable = False}
 
 animationDuration_: Float
-animationDuration_ = 350
+animationDuration_ = 400
 
 delayDuration_: Float
-delayDuration_ = 150
+delayDuration_ = 100
 
 init: (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg) -> String -> Model msg
 init mouseCmd focusCmd holderID =
     {   history = History.init (Scope defaultScopeDetail [])
     ,   previousInput = Nothing
     ,   suggestions = []
-    ,   matchFound = False
+    ,   matchFoundText = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
     ,   cursor = [0]
     ,   holderID = holderID
     ,   popupHeight = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
@@ -104,7 +104,7 @@ initWithFixed mouseCmd focusCmd holderID elements pos =
     {   history = History.init (Scope {inseparable = True, immutable = True} elements)
     ,   previousInput = Nothing
     ,   suggestions = []
-    ,   matchFound = False
+    ,   matchFoundText = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
     ,   cursor = pos
     ,   holderID = holderID
     ,   popupHeight = Animation.newEaseFloat animationDuration_ 0 |> Animation.withDelay delayDuration_
@@ -113,35 +113,47 @@ initWithFixed mouseCmd focusCmd holderID elements pos =
     }
 
 set: Animation.Tracker -> Scope -> Model msg -> (Model msg, Animation.Tracker)
-set t (Scope detail children) model = let (newHeight, newT) = Animation.setEase t 0 model.popupHeight in
+set t (Scope detail children) model =
+    let
+        (newHeight, newT) = Animation.setEase t 0 model.popupHeight
+        (newText, finalT) = Animation.setEase newT 0 model.matchFoundText
+    in
     (   {   model
         |   history = History.flushAndCommit (Scope detail children) model.history
         ,   previousInput = Nothing
         ,   suggestions = []
-        ,   matchFound = False
+        ,   matchFoundText = newText
         ,   cursor = [List.length children]
         ,   popupHeight = newHeight
         }
-    ,   newT
+    ,   finalT
     )
 clear: Animation.Tracker -> Model msg -> (Model msg, Animation.Tracker)
-clear t model = let (newHeight, newT) = Animation.setEase t 0 model.popupHeight in
+clear t model =
+    let
+        (newHeight, newT) = Animation.setEase t 0 model.popupHeight
+        (newText, finalT) = Animation.setEase newT 0 model.matchFoundText
+    in
     (   {   model
         |   history = History.init (Scope defaultScopeDetail [])
         ,   previousInput = Nothing
         ,   suggestions = []
-        ,   matchFound = False
+        ,   matchFoundText = newText
         ,   cursor = [0]
         ,   popupHeight = newHeight
         }
-    ,   newT
+    ,   finalT
     )
 
 current: Model msg -> Scope
 current model = History.next model.history
 
 advanceTime: Float -> Model msg -> Model msg
-advanceTime time model = {model | popupHeight = Animation.advance time model.popupHeight }
+advanceTime time model =
+    {   model
+    |   popupHeight = Animation.advance time model.popupHeight
+    ,   matchFoundText = Animation.advance time model.matchFoundText
+    }
 
 view: (Event -> msg) -> List (Html.Attribute msg) -> Model msg -> Html.Html msg
 view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ attr)
@@ -156,6 +168,8 @@ view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ at
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
             (toLatex False [] (if Animation.target model.popupHeight == 1 then model.cursor else []) (current model))
+        ,   Html.p [class "mathHint", style "max-height" ( (Animation.current model.matchFoundText |> String.fromFloat) ++ "em")]
+            [Html.text "Press [Space] to insert"]
         ,   Html.div [class "mathPopup", style "max-height" ( (Animation.current model.popupHeight |> String.fromFloat) ++ "em") ]
             [   Html.Keyed.node "div" [class "holder", class "hideScrollbar"] (model.suggestions ++ [("space_", Html.span [class "space"] [])])
                 |> Html.map convert
@@ -283,30 +297,30 @@ update funcProp t event model = case event of
                             , "", Cmd.none
                             )
                     else case char of
-                        '(' -> case insertScopeElement_ (Just 0) (Bracket []) updatedModel of
+                        '(' -> case insertScopeElement_ t (Just 0) (Bracket []) updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
                         ')' -> case exitBracket_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
                             Ok newModel -> ((newModel, t), "", Cmd.none)
-                        '+' -> case insertScopeElement_ Nothing addOp_ updatedModel of
+                        '+' -> case insertScopeElement_ t Nothing addOp_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
-                        '-' -> case insertScopeElement_ Nothing subOp_ updatedModel of
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '-' -> case insertScopeElement_ t Nothing subOp_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
-                        '=' -> case insertScopeElement_ Nothing equalOp_ updatedModel of
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '=' -> case insertScopeElement_ t Nothing equalOp_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
-                        '*' -> case insertScopeElement_ Nothing timesOp_ updatedModel of
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '*' -> case insertScopeElement_ t Nothing timesOp_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
-                        '/' -> case insertScopeElement_ Nothing divideOp_ updatedModel of
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        '/' -> case insertScopeElement_ t Nothing divideOp_ updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
-                        ' ' -> case insertSpace_ funcProp updatedModel of
+                            Ok newModel -> (newModel, "", Cmd.none)
+                        ' ' -> case insertSpace_ funcProp t updatedModel of
                             Err str -> ((updatedModel, t), str, Cmd.none)
-                            Ok newModel -> ((newModel, t), "", Cmd.none)
+                            Ok newModel -> (newModel, "", Cmd.none)
                         _ -> ((updatedModel, t), "'" ++ c ++ "' is not an allowed input", Cmd.none)
             else ((updatedModel, t), "", Cmd.none)
         _ -> ((model, t), "", Cmd.none)
@@ -325,9 +339,9 @@ update funcProp t event model = case event of
         SvgDrag.End _ point -> (setCursor_ point model |> checkMatches_ funcProp t, "", Cmd.none)
         _ -> ((model, t), "", Cmd.none) -- TODO: Start & Move for selecting text
     InsertFixed elem -> case elem of
-        Fixed n -> case insertScopeElement_ n.firstNode elem model of
+        Fixed n -> case insertScopeElement_ t n.firstNode elem model of
             Err str -> ((flushStage_ model, t), str, Cmd.none)
-            Ok finalModel -> ((finalModel |> flushStage_, t), "", model.focusCmd (model.holderID ++ "-input"))
+            Ok (finalModel, newT) -> ((finalModel |> flushStage_, newT), "", model.focusCmd (model.holderID ++ "-input"))
         _ -> ((model, t), "unexpected fixed element to be inserted", Cmd.none)
 
 {- ## Cursor Movement -}
@@ -547,7 +561,8 @@ checkMatches_ funcProp t model = let match word = matchDict_ funcProp |> Dict.fo
     )
     (current model) model.cursor
     |> \res -> case res of
-        Ok (matchFound, _) -> ({model | matchFound = matchFound}, t)
+        Ok (found, _) -> let (newHeight, newT) = Animation.setEase t (if found then 1.5 else 0) model.matchFoundText in
+            ({model | matchFoundText = newHeight}, newT)
         _ -> (model, t)
 
 {- ## Insertion -}
@@ -575,8 +590,9 @@ insertChar_ char model = let (Scope detail children) = current model in
         Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c}
         _ -> Err "Something went wrong"
 
-insertSpace_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Model msg -> Result String (Model msg)
-insertSpace_ funcProp model =
+insertSpace_: Dict.Dict String {a | property: Math.FunctionProperty Rules.FunctionProp} -> Animation.Tracker
+    -> Model msg -> Result String (Model msg, Animation.Tracker)
+insertSpace_ funcProp t model =
     let
         (Scope detail children) = current model
         updateIndex currentIndex index = case index of
@@ -603,7 +619,8 @@ insertSpace_ funcProp model =
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c, matchFound = False}
+        Ok (_, Just (l,c)) -> let (newHeight, newT) = Animation.setEase t 0 model.matchFoundText in
+            Ok ({model | history = History.stage (Scope detail l) model.history, cursor = c, matchFoundText = newHeight}, newT)
         Err NoTextToChange_ -> Err "No text to convert to a symbol"
         _ -> Err "Something went wrong"
 
@@ -633,8 +650,8 @@ getSubstitution_ funcProp str = if String.isEmpty str then Err NoTextToChange_
             in
             Ok (String.dropRight 1 str, fixedFrom_ ("\\" ++ funcName) False Array.empty latex, Just 0)
 
-insertScopeElement_: Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg)
-insertScopeElement_ firstNode element model = let (Scope detail children) = current model in
+insertScopeElement_: Animation.Tracker -> Maybe Int -> ScopeElement -> Model msg -> Result String (Model msg, Animation.Tracker)
+insertScopeElement_ t firstNode element model = let (Scope detail children) = current model in
     traverse
     (\_ input -> Ok
         (   ()
@@ -658,7 +675,8 @@ insertScopeElement_ firstNode element model = let (Scope detail children) = curr
     )
     (Scope detail children) model.cursor
     |> \res -> case res of
-        Ok (_, Just (l,c)) -> Ok {model | history = History.stage (Scope detail l) model.history, cursor = c, matchFound = False}
+        Ok (_, Just (l,c)) -> let (newHeight, newT) = Animation.setEase t 0 model.matchFoundText in
+            Ok ({model | history = History.stage (Scope detail l) model.history, cursor = c, matchFoundText = newHeight}, newT)
         _ -> Err "Something went wrong"
 
 latexArray_: Bool -> Latex.Model DirectionOverride -> Result String (Array.Array (Scope, DirectionOverride))
