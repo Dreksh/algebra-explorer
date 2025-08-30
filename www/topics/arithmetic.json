@@ -85,6 +85,14 @@
         },
         {
             "title": "Operate on both sides",
+            "description": "Move an addition or multiplication to the other side",
+            "matches": [
+                {"from": "a+b=c", "to": ["a=c-b"]},
+                {"from": "a*b=c", "to": ["a=c/b"]}
+            ]
+        },
+        {
+            "title": "Operate on both sides",
             "description": "Modifying the values in the same way on both sides retain the equality",
             "parameters": {
                 "\\f(x)": {

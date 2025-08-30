@@ -10,10 +10,11 @@ function run() {
                 removalTime = undefined;
                 if (node.lastChild.nodeName != "IFRAME") {
                     let queries = JSON.parse(node.dataset.target).map((s) => "eq=" + encodeURIComponent(s))
-                    if (node.dataset.source) queries.push("source=" + encodeURIComponent(node.dataset.source));
                     let frame = document.createElement("iframe");
-                    frame.src = "../index.html?" + queries.join("&");
                     frame.setAttribute("class", "eq"+queries.length);
+
+                    if (node.dataset.source) queries.push("source=" + encodeURIComponent(node.dataset.source));
+                    frame.src = "../index.html?" + queries.join("&");
                     node.insertAdjacentElement("beforeend",frame);
                 }
             } else {
