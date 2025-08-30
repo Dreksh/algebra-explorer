@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0.05 -3 3.7 3">
+<g transform="translate(0.09,-0.96)">
+    <rect width="3.62" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+    <g transform="translate(1.56,0.46)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+        <path d="M0.25 -0.17L0.25 0.17M0.08 0L0.42 0" opacity="1" />
+    </g>
+</g>
+<g transform="translate(0.09,-1.96)">
+    <rect width="0.99" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+    <g transform="translate(0.41,0.54)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+    <path d="M0.08 -0.27C0.1 -0.1 0.1 0 0.1 0.13" opacity="1" />
+    </g>
+</g>
+<g transform="translate(1.26,-1.96)">
+    <rect width="2.45" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+    <g transform="translate(0.98,0.46)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+    <path d="M0.08 -0.17L0.42 0.17M0.08 0.17L.42 -0.17" />
+    </g>
+</g>
+<g transform="translate(1.26,-2.96)">
+    <rect width="1.15" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+    <g transform="translate(0.41,0.54)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+    <path d="M0.03 -0.17C0.17 -0.33 0.3 -0.23 0.13 0C0 0.2 0 0.07 0.1 0.07C0.13 0.07 0.2 0.13 0.3 0.1" />
+    </g>
+</g>
+<g transform="translate(2.59,-2.96)">
+    <rect width="1.12" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+    <g transform="translate(0.41,0.54)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+    <path d="M0.03 -0.27C0.33 -0.33 0.2 -0.17 0.07 -0.13C0.33 -0.2 0.37 0.2 0.03 0.1" />
+    </g>
+</g>
+</svg>
