@@ -323,9 +323,9 @@
       </div>
       <h3>Factorisation</h3>
       <p>
-      Factorisation is a rule where brackets are introduced. Instead of keeping the expression where multiplication
-      goes first, we rewrite it so that addition comes first. Since multiplication has higher priority in BIDMAS/BODMAS/PEMDAS,
-      we insert brackets to say we want addition to happen first.
+      Factorisation is a rule where brackets are introduced.
+      Instead of keeping the expression where multiplication goes first, we rewrite it so that addition comes first.
+      Since multiplication has priority over addition in BIDMAS/BODMAS/PEMDAS, we insert brackets to say we want addition to happen first.
       </p>
       <div class="try-it-out" data-target='["2*3+3*4"]'>
       <p>
@@ -346,7 +346,7 @@
       </p>
       <p>
       Just like there are many spoken languages to describe the world we live in, there are also other languages to describe maths.
-      An example of this is ‘Polish Notation’, where the equation
+      An example of this is ‘Polish Notation’, <!-- TODO: add footnote --> where the equation
       </p>
       <p class="indented">
         <math><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mo>)</mo><mo>&times;</mo><mn>3</mn></math>
@@ -377,11 +377,23 @@
       <h3>Matching patterns</h3>
       <p>
       Maths is sometimes called the “Science of Patterns”, and algebra can be seen as the process of transforming one pattern to another.
+      <p>
+      Consider these two sentences:
+      </p>
+      </p>
+      <blockquote>
+      I have a dead cat and an alive cat.
+      </blockquote>
+      <blockquote>
+      I have two cats, one dead and one alive. <!-- add footnote for shrodingers cat to make this less morbid -->
+      </blockquote>
+      <p>
+      Both have the same meaning despite being written differently.
+      The pattern is that the word <i>cat</i> appears twice, so we can collapse them into <i>two cats</i>.
       </p>
       <p>
-      Take factorisation for example, the requirement for factorising is that the two terms being added
-      must share the same factor (are multiplied by the same number). We don't know what that number is,
-      so let's call that <math><mi class="highlight">a</mi></math>. We can write it as the following pattern:
+      We have factorised the cats! To do the same in algebra we must now make the pattern <b>abstract</b>.
+      Abstracting the cat into <math><mi class="highlight">a</mi></math> lets us write it as the following pattern:
       </p>
       <p class="centered">
       <math><mi class="highlight">a</mi><mi>b</mi><mo>+</mo><mi class="highlight">a</mi><mi>c</mi><mo>=</mo><mi>a</mi><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo></math>
@@ -426,6 +438,11 @@
           </tbody>
         </table>
       </div>
+      </p>
+      <p>
+      In the blocks an abstraction is represented by anything stacked on top of a lower block.
+      As long as an entire stack matches, then the pattern will match.
+      Here are the same examples in block format:
       </p>
       <h3>Topics</h3>
       <p>
