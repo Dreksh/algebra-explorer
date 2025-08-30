@@ -97,7 +97,7 @@ updateCoordinate_ (screenX, screenY) start to =
         orig = start.original
         (menuX, menuY) = (orig.left + 3400/screenX, orig.top + 3400/screenY) -- 1 rem margin + 1 rem size  + extra(x 100)
     in case start.direction of
-        Top -> {orig | left = orig.top + dy |> min (orig.bottom - 2) }
+        Top -> {orig | top = orig.top + dy |> min (orig.bottom - 2) }
         Left -> {orig |left = orig.left + dx |> min (orig.right - 2) }
         Right -> {orig | right = orig.right + dx |> max (orig.left + 2)}
         Bottom -> {orig | bottom = orig.bottom + dy |> max (orig.top + 2)}
