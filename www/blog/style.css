@@ -1,6 +1,7 @@
 :root {
     font-family: "Instrument Sans", sans-serif;
     --nav-color: lightgray;
+    --try-color: #dff8ff;
     --nav-width: 15rem;
 }
 p, li {
@@ -13,6 +14,22 @@ p {
 li {
     margin-top: 0.8rem;
     margin-bottom: 0.8rem;
+}
+.footnote {
+    position: relative;
+}
+.footnote > span {
+    display: none;
+}
+.footnote:hover > span {
+    font-size: 1.2rem;
+    font-style: normal;
+    background-color: var(--try-color);
+    border-radius: 0.7rem;
+    display: block;
+    position: absolute;
+    margin-left: 2rem;
+    padding: 0.5rem;
 }
 math {
     font-size: 1.3rem;
@@ -161,7 +178,6 @@ img {
 }
 table {
     text-align: center;
-    /* margin: 0 auto; */
     border-collapse: collapse;
 }
 table, th, td {
@@ -178,7 +194,7 @@ div.matches {
 div.try-it-out {
     position: relative;
     display: block;
-    background-color: #dff8ff;
+    background-color: var(--try-color);
     border-radius: 1rem;
     width: 90%;
     box-sizing: border-box;
