@@ -155,12 +155,19 @@ img {
 }
 table {
     text-align: center;
-    margin: 0 auto;
+    /* margin: 0 auto; */
     border-collapse: collapse;
 }
 table, th, td {
     border: 1px solid;
     padding: 0.2rem 1rem;
+}
+div.matches {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
 }
 div.try-it-out {
     position: relative;
@@ -169,9 +176,11 @@ div.try-it-out {
     border-radius: 1rem;
     width: 90%;
     box-sizing: border-box;
-    margin: 0 auto;
+    margin-top: 3rem;
+    margin-bottom: 2rem;
+    margin-left: 5%;
     padding: 0.2rem 1rem 1rem 1rem;
-    max-height: 2rem;
+    max-height: 2.3rem;
     overflow-y: hidden;
     transition: max-height 1s;
 }
@@ -217,4 +226,10 @@ iframe.eq2 {
 }
 .social a > img {
     height: 100%;
+}
+#logo {
+    width: 80%;
+    margin-left: 10%;
+    margin-bottom: 2rem;
+    font-size: 26px;
 }

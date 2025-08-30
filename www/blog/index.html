@@ -13,7 +13,17 @@
   <body onLoad="run()">
     <main class="closed">
       <section id="top">
-      <h1><a href="../index.html">Algebra Explorer</a></h1>
+      <!-- <h1><a href="../index.html">Algebra Explorer</a></h1> -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -3 198 27" id="logo">
+          <g transform="translate(0, -1)">
+              <path d="M6 5C8 4 13 4 12 9C12 15 11 18 6 17C1 16 2 7 12 10" fill="none" stroke="#6EA8FF" stroke-width="2.5" stroke-linecap="round"></path>
+          </g>
+          <text y="17" x="14">lgebra</text>
+          <g transform="translate(86, -2.5)">
+              <path d="M13 10L21 12C23 4 13 4 12 12C11 19 17 19 19 18" fill="none" stroke="#FF8888" stroke-width="2.5" stroke-linecap="round"></path>
+          </g>
+          <text y="17" x="109">xplorer</text>
+      </svg>
       <p>
       Algebra Explorer is a tool that lets you freely explore algebra without worrying about making mistakes.
       Our aim is to give students an intuition for:
@@ -239,7 +249,6 @@
       <p>
       These are all examples of pitfalls in standard notation that can be confusing, but hopefully seeing and playing with the blocks can help students learn to avoid them.
       </p>
-      </p>
       <div class="try-it-out" data-target='["4*3/(2*1)","4+3-(2+1)"]'>
         <p>
         Play around with this example to see the inverses working with the original operation.
@@ -267,7 +276,7 @@
       Let’s also look at using a lot of brackets in English:
       </p>
       <blockquote>
-      The (grumpy) cat eats dinner (with a grin (on their (fluffy) face)).
+      The (grumpy) cat eats dinner (with a grin (on their (rather fluffy) face)).
       </blockquote>
       <p>
       The sentence is now too hard to read. Removing brackets reduces clutter, and that is where BODMAS/BIDMAS/PEMDAS comes in.
@@ -278,18 +287,18 @@
         <tr><th>Priority</th><th>Name</th><th>Comments</th></tr>
       </thead>
       <tbody>
-        <tr><td>1st</td><td><b>B</b>rackets / <b>P</b>arenthesis </td><td>Allows for any expression inside of it to go first</td></tr>
+        <tr><td>1st</td><td><b>B</b>rackets / <b>P</b>arenthesis </td><td>Anything inside goes first</td></tr>
         <tr><td>2nd</td><td><b>O</b>rder / <b>I</b>ndices / <b>E</b>xponent </td><td>Repeated multiplcation</td></tr>
         <tr><td>3rd</td><td><b>M</b>ultiplication / <b>D</b>ivision </td><td>Repeated addition (and its inverse)</td></tr>
         <tr><td>4th</td><td><b>A</b>ddition / <b>S</b>ubtraction </td><td>Repeated counting (and its inverse)</td></tr>
       </tbody>
       </table>
       <p>
-      The example above works without any brackets because all the inner brackets contain operations with
-      <i>higher priority</i> than outer ones. The brackets are redundant.
+      The example above works without any brackets because operations inside the brackets have
+      <i>priority</i> over the outer ones. The brackets are redundant.
       </p>
       <p>
-      The only time we need to use brackets is if we want to do perform a lower priority operation before a higher one, for example in
+      The only time we need to use brackets is if we want to perform an operation first, even if it does not have priority, for example in
       <math><mn>(1</mn><mo>+</mo><mn>2)</mn><mo>&times;</mo><mn>(3</mn><mo>+</mo><mn>4)</mn></math>.
       In the blocks format it looks like:
       </p>
@@ -330,10 +339,44 @@
       <section id="exploration-of-patterns">
       <h2>The Science of Patterns</h2>
       <p class="mainQuestion">What is algebra?</p>
+      <h3>Language</h3>
+      <p>
+      On the surface, languages are simply letters on a page or sounds you make to convey information.
+      Maths notation is exactly the same. They represent concepts, but you see numbers and symbols.
+      </p>
+      <p>
+      Just like there are many spoken languages to describe the world we live in, there are also other languages to describe maths.
+      An example of this is ‘Polish Notation’, where the equation
+      </p>
+      <p class="indented">
+        <math><mo>(</mo><mn>1</mn><mo>+</mo><mn>2</mn><mo>)</mo><mo>&times;</mo><mn>3</mn></math>
+      </p>
+      <p>
+      is instead written as
+      </p>
+      <p class="indented">
+        <math><mo>&times;</mo><mo>+</mo><mo>1</mo><mo>2</mo><mo>3</mo></math>
+      </p>
+      <p>
+      This works by placing the operator to the left of its inputs instead of between, which means you not need brackets since an input cannot ‘choose’ between two operators on either side of it.
+      <p>
+      However this is not commonly used because it is not as easy to see patterns in, for example in
+      </p>
+      <p class="indented">
+        <math><mi>a</mi><mo>&times;</mo><mi>b</mi><mo>+</mo><mi>a</mi><mo>&times</mo><mi>c</mi></math>
+      </p>
+      <p>
+      it is easy to see that <math><mi>a</mi></math> is a common factor between two terms, but in Polish Notation it is
+      </p>
+      <p class="indented">
+        <math><mo>+</mo><mo>&times;</mo><mi>a</mi><mspace width="0.4rem"/><mi>b</mi><mo>&times</mo><mi>a</mi><mspace width="0.4rem"/><mi>c</mi></math>
+      </p>
+      <p>
+      where it is harder to see because the <math><mo>+</mo></math> is all the way to the left.
+      </p>
       <h3>Matching patterns</h3>
       <p>
       Maths is sometimes called the “Science of Patterns”, and algebra can be seen as the process of transforming one pattern to another.
-      TODO: example that shows that it doesn't matter what the a is, it can be any block with any number of child blocks on top
       </p>
       <p>
       Take factorisation for example, the requirement for factorising is that the two terms being added
@@ -347,23 +390,42 @@
       Here are some examples that fit the pattern on the left, and some that don't fit:
       </p>
       <p>
-      <table>
-        <tbody>
-          <tr>
+      <div class="matches">
+        <table>
+          <thead>
             <th>Matches</th>
-            <td><math><mn class="highlight">2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn class="highlight">2</mn><mo>&times;</mo><mn>5</mn></math></td>
-            <td><math><mn class="highlight">5</mn><mo>&times;</mo><mo>(</mo><mn>3</mn><mo>+</mo><mn>6</mn><mo>)</mo><mo>+</mo><mn>2</mn><mo>&times;</mo><mn class="highlight">5</mn></math></td>
-            <td><math><mn>3</mn><mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow><mo>+</mo><mn>7</mn>
-              <mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow></math></td>
-          </tr>
-          <tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><math><mn class="highlight">2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn class="highlight">2</mn><mo>&times;</mo><mn>5</mn></math></td>
+            </tr>
+              <td><math><mn class="highlight">5</mn><mo>&times;</mo><mo>(</mo><mn>3</mn><mo>+</mo><mn>6</mn><mo>)</mo><mo>+</mo><mn>2</mn><mo>&times;</mo><mn class="highlight">5</mn></math></td>
+            </tr>
+            <tr>
+              <td><math>
+                <mn>3</mn><mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow><mo>+</mo><mn>7</mn>
+                <mo>&times;</mo><mrow class="highlight"><mo>(</mo><mn>5</mn><mo>+</mo><mn>7</mn><mo>)</mo></mrow>
+              </math></td>
+            </tr>
+          </tbody>
+        </table>
+        <table>
+          <thead>
             <th>Mismatches</th>
-            <td><math><mn>2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn>4</mn><mo>&times;</mo><mn>5</mn></math></td>
-            <td><math><mn>2</mn><mo>+</mo><mn>3</mn><mo>+</mo><mn>4</mn></math></td>
-            <td><math><mn>3</mn><mo>&divide;</mo><mn>2</mn><mo>+</mo><mn>2</mn><mo>*</mo><mn>5</mn></math></td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <tr>
+              <td><math><mn>2</mn><mo>&times;</mo><mn>3</mn><mo>+</mo><mn>4</mn><mo>&times;</mo><mn>5</mn></math></td>
+            </tr>
+            <tr>
+              <td><math><mn>2</mn><mo>+</mo><mn>3</mn><mo>+</mo><mn>4</mn></math></td>
+            </tr>
+            <tr>
+              <td><math><mn>3</mn><mo>&divide;</mo><mn>2</mn><mo>+</mo><mn>2</mn><mo>*</mo><mn>5</mn></math></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       </p>
       <h3>Topics</h3>
       <p>

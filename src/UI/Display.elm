@@ -146,6 +146,10 @@ init setCapture updateQuery svgMouseCmd tracker l =
             }
         ,   newTracker
         )
+        |> (\(m, t) -> case eqList |> List.reverse |> List.head |> Maybe.map Tuple.first of
+            Nothing -> (m, t)
+            Just idx -> updateEqOrder_ t idx m
+            )
 
 createDraggable_: Int -> Int -> Int -> Draggable.Model
 createDraggable_ numVisible index eqNum = let indHeight = 100.0 / toFloat numVisible in
