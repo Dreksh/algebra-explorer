@@ -1,4 +1,4 @@
-module UI.Draggable exposing (Action, Model, Event(..), Size, init, div, update, encode, decoder)
+module UI.Draggable exposing (Action, Model, Event(..), Size, init, div, dragElement, update, encode, decoder)
 
 import Html exposing (span)
 import Html.Attributes exposing (class, id, style)
@@ -48,7 +48,8 @@ type Event =
 
 div: (Event -> msg) -> Model -> List (Html.Attribute msg) -> List (Html.Html msg) -> Html.Html msg
 div converter model attrs children = Html.div (divAttrs_ model)
-    [   span [class "border", class "top", onPointerCapture converter (DragStart Top)] []
+    [   Html.div attrs children
+    ,   span [class "border", class "top", onPointerCapture converter (DragStart Top)] []
     ,   span [class "border", class "left", onPointerCapture converter (DragStart Left)] []
     ,   span [class "border", class "bottom", onPointerCapture converter (DragStart Bottom)] []
     ,   span [class "border", class "right", onPointerCapture converter (DragStart Right) ] []
@@ -56,9 +57,10 @@ div converter model attrs children = Html.div (divAttrs_ model)
     ,   span [class "border", class "bottomLeft", onPointerCapture converter (DragStart BottomLeft)] []
     ,   span [class "border", class "topRight", onPointerCapture converter (DragStart TopRight)] []
     ,   span [class "border", class "bottomRight", onPointerCapture converter (DragStart BottomRight)] []
-    ,   Html.div attrs children
-    ,   Icon.menu [Icon.class "mover", onPointerCapture converter (DragStart Mover)]
     ]
+
+dragElement: (Event -> msg) -> Html.Html msg
+dragElement converter = Icon.drag [Icon.class "mover", onPointerCapture converter (DragStart Mover)]
 
 divAttrs_: Model -> List (Html.Attribute msg)
 divAttrs_ model =
@@ -67,7 +69,6 @@ divAttrs_ model =
     ,   style "width" (String.fromFloat (model.coordinates.right - model.coordinates.left) ++ "dvw")
     ,   style "height" (String.fromFloat (model.coordinates.bottom - model.coordinates.top) ++ "dvh")
     ,   style "position" "absolute"
-    ,   style "padding" "1rem 0.2rem 0.2rem 0.2rem"
     ,   id model.id
     ,   class "draggable"
     ]
@@ -95,7 +96,8 @@ updateCoordinate_ (screenX, screenY) start to =
         (diffX, diffY) = diff start.from to
         (dx, dy) = (diffX * 100 / screenX, diffY * 100 / screenY)
         orig = start.original
-        (menuX, menuY) = (orig.left + 3400/screenX, orig.top + 3400/screenY) -- 1 rem margin + 1 rem size  + extra(x 100)
+        (menuRight, menuTop) = (orig.right - 1600/screenX, orig.top + 1600/screenY) -- 0.5 rem margin
+        (menuLeft, menuBot) = (orig.right - 6400/screenX, orig.top + 9600/screenY) -- 2 rem width + 3 rem height
     in case start.direction of
         Top -> {orig | top = orig.top + dy |> min (orig.bottom - 2) }
         Left -> {orig |left = orig.left + dx |> min (orig.right - 2) }
@@ -105,8 +107,8 @@ updateCoordinate_ (screenX, screenY) start to =
         TopRight -> {orig | right = orig.right + dx |> max (orig.left + 2), top = orig.top + dy |> min (orig.bottom - 2)}
         BottomLeft -> {orig | left = orig.left + dx |> min (orig.right - 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
         BottomRight -> {orig | right = orig.right + dx |> max (orig.left + 2), bottom = orig.bottom + dy |> max (orig.top + 2) }
-        Mover -> let newDy = dy |> max (-orig.top) |> min (100 - menuY) in
-            let newDx = dx |> max (-orig.left)  |> min (100 - menuX) in
+        Mover -> let newDy = dy |> max (-menuTop) |> min (100 - menuBot) in
+            let newDx = dx |> max (-menuLeft)  |> min (100 - menuRight) in
             {left = orig.left + newDx, right = orig.right + newDx, top = orig.top + newDy, bottom = orig.bottom + newDy }
 
 diff: Point -> Point -> Point

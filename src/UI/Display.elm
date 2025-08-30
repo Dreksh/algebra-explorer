@@ -672,7 +672,8 @@ views converter actionConvert model =
             (b,m) = entry.ui
         in
             (   dModel.id
-            ,   Draggable.div (DraggableEvent eqNum >> converter) dModel [class "equationHolder"]
+            ,   let dragConvert = DraggableEvent eqNum >> converter in
+                Draggable.div dragConvert dModel [class "equationHolder"]
                 [   div [class "equation", Svg.Attributes.id ("equation-view-" ++ String.fromInt eqNum)]
                     [   MathIcon.view (\id -> List.filterMap identity
                             [   HtmlEvent.onClick (Select eqNum id) |> Just
@@ -683,24 +684,23 @@ views converter actionConvert model =
                     ,   Bricks.view (brickAttr_ highlight staging grab eqNum) b
                         |> Html.map converter
                     ]
-                ,   div [class "historyHolder"]
+                ,   div [class "controls"]
+                    [   Draggable.dragElement dragConvert
+                    ,   Icon.history [Icon.class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)]
+                    ]
+                ,   div (class "historyHolder" :: if entry.showHistory then [] else [class "closed"])
                     [   Icon.verticalLine []
-                    ,   if entry.showHistory
-                        then div []
-                            [   a [class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Close"]
-                            ,   div [class "history"]
-                                (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
-                                    case List.drop middle children |> List.head of
-                                        Nothing -> [historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
-                                        Just after -> historyEntry_ converter current eqNum index (MathIcon.static [] latex)
-                                            ::  (
-                                                List.map (div []) (List.take middle children)
-                                                ++ after
-                                            )
-                                    ) entry.history
-                                )
-                            ]
-                        else a [class "historyButton", class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)] [Html.text "Show History"]
+                    ,   div [class "history"]
+                        (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
+                            case List.drop middle children |> List.head of
+                                Nothing -> [historyEntry_ converter current eqNum index (MathIcon.static [] latex)]
+                                Just after -> historyEntry_ converter current eqNum index (MathIcon.static [] latex)
+                                    ::  (
+                                        List.map (div []) (List.take middle children)
+                                        ++ after
+                                    )
+                            ) entry.history
+                        )
                     ]
                 ,   Html.div [class "actionSubtoolbar"]
                     [   Html.div

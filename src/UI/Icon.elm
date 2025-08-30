@@ -1,5 +1,5 @@
 module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, left, right,
-    verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless, fullLogo)
+    verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless, drag)
 
 import Html
 import Svg exposing (circle, defs, g, line, path, rect, svg)
@@ -68,14 +68,21 @@ right attr = svg (viewBox "0 0 24 24" :: attr)
     ]
 
 verticalLine: List (Html.Attribute msg) -> Html.Html msg
-verticalLine attr = svg (width "12" :: attr)
-    [   line [x1 "6", x2 "6", y1 "20%", y2 "80%", stroke "currentColor", strokeWidth "4"] []
+verticalLine attr = svg (width "10" :: attr)
+    [   line [x1 "6", x2 "6", y1 "0%", y2 "100%", stroke "currentColor", strokeWidth "8"] []
     ]
 
 history: List (Html.Attribute msg) -> Html.Html msg
 history attr = svg (viewBox "0 0 24 24" :: attr)
-    [   circle [cx "12", cy "12", r "11", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   path [d "M6 8.5L12 12L21.4 6", stroke "currentColor", strokeWidth "1", fill "none"] []
+    [   path
+        [   d "M13 23A10 10 0 1 0 3 13M1 12L3 13L5 12M12 6L12 15L17 12"
+        ,   stroke "currentColor"
+        ,   strokeLinecap "round"
+        ,   strokeLinejoin "round"
+        ,   strokeWidth "2"
+        ,   fill "none"
+        ]
+        []
     ]
 
 idea: List (Html.Attribute msg) -> Html.Html msg
@@ -125,20 +132,14 @@ logoBorderless attr = svg (viewBox "2 3 20.3 17" :: attr)
     , path [d "M6 5C8 4 13 4 12 9C12 15 11 18 6 17C1 16 2 7 12 10", fill "none", stroke "#6EA8FF", strokeWidth "2", strokeLinecap "round"] []
     ]
 
-fullLogo: List (Html.Attribute msg) -> Html.Html msg
-fullLogo attr = svg (viewBox "0 -3 198 27" :: attr)
-    [   Svg.style []
-        [   Svg.text """
-            @import "https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap";
-            text {font-family: "Instrument Sans", sans-serif; stroke: none; fill: currentColor; font-size: 20pt; }
-            """
+drag: List (Html.Attribute msg) -> Html.Html msg
+drag attr = svg (viewBox "0 0 5 7" :: attr)
+    [   g [fill "currentColor", stroke "none"]
+        [   circle [cx "1.5", cy "1.5", r "0.5"] []
+        ,   circle [cx "3.5", cy "1.5", r "0.5"] []
+        ,   circle [cx "1.5", cy "3.5", r "0.5"] []
+        ,   circle [cx "3.5", cy "3.5", r "0.5"] []
+        ,   circle [cx "1.5", cy "5.5", r "0.5"] []
+        ,   circle [cx "3.5", cy "5.5", r "0.5"] []
         ]
-    ,   Svg.g [transform "translate(0, -1)"]
-        [   path [d "M6 5C8 4 13 4 12 9C12 15 11 18 6 17C1 16 2 7 12 10", fill "none", stroke "#6EA8FF", strokeWidth "2", strokeLinecap "round"] []
-        ]
-    ,   Svg.text_ [y "17", x "14"] [Svg.text "lgebra"]
-    ,   Svg.g [transform "translate(88, -2)"]
-        [   path [d "M13 10L21 12C23 4 13 4 12 12C11 19 17 19 19 18", fill "none", stroke "#FF8888", strokeWidth "2", strokeLinecap "round"] []
-        ]
-    ,   Svg.text_ [y "17", x "109"] [Svg.text "xplorer"]
     ]
