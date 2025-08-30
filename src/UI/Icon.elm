@@ -2,7 +2,7 @@ module UI.Icon exposing (class, download, menu, tick, cancel, shown, hidden, lef
     verticalLine, history, idea, bin, undo, redo, popup, close, logoBorderless, fullLogo)
 
 import Html
-import Svg exposing (circle, defs, line, path, rect, svg)
+import Svg exposing (circle, defs, g, line, path, rect, svg)
 import Svg.Attributes exposing (cx, cy, d, fill, height, id, mask, r, stroke, strokeLinecap, strokeLinejoin, strokeWidth, transform, viewBox, width, x, y, x1, x2, y1, y2)
 
 -- SVG's "class" returns "class", while Html's "class" returns "className"
@@ -80,11 +80,15 @@ history attr = svg (viewBox "0 0 24 24" :: attr)
 
 idea: List (Html.Attribute msg) -> Html.Html msg
 idea attr = svg (viewBox "0 0 24 24" :: attr)
-    [   path [d "M2 22L5 17V5A3 3 0 0 1 8 2H20A3 3 0 0 1 23 5V17A3 3 0 0 1 20 20H8Z", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   circle [cx "14", cy "9", r "5", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   path [d "M11 13V17A5 5 0 0 0 17 17V13", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   path [d "M11 15A5 5 0 0 0 16 15.5", stroke "currentColor", strokeWidth "1", fill "none"] []
-    ,   path [d "M13 14A8 8 0 0 0 12 10A8 8 0 0 0 16 10A8 8 0 0 0 15 14", stroke "currentColor", strokeWidth "1", fill "none"] []
+    [   g [stroke "currentColor", fill "none", strokeWidth "1.5", strokeLinecap "round", strokeLinejoin "round"]
+        [   path [d "M10 20L10 17A6 6 0 1 1 14 17L14 20Z"] []
+        ,   line [x1 "10", y1 "23", x2 "14", y2 "23"] []
+        ,   line [x1 "1", y1 "19", x2 "4", y2 "17"] []
+        ,   line [x1 "3", y1 "3", x2 "5", y2 "5"] []
+        ,   line [x1 "12", y1 "1", x2 "12", y2 "2"] []
+        ,   line [x1 "22", y1 "6", x2 "20", y2 "7"] []
+        ,   line [x1 "21", y1 "20", x2 "19", y2 "18"] []
+        ]
     ]
 
 bin: List (Html.Attribute msg) -> Html.Html msg

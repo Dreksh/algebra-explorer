@@ -175,7 +175,6 @@ span.space {
     flex-grow: 0;
     width: 90%;
     margin: 0 auto;
-    margin-bottom: calc(1em - 1rem);
     border-radius: var(--thickness);
     background-color: var(--color-black);
 }
@@ -203,10 +202,14 @@ span.space {
     position: relative;
     text-wrap: nowrap;
     height: 1em;
+    margin: 1rem 0;
     align-content: center;
 }
 .suggestions > ul svg {
     height: 1em;
+}
+.suggestions > ul a {
+    margin-left: 1rem;
 }
 .textbar .mathInput {
     flex-grow: 10;
