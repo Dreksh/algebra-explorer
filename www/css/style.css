@@ -17,13 +17,11 @@
     --color-submit: green;
     --color-text: black;
     --color-textbox: white;
-    --color-textbox-faded: rgb(255, 255, 255, 0.4);
     --color-grab: rgb(230,230,230);
     --color-action: rgb(240,240,240);
     --color-selected: lightgreen;
     --color-selected-text: rgb(150,150,150);
     --color-toolbar: rgb(180,180,180);
-    --color-toolbar-faded: rgb(180,180,180, 0);
     --thickness: 3.5pt;
 }
 html, body {
@@ -130,7 +128,7 @@ span.space {
     align-items: center;
     justify-items: center;
     border: var(--color-black) var(--thickness) solid;
-    background-color: var(--color-textbox);
+    background-color: var(--color-window);
     border-radius: 2rem;
 }
 .textbar {
@@ -198,6 +196,7 @@ span.space {
     padding-top: 0;
     margin: 0;
     box-sizing: border-box;
+    color: var(--color-branch-saturated);
 }
 .suggestions ul > li {
     position: relative;
@@ -262,6 +261,7 @@ span.space {
     font-size: 0.8em;
     min-width: 0;
     display: block;
+    position: relative;
     overflow: hidden;
 }
 .mathPopup > .holder {
@@ -280,8 +280,12 @@ span.space {
     flex-grow: 0;
     width: 10%;
 }
-.mathPopup .scrollMask {
-    background-image: linear-gradient(to right, var(--color-textbox-faded), var(--color-textbox) 80%);
+.textbar .mathPopup .scrollMask {
+    background-image: linear-gradient(to right, var(--color-window), transparent 10%, transparent 90%, var(--color-window));
+    height: 1em;
+}
+dialog .mathPopup .scrollMask {
+    background-image: linear-gradient(to right, var(--color-textbox), transparent 10%, transparent 90%, var(--color-textbox));
     height: 1em;
 }
 .mathPopup svg {
@@ -572,7 +576,7 @@ span.centered {
     flex-direction: column;
 }
 .actionToolbar .scrollMask, .actionSubtoolbar .scrollMask {
-    background-image: linear-gradient(to right, rgba(0,0,0,0), var(--color-window) 80%);
+    background-image: linear-gradient(to right, transparent 90%, var(--color-window));
 }
 .actions {
     display: flex;
@@ -593,7 +597,7 @@ span.centered {
     position: absolute;
     right: 0;
     top: 0;
-    width: 10%;
+    width: 100%;
     height: 100%;
     pointer-events: none;
 }

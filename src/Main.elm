@@ -41,6 +41,7 @@ import UI.Notification as Notification
 import UI.SvgDrag as SvgDrag
 import Components.Rules as Rules
 import UI.Actions as Actions
+import UI.Dialog as Dialog
 
 -- Overall Structure of the app: it's a document
 
@@ -343,6 +344,7 @@ update event core = let model = core.swappable in
                     }
                 ,   animation = Animation.updateTracker millis core.animation
                 ,   input = InputWithHistory.advance millis core.input
+                ,   dialog = Maybe.map (\(a,b) -> (Dialog.advanceTime millis a, b)) core.dialog
                 }
             , Cmd.none
             )
