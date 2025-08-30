@@ -1,7 +1,8 @@
 :root {
     font-family: "Instrument Sans", sans-serif;
-    --nav-color: lightgray;
-    --try-color: #dff8ff;
+    --try-color: #DFF8FF;
+    --link-color: #0761e8;
+    --link-hover-color: #6EA8FF;
     --nav-width: 15rem;
 }
 p, li {
@@ -95,7 +96,7 @@ nav {
     display: flex;
     height: 100dvh;
     flex-direction: column;
-    background-color: var(--nav-color);
+    background-color: var(--try-color);
     font-size: 1.5rem;
     transition: ease-out 0.5s max-width;
 }
@@ -114,11 +115,12 @@ nav a {
     height: 2rem;
     width: 2rem;
     mask: url(img/menu.svg);
-    background-color: blue;
+    background-color: var(--link-hover-color);
+    /* background-color: black; */
     transition: ease-out 0.5s left;
 }
 #menu:hover {
-    background-color: lightblue;
+    background-color: var(--link-color);
 }
 #menu.closed {
     left: 1rem;
@@ -129,11 +131,11 @@ h1 {
     text-align: center;
 }
 a {
-    color: blue;
+    color: var(--link-color);
     text-decoration: none;
 }
 a:hover {
-    color: lightblue;
+    color: var(--link-hover-color);
     cursor: pointer;
 }
 main {
