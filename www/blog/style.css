@@ -45,6 +45,32 @@ div.blocks-video {
     padding-top: 1.2rem;
     padding-bottom: 1.2rem;
 }
+div.blocks-gallery-wrapper {
+    position: relative;
+    width: 100%;
+    margin-top: 4rem;
+    margin-bottom: 5rem;
+}
+div.blocks-gallery {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: scroll;
+    width: 100%;
+    gap: 2rem;
+}
+div.scrollmask {
+    position: absolute;
+    background-image: linear-gradient(to right, transparent, white);
+    right: 0;
+    width: 5rem;
+    top: 0;
+    bottom: 0;
+}
+div.scrollend {
+    min-width: 3rem;
+    height: 100%;
+}
 div.gallery {
     display: flex;
     flex-direction: row;
