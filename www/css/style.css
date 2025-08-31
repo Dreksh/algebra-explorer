@@ -359,6 +359,7 @@ dialog .mathPopup .scrollMask {
 .menuTitle > h1 {
     text-decoration: underline;
     text-wrap: nowrap;
+    font-weight: normal;
 }
 .menuTitle > h1::before {
     content: "";
@@ -689,7 +690,7 @@ span.centered {
     fill-opacity: 0.75;
 }
 .brick.commutable > .brickRect {
-    /* cursor: move; */
+    cursor: move;
 }
 .mathStroke {
     stroke: currentColor;
