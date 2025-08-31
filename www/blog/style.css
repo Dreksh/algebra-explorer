@@ -227,16 +227,18 @@ div.try-it-out {
     padding: 0.2rem 1rem 1rem 1rem;
     max-height: 2.3rem;
     overflow-y: hidden;
-    transition: max-height 1s;
+    transition: max-height 1s, width 1s, margin-left 1s;
 }
 .try-it-out h3 {
     font-size: 1.5rem;
     margin: 0;
     vertical-align: middle;
 }
-.try-it-out.expand {
+div.try-it-out.expand {
     max-height: 120dvh;
-    transition: max-height 1s;
+    width: calc(min(90dvw, 150%));
+    margin-left: calc(max(50% - 45dvw, -25%));
+    transition: max-height 1s, width 1s, margin-left 1s;
 }
 iframe {
     width: 100%;
