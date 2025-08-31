@@ -727,6 +727,7 @@ span.centered {
     max-width: 100%;
     margin: 0.5rem;
     margin-left: auto;
+    overflow: scroll;
     transition: linear 0.5s max-width;
 }
 .historyHolder.closed {

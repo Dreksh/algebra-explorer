@@ -688,7 +688,7 @@ views converter actionConvert model =
                     [   Draggable.dragElement dragConvert
                     ,   Icon.history [Icon.class "clickable", HtmlEvent.onClick (ToggleHistory eqNum |> converter)]
                     ]
-                ,   div (class "historyHolder" :: if entry.showHistory then [] else [class "closed"])
+                ,   div ([class "historyHolder", class "hideScrollbar"] ++ if entry.showHistory then [] else [class "closed"])
                     [   Icon.verticalLine []
                     ,   div [class "history", class "hideScrollbar"]
                         (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
