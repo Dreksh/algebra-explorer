@@ -264,7 +264,7 @@
       </div>
       </section>
 
-      <section id="notation">
+      <section id="brackets">
       <h2>Brackets</h2>
       <p class="mainQuestion">Why do we need brackets?</p>
       <h3>BODMAS/BIDMAS/PEMDAS</h3>
@@ -342,7 +342,7 @@
       </div>
       </section>
 
-      <section id="exploration-of-patterns">
+      <section id="science-of-patterns">
       <h2>The Science of Patterns</h2>
       <p class="mainQuestion">What is algebra?</p>
       <h3>Language</h3>
@@ -401,7 +401,7 @@
       </p>
       <p>
       We have factorised the cats! To do the same in algebra we must now make the pattern <b>abstract</b>.
-      Abstracting the cat into <math><mi class="highlight">a</mi></math> lets us write it as the following pattern:
+      Abstracting the cat into <math><mi class="highlight">a</mi></math> lets us write it as the following <b>rule</b>:
       </p>
       <p class="centered">
       <math><mi class="highlight">a</mi><mi>b</mi><mo>+</mo><mi class="highlight">a</mi><mi>c</mi><mo>=</mo><mi>a</mi><mo>(</mo><mi>b</mi><mo>+</mo><mi>c</mi><mo>)</mo></math>
@@ -505,9 +505,17 @@
           Note that you will need to reorder and group/ungroup blocks to get rules to match correctly.
         </p>
       </div>
+      <div class="try-it-out" data-target='["3x+2y=11","2x-5y=20"]'>
+        <p>
+          Try solving these simultaneous equations!
+        </p>
+        <p>
+          Note that once an equation is ready, the ‘Substitution’ rule will be available to inject it into the other.
+        </p>
+      </div>
       <div class="try-it-out" data-target='["x*x-3*x+2=0"]'>
         <p>
-          Try solving this even more difficult equation!
+          Try solving this quadratic equation!
         </p>
         <p>
           Note that once the equation is factorised correctly,
@@ -523,55 +531,58 @@
       <h3>Topics</h3>
       <p>
       This project is designed to be as flexible as possible, and apart from the main operations in
-      BODMAS/BIDMAS/PEMDAS, they are all defined by our custom topic files. They specify a list of
-      functions and constants to include, and then a bunch of actions that try to find matches
-      to then transform it when the action is selected.
+      BODMAS/BIDMAS/PEMDAS, they are all defined by custom topic files. These specify a list of
+      functions and constants to include, along with a collection of rules with patterns to match and transform.
       </p>
       <p>
-      All files can be found on <a href="https://github.com/Dreksh/algebra-explorer/tree/main/www/topics">our Github</a>.
-      You may notice a lot of backslashes, and that's because our plain-text-input relies on that for functions
-      as well as long variable names.
-      </p>
-      <p>
-      You can also make your custom topics to load into the webpage. You can find it in the menu.
+      Here is a gallery of rules from topics that can already be loaded:
       </p>
       <div class="blocks-gallery-wrapper">
         <div class="blocks-gallery">
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/trig.webm" type="video/webm"/></video>
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/fractions.webm" type="video/webm"/></video>
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/power.webm" type="video/webm"/></video>
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/log.webm" type="video/webm"/></video>
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/complex.webm" type="video/webm"/></video>
-          <video style="height: 20rem" playsinline loop autoplay muted><source src="img/calculus.webm" type="video/webm"/></video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/trig.webm" type="video/webm"/>Trig</video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/fractions.webm" type="video/webm"/></video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/power.webm" type="video/webm"/></video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/log.webm" type="video/webm"/></video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/complex.webm" type="video/webm"/></video>
+          <video style="height: 18rem" playsinline loop autoplay muted><source src="img/calculus.webm" type="video/webm"/></video>
           <div class="scrollend"></div>
         </div>
         <div class="scrollmask"></div>
       </div>
+      <p>
+      All topic files can be found on <a href="https://github.com/Dreksh/algebra-explorer/tree/main/www/topics">our Github</a>.
+      You may notice a lot of backslashes, and that’s because we rely on that for functions as well as long variable names.
+      </p>
+      <p>
+      You can also make your own custom topics if you follow the same file format! These can be uploaded via the menu from a local file or url.
+      </p>
       <h3>Rock, Paper, Scissors</h3>
-      <p>Rock, Paper, Scissors is a simple example with 3 rules (ignoring the draws)</p>
-      <p class="indented">Rock beats Scissors</p>
-      <p class="indented">Scissors beats Paper</p>
-      <p class="indented">Paper beats Rock</p>
-      <p>With these rules, we can determine the winner of a competition. See it in action with the “Try it out”</p>
+      <p>
+      Rock, Paper, Scissors is a simple example topic with 3 rules (ignoring draws)
+      </p>
+      <ul>
+        <li>Rock beats Scissors</p>
+        <li>Scissors beats Paper</p>
+        <li>Paper beats Rock</p>
+      </ul>
+      <p>
+      This is a fun illustrative example because inputs can be reordered but can <b>not</b> be grouped. In order words, Rock, Paper, Scissors is an example of a function that is commutative but not associative.
+      </p>
       <div class="try-it-out" data-target='["\\vs(\\rock,\\vs(\\scissors,\\paper))"]' data-source="blog/rps-source.json">
         <p>
-        This is special because it doesn’t matter if they’re on the left or right,
-        the result will be the same (it is commutative). But! switching the matches with different combinations
-        will not come up with the same result (it is not associative).
         </p>
         <p>
         Check out the rules that are used <a href="../topics/rps.json">here</a>.
         </p>
       </div>
       <p>
-      We’ve covered the basics of this tool, but we’ve also added a bit more topics for you to play around with.
-      You can try:
+      <h3>Explore</h3>
+      <p>
+      We highly encourage you to explore the tool yourself to see what you can discover. You can use this link to open the tool in full screen.
       </p>
-      <ul>
-        <li>Solving Quadratic Equations, with “Find Zeros”</li>
-        <li>Solving Simultaneous Equations, with “Substitution”</li>
-      </ul>
-      <iframe class="eq2" src="../index.html"></iframe>
+      <div class="index-link">
+        <h3><a href="../index.html">Try it out! (Click to open)</a></h3>
+      </div>
       </section>
 
       <section id="about-us">
@@ -609,8 +620,7 @@
           <p>for helping us design the interface!</p>
         </div>
         <p>
-        If you have any feature requests, or any issues with the tool, do create
-        an issue using the link:
+        If you have any feature requests or problems with the tool, do create an issue using the link:
         </p>
         <p class="indented">
           <a href="https://github.com/Dreksh/algebra-explorer/issues">https://github.com/Dreksh/algebra-explorer/issues</a>
@@ -623,8 +633,8 @@
       <a href="#top">Top</a>
       <a href="#commutativity-and-associativity">Commutativity and Associativity</a>
       <a href="#inverses">Inverses</a>
-      <a href="#notation">Notation</a>
-      <a href="#exploration-of-patterns">Exploration of Patterns</a>
+      <a href="#brackets">Brackets</a>
+      <a href="#science-of-patterns">The Science of Patterns</a>
       <a href="#extensions">Extensions</a>
       <a href="#about-us">About Us</a>
     </nav>
