@@ -266,8 +266,10 @@ span.space {
 .mathPopup > .holder {
     display: flex;
     flex-direction: row;
-    width: 100%;
+    width: calc(100% - 2px);  /* this prevents the .scrollMask from showing 1 pixel on each end */
     gap: 0.5rem;
+    margin-left: 1px;
+    margin-right: 1px;
     align-items: center;
     justify-items: center;
     overflow-x: scroll;
