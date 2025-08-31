@@ -2,22 +2,6 @@
 
 Build status: ![Workflow Status](https://github.com/jxz12/math/actions/workflows/main.yml/badge.svg)
 
-## TODO
-
-- [ ] Animate equations as rules are applied (or when selecting something in the past)
-    - [ ] Add animation bubble when hovering over applicable rules
-- [ ] Change input method to match the display of equations, rather than introducing our 'new' text-language (i.e. using '\sin()' to represent sin)
-- [ ] Work on creating tutorials/lessons
-- [ ] Expand topics covered
-
-- [ ] Enforce that the numbers remain as integers (i.e. do not evaluate decimals / surds). This is to help in non-calculator papers/prevent rounding errors in intermediate steps.
-- [ ] Should we make this mobile-friendly?
-- [ ] Maybe alter the size of boxes / text depending on what is selected? (helps with focus)
-
-- [ ] Add constraints in rule application?
-    - [ ] inequality multiplication to only multiply by positive real number, so the inequality sign flip doesn't happen
-    - [ ] applying pythagorus's theorem only when the question contains right-angle triangles
-
 ## Context
 
 After tutoring for a year, I've identified some common mistakes that were seen among the students.
