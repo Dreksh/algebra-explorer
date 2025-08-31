@@ -235,7 +235,7 @@ div.try-it-out {
     vertical-align: middle;
 }
 div.try-it-out.expand {
-    max-height: 120dvh;
+    max-height: 150dvh;
     width: calc(min(90dvw, 150%));
     margin-left: calc(max(50% - 45dvw, -25%));
     transition: max-height 1s, width 1s, margin-left 1s;
@@ -250,7 +250,7 @@ iframe.eq1 {
     height: 50dvh;
 }
 iframe.eq2 {
-    height: 90dvh;
+    height: 95dvh;
 }
 #groupPicture {
     width: 90%;
