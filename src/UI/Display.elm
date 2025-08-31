@@ -690,7 +690,7 @@ views converter actionConvert model =
                     ]
                 ,   div (class "historyHolder" :: if entry.showHistory then [] else [class "closed"])
                     [   Icon.verticalLine []
-                    ,   div [class "history"]
+                    ,   div [class "history", class "hideScrollbar"]
                         (   History.serialize (\current index (_,latex) children -> let middle = max 0 (List.length children - 1) in
                             case List.drop middle children |> List.head of
                                 Nothing -> [historyEntry_ converter current eqNum index (MathIcon.static [] latex)]

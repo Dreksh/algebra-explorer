@@ -553,7 +553,6 @@ span.centered {
     flex-direction: column;
     flex-grow: 1;
     flex-shrink: 1;
-    overflow: scroll;
     justify-content: space-evenly;
     gap: 1rem;
 }
@@ -724,7 +723,6 @@ span.centered {
     grid-row: 2;
     min-width: 0rem;
     max-width: 100%;
-    overflow: scroll;
     margin: 0.5rem;
     margin-left: auto;
     transition: linear 0.5s max-width;
