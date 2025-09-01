@@ -82,7 +82,7 @@ init: Bool -> (Encode.Value -> (Float, Float) -> Cmd msg) -> (String -> Cmd msg)
 init show mouseCmd focusCmd =
     {   options = defaultOptions_
     ,   openCount = if show then 1 else 0
-    ,   input = Input.init mouseCmd focusCmd  "mainInput"
+    ,   input = Input.init mouseCmd focusCmd "mainInput"
     ,   current = if show
             then Just
                 (   0
