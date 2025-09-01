@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0.05 -2 2.4 2" class="bricks">
+<g transform="translate(0.09,-0.96)">
+    <rect width="2.32" height="0.92" stroke-width="0.08" stroke="currentColor" fill="white" rx="0.2" />
+   <g transform="translate(0.91,0.46)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+   <path d="M0.25 -0.17L0.25 0.17M0.08 0L0.42 0" />
+   </g>
+</g>
+<g transform="translate(0.09,-1.96)">
+   <rect width="0.99" height="0.92" stroke-width="0.08" fill="white" stroke="currentColor" rx="0.2" />
+   <g transform="translate(0.41,0.54)" stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+   <path d="M0.08 -0.27C0.1 -0.1 0.1 0 0.1 0.13" />
+   </g>
+</g>
+<g transform="translate(1.26,-1.96)">
+   <rect width="1.15" height="0.92" stroke-width="0.08" fill="white" stroke="currentColor" rx="0.2" />
+   <g transform="translate(0.41,0.54)"  stroke-width="0.06" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor">
+   <path d="M0.03 -0.17C0.17 -0.33 0.3 -0.23 0.13 0C0 0.2 0 0.07 0.1 0.07C0.13 0.07 0.2 0.13 0.3 0.1" />
+   </g>
+</g>
+</svg>
