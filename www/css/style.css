@@ -152,11 +152,13 @@ span.space {
 .textbar > svg {
     flex-grow: 1;
     flex-shrink: 1;
-    max-height: 1em;
-    width: 1em;
+    max-height: 1.5em;
+    width: 1.5em;
 }
 .textbar .submit {
     border-radius: 1rem;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
     flex-grow: 1;
     flex-shrink: 1;
     font-size: 2rem;
@@ -164,6 +166,10 @@ span.space {
     border: var(--thickness) var(--color-black) solid;
     color: var(--color-black);
     background-color: var(--color-grey);
+    cursor: pointer;
+}
+.textbar .submit:hover {
+    color: var(--color-hovered);
 }
 .inputSeparator {
     display: block;
@@ -233,6 +239,12 @@ span.space {
     height: 1em;
     width: 100%;
     caret-color: transparent;
+}
+.mathInput > input::placeholder {
+    display: flex;
+    font-size: 0.4em;
+    transform: translateY(-0.5em);
+    color: lightgrey;
 }
 .mathInput > svg {
     display: block;

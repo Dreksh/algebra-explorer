@@ -4,7 +4,7 @@ module UI.Input exposing (Model, Event(..), Scope(..), ScopeElement(..), default
 import Array
 import Dict
 import Html
-import Html.Attributes exposing (class, id, name, style, type_)
+import Html.Attributes exposing (class, id, name, style, type_, placeholder)
 import Html.Keyed
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -164,6 +164,7 @@ view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ at
             ,   HtmlEvent.onFocus (convert ShowCursor)
             ,   HtmlEvent.onBlur (convert HideCursor)
             ,   HtmlEvent.onPointerCapture convert MouseDown
+            ,   placeholder (if showPlaceholder_ model then "Type an equation..." else "")
             ]
             []
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
@@ -228,6 +229,11 @@ toLatex border parentPos pos (Scope _ children) =
         (False, _) -> model
         (True, Just True) -> [Latex.Border {state=parentPos, style=Nothing} (model ++ [Latex.Caret {state=parentPos, style=Nothing}])]
         (True, _) -> [Latex.Border {state=parentPos,style=Nothing} model]
+
+showPlaceholder_: Model msg -> Bool
+showPlaceholder_ model =
+    let (Scope _ children) = current model
+    in List.isEmpty children && Animation.target model.popupHeight == 0
 
 {- ## Updates -}
 
