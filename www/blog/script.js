@@ -10,18 +10,25 @@ function run() {
                 removalTime = undefined;
                 if (node.lastChild.nodeName != "IFRAME") {
                     let queries = JSON.parse(node.dataset.target).map((s) => "eq=" + encodeURIComponent(s))
+
+                    let warning = document.createElement("p");
+                    warning.setAttribute("class", "mobile-warning")
+                    warning.textContent += "(Not currently compatible with mobile devices)"
+
                     let frame = document.createElement("iframe");
                     frame.setAttribute("class", "eq"+queries.length);
 
                     if (node.dataset.source) queries.push("source=" + encodeURIComponent(node.dataset.source));
                     frame.src = "../index.html?" + queries.join("&");
-                    node.insertAdjacentElement("beforeend",frame);
+                    node.insertAdjacentElement("beforeend", frame);
+                    node.insertAdjacentElement("beforeend", warning);
                 }
             } else {
                 node.className = "try-it-out"
                 removalTime = Date.now() + 1000;
                 setTimeout(() => {
                     if (removalTime && removalTime < Date.now()) {
+                        node.removeChild(node.lastChild);
                         node.removeChild(node.lastChild);
                     }
                 },1200);

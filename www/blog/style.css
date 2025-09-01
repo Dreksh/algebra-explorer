@@ -316,3 +316,9 @@ iframe.eq2 {
 .popup {
     height: 1rem;
 }
+.mobile-warning {
+    text-align: center;
+    color: var(--link-hover-color);
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+}
