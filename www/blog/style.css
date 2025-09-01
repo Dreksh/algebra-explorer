@@ -313,3 +313,6 @@ iframe.eq2 {
 .index-link > h3 {
     margin-top: 0.2rem;
 }
+.popup {
+    height: 1rem;
+}
