@@ -294,11 +294,7 @@ span.space {
     width: 10%;
 }
 .textbar .mathPopup .scrollMask {
-    background-image: linear-gradient(to right, var(--color-window), transparent 10%, transparent 90%, var(--color-window));
-    height: 1em;
-}
-dialog .mathPopup .scrollMask {
-    background-image: linear-gradient(to right, var(--color-textbox), transparent 10%, transparent 90%, var(--color-textbox));
+    background-image: linear-gradient(to right, transparent 90%, var(--color-window));
     height: 1em;
 }
 .mathPopup svg {
