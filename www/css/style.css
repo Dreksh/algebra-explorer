@@ -241,11 +241,16 @@ span.space {
     width: 100%;
     caret-color: transparent;
 }
-.mathInput > input::placeholder {
-    display: flex;
+.mathInput > .placeholder {
+    position: absolute;
+    top: 0.5rem; /* padding of mathinput */
+    left: 0.5rem;
+    height: 2.5em;
+    line-height: 2.5em;
     font-size: 0.4em;
-    transform: translateY(-0.5em);
     color: lightgrey;
+    vertical-align: middle;
+    pointer-events: none;
 }
 .mathInput > svg {
     display: block;

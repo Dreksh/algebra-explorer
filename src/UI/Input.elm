@@ -164,9 +164,9 @@ view convert attr model = Html.div ([id model.holderID, class "mathInput"] ++ at
             ,   HtmlEvent.onFocus (convert ShowCursor)
             ,   HtmlEvent.onBlur (convert HideCursor)
             ,   HtmlEvent.onPointerCapture convert MouseDown
-            ,   placeholder (if showPlaceholder_ model then "Type an equation..." else "")
             ]
             []
+        ,   Html.div [class "placeholder"] [Html.text (if showPlaceholder_ model then "Type an equation..." else "") ]
         ,   MathIcon.staticWithCursor [style "pointer-events" "none"]
             (toLatex False [] (if Animation.target model.popupHeight == 1 then model.cursor else []) (current model))
         ,   Html.p [class "mathHint", style "max-height" ( (Animation.current model.matchFoundText |> String.fromFloat) ++ "em")]
