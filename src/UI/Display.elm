@@ -265,7 +265,7 @@ suspendHoverCmd model =
     (   {model | hoverSuspensions = model.hoverSuspensions + 1, enterSuspended = True}
     ,   Cmd.batch
         [   Task.perform (always (UnsuspendHover False)) (Process.sleep suspendHoverCooldown)
-        ,   Task.perform identity (Task.succeed UnsuspendEnter)  -- we only need to suspend onPointerEnter instantaneously to prevent an instant pointerenter event
+        ,   Task.perform (always UnsuspendEnter) (Process.sleep 100)  -- we only need to suspend onPointerEnter instantaneously to prevent an immediate pointerenter event when the DOM shifts underneath
         ]
     )
 
