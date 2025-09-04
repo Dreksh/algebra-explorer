@@ -196,9 +196,9 @@ section {
 .centered { text-align: center; }
 .highlight { background-color: lightgreen;}
 .indented { margin-inline-start: 40px; } /* Copy blockquote's indentation */
-img.row2 { max-height: 8rem; width:auto; }
-img.row3 { max-height: 12rem; width:auto; }
-img.row4 { max-height: 16rem; width:auto; }
+img.row2 { height: 8rem; width:auto; }
+img.row3 { height: 12rem; width:auto; }
+img.row4 { height: 16rem; width:auto; }
 table {
     text-align: center;
     border-collapse: collapse;

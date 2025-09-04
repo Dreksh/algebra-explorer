@@ -266,6 +266,7 @@ suspendHoverCmd model =
     ,   Cmd.batch
         [   Task.perform (always (UnsuspendHover False)) (Process.sleep suspendHoverCooldown)
         ,   Task.perform (always UnsuspendEnter) (Process.sleep 1)  -- we only need to suspend onPointerEnter instantaneously to prevent an immediate pointerenter event when the DOM shifts underneath
+        -- maybe a better solution is to save the element which triggered the immediate pointerenter, then fire its event when the mouse moves
         ]
     )
 
